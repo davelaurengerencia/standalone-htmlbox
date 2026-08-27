@@ -1,0 +1,89 @@
+;(function () {
+  const ctx = window.__HBX_DEBUG_CTX__ || {}
+  const MAX_ENTRIES = 200
+  const entries = []
+
+  const host = document.createElement('div')
+  host.id = 'hbx-debug-root'
+  host.style.cssText = 'position:fixed;bottom:0;right:0;z-index:2147483647;'
+  document.body.appendChild(host)
+  const root = host.attachShadow({ mode: 'open' })
+
+  root.innerHTML = `
+    <style>
+      .btn { position:fixed; bottom:16px; right:16px; width:44px; height:44px;
+        border-radius:9999px; background:#1e293b; color:#fff; border:2px solid #475569;
+        font:600 13px system-ui; cursor:pointer; box-shadow:0 4px 12px rgba(0,0,0,.3); }
+      .panel { display:none; position:fixed; bottom:70px; right:16px; width:420px; max-height:50vh;
+        background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:12px;
+        font:12px/1.4 ui-monospace,monospace; overflow:hidden; flex-direction:column;
+        box-shadow:0 8px 24px rgba(0,0,0,.4); }
+      .panel.open { display:flex; }
+      .head { display:flex; justify-content:space-between; align-items:center; padding:8px 12px;
+        background:#1e293b; border-bottom:1px solid #334155; font-family:system-ui; }
+      .log { flex:1; overflow-y:auto; padding:6px; }
+      .entry { padding:4px 6px; border-bottom:1px solid #1e293b; white-space:pre-wrap; word-break:break-word; }
+      .entry.error { color:#fca5a5; } .entry.warn { color:#fcd34d; } .entry.info { color:#93c5fd; }
+      button.small { background:none; border:none; color:#94a3b8; cursor:pointer; font:12px system-ui; }
+    </style>
+    <button class="btn" title="HTMLBox Debug">🐞</button>
+    <div class="panel">
+      <div class="head">
+        <span>Debug — ${ctx.boxSlug || ctx.boxId || 'box'}</span>
+        <div><button class="small" id="hbx-clear">limpiar</button> <button class="small" id="hbx-close">✕</button></div>
+      </div>
+      <div class="log"></div>
+    </div>
+  `
+
+  const btn = root.querySelector('.btn')
+  const panel = root.querySelector('.panel')
+  const logEl = root.querySelector('.log')
+  btn.addEventListener('click', () => panel.classList.toggle('open'))
+  root.querySelector('#hbx-close').addEventListener('click', () => panel.classList.remove('open'))
+  root.querySelector('#hbx-clear').addEventListener('click', () => { entries.length = 0; render() })
+
+  function render() {
+    logEl.innerHTML = entries
+      .map((e) => `<div class="entry ${e.level}">[${e.time}] ${escapeHtml(e.text)}</div>`)
+      .join('')
+    logEl.scrollTop = logEl.scrollHeight
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+  }
+
+  function push(level, args) {
+    const text = args.map((a) => {
+      if (a instanceof Error) return a.stack || a.message
+      if (typeof a === 'object') { try { return JSON.stringify(a) } catch { return String(a) } }
+      return String(a)
+    }).join(' ')
+    entries.push({ level, text, time: new Date().toLocaleTimeString() })
+    if (entries.length > MAX_ENTRIES) entries.shift()
+    render()
+  }
+
+  // Envuelve console.* — SIEMPRE llama al original primero (nunca romper el
+  // comportamiento normal del box ni ocultarle nada a quien sí tenga DevTools
+  // abierto).
+  ;['log', 'info', 'warn', 'error', 'debug'].forEach((level) => {
+    const original = console[level]
+    console[level] = function (...args) {
+      original.apply(console, args)
+      push(level === 'log' ? 'info' : level, args)
+    }
+  })
+
+  window.addEventListener('error', (e) => {
+    push('error', [e.error || e.message])
+  })
+  window.addEventListener('unhandledrejection', (e) => {
+    push('error', ['Promise rechazada: ', e.reason])
+  })
+
+  // API mínima por si el propio HTML del box quiere abrir el panel a propósito
+  // (ej. un botón "Reportar bug" que el usuario final de la app le agregue).
+  window.HBX_DEBUG = { open: () => panel.classList.add('open'), entries }
+})()

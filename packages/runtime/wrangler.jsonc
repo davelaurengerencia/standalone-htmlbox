@@ -13,7 +13,7 @@
   },
 
   "rules": [
-    { "type": "Text", "globs": ["src/sdk/*.txt"], "fallthrough": true }
+    { "type": "Text", "globs": ["src/sdk/*.txt", "src/devtools/*.txt"], "fallthrough": true }
   ],
 
   "vars": {

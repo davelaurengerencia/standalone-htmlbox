@@ -3,6 +3,7 @@
 // Sirve:
 //   GET  /                                          → health
 //   GET  /_sdk/htmlbox.js                           → SDK (texto del bundle)
+//   GET  /_devtools/debug-panel.js                  → script del panel de debug (ver htmlbox-spec-debug-panel.md)
 //   GET  /api/data/{boxId}/tables...                → data API (lectura/escritura de tablas del box)
 //   GET  /s/{shareId}                               → box público (sin auth)
 //   GET  /t/{tenantSlug}/{boxSlug}                  → box privado path-based
@@ -19,6 +20,7 @@ import { handleDataApi } from './lib/dataApi.js'
 import { SDK_VERSION } from '@htmlbox/shared'
 
 import SDK_SOURCE_BODY from './sdk/htmlbox-sdk.txt' // bundled as Text por wrangler rules
+import DEBUG_PANEL_SOURCE from './devtools/debug-panel.js.txt' // bundled as Text por wrangler rules
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -50,6 +52,16 @@ export default {
       })
     }
 
+    if (path === '/_devtools/debug-panel.js') {
+      return new Response(DEBUG_PANEL_SOURCE, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/javascript; charset=utf-8',
+          'Cache-Control': 'public, max-age=300',
+        },
+      })
+    }
+
     // Data API
     if (path.startsWith('/api/data/')) {
       return (await handleDataApi(request, env, url)) || notFound('not_found')
@@ -68,6 +80,11 @@ export default {
         version: active.version,
         html: active.html,
         visibility: 'public',
+        env,
+        request,
+        url,
+        tenantSlug: resolved.tenantSlug,
+        boxSlug: resolved.boxSlug,
       })
     }
 
@@ -83,6 +100,11 @@ export default {
         version: active.version,
         html: active.html,
         visibility: resolved.visibility === 'public' ? 'public' : 'private',
+        env,
+        request,
+        url,
+        tenantSlug: resolved.tenantSlug,
+        boxSlug: resolved.boxSlug,
       })
     }
 

@@ -1,4 +1,5 @@
-// src/lib/htmlServer.js — sirve el HTML de un box desde R2, inyecta SDK.
+// src/lib/htmlServer.js — sirve el HTML de un box desde R2, inyecta SDK
+// y (cuando aplica) el panel de debug para owner/editor.
 //
 // Cabeceras (§10):
 //   - X-HTMLBox-Version: {n}
@@ -10,6 +11,7 @@
 //   - Cache-Control: no-store (siempre fresco — el agente puede pushear en vivo)
 
 import { boxVersionKey, SDK_URL } from '@htmlbox/shared'
+import { shouldShowDebugPanel } from './debugPanel.js'
 
 export function securityHeaders(visibility) {
   const csp = [
@@ -61,14 +63,39 @@ export function injectSdk(html, boxId, visibility) {
   return html + '\n' + tag
 }
 
-export async function serveBoxHtml({ boxId, version, html, visibility }) {
+// Inyecta el script del panel de debug antes del </body>. Mismo patrón regex
+// que injectSdk() para no romper HTML malformado. Solo se llama cuando
+// shouldShowDebugPanel() devolvió true — el gate real es server-side.
+export function injectDebugPanel(html, boxId, tenantSlug, boxSlug) {
+  const ctx = JSON.stringify({ boxId, tenantSlug, boxSlug })
+  const ctxScript = `<script>window.__HBX_DEBUG_CTX__=${ctx};</script>`
+  const panelScript = `<script src="/_devtools/debug-panel.js"></script>`
+  const tag = ctxScript + panelScript
+  if (/<\/body\s*>/i.test(html)) {
+    return html.replace(/<\/body\s*>/i, `${tag}</body>`)
+  }
+  return html + '\n' + tag
+}
+
+export async function serveBoxHtml({ boxId, version, html, visibility, env, request, url, tenantSlug, boxSlug }) {
   if (!html || !version) {
     return new Response('Box sin versión publicada todavía.', {
       status: 404,
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     })
   }
-  const finalHtml = injectSdk(html, boxId, visibility)
+  let finalHtml = injectSdk(html, boxId, visibility)
+
+  // Panel de debug (ver htmlbox-spec-debug-panel.md): gate 100% server-side,
+  // nunca confiar en el query param solo. La latencia del checkMembership se
+  // paga solo cuando ?hbx_debug=1 está presente (la mayoría de requests no).
+  if (env && request && url) {
+    const showDebug = await shouldShowDebugPanel(env, request, url, boxId)
+    if (showDebug) {
+      finalHtml = injectDebugPanel(finalHtml, boxId, tenantSlug, boxSlug)
+    }
+  }
+
   const headers = new Headers(securityHeaders(visibility))
   headers.set('Content-Type', 'text/html; charset=utf-8')
   headers.set('X-HTMLBox-Version', String(version))
