@@ -38,3 +38,13 @@ export async function applyWfpSchema(env) {
   await ensureColumnD1(env, 'htmlbox_boxes', 'wfp_status', `TEXT NOT NULL DEFAULT 'pending'`)
   await ensureColumnD1(env, 'htmlbox_boxes', 'wfp_error', `TEXT`)
 }
+
+// Aplica las columnas necesarias para el routing post-magic-link.
+// Idempotente.
+//   - htmlbox_magic_links.from: 'portal' | 'admin'. El loginConfirmHtml
+//     redirige según este flag al origin correcto. Antes siempre iba
+//     al portal — bug: si pedías el link desde /admin/ te redirigía al
+//     portal y viceversa. Fix en routes/auth.js#postRequest + loginConfirmHtml.
+export async function applyAuthSchema(env) {
+  await ensureColumnD1(env, 'htmlbox_magic_links', 'from', `TEXT NOT NULL DEFAULT 'portal'`)
+}

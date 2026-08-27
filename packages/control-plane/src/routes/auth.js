@@ -13,6 +13,7 @@ import {
   getSessionIdFromRequest,
 } from '../lib/session.js'
 import { sendMagicLinkEmail } from '../lib/email.js'
+import { applyAuthSchema } from '../lib/dbMigrations.js'
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -34,6 +35,10 @@ export async function handleAuth(request, env, ctx, path) {
 }
 
 async function postRequest(request, env) {
+  // Idempotente — agrega columna 'from' si falta. Sin esto, requests
+  // nuevos fallarían en una DB creada antes de Phase 2 de admin.
+  await applyAuthSchema(env)
+
   let body
   try { body = await request.json() } catch { return json({ error: 'invalid_body' }, 400) }
   const email = (body?.email || '').trim().toLowerCase()
@@ -42,13 +47,20 @@ async function postRequest(request, env) {
     return json(GENERIC_RESPONSE)
   }
 
+  // `from` indica la UI desde la que se pidió el magic link.
+  //   'portal' (default) — el confirmHtml redirige al portal.
+  //   'admin' — redirige a /admin/ (dashboard de platform owner).
+  // Validamos explícitamente para que no se cuele ningún valor raro por
+  // accidente (la columna es TEXT, podría aceptar cualquier cosa).
+  const from = body?.from === 'admin' ? 'admin' : 'portal'
+
   if (await isRateLimited(env, email)) {
     // No creamos link adicional. Logueamos y devolvemos la misma respuesta.
     console.log(`[auth] rate-limited email=${email}`)
     return json(GENERIC_RESPONSE)
   }
 
-  const { id } = await createMagicLink(env, email)
+  const { id } = await createMagicLink(env, email, from)
   const emailResult = await sendMagicLinkEmail(env, request, { toEmail: email, tokenId: id })
   // Devolvemos previewLink si:
   //   - modo dev, o
@@ -65,6 +77,8 @@ async function postRequest(request, env) {
 
 // GET /api/auth/verify?token=…
 // Página HTML que auto-POSTea al consume (anti-scanner de correo).
+// El destino del redirect post-consume viene del campo `from` del magic link
+// (guardado al pedirlo desde el portal/admin) — antes siempre iba al portal.
 async function getVerify(request, env) {
   const url = new URL(request.url)
   const token = url.searchParams.get('token')
@@ -75,9 +89,14 @@ async function getVerify(request, env) {
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     })
   }
-  // HTML que hace fetch JSON al consume — un submit de form HTML nativo manda
-  // x-www-form-urlencoded y rompía el parseo (A1).
-  return new Response(loginConfirmHtml(token, env.HTMLBOX_PORTAL_ORIGIN || ''), {
+  // adminOrigin: el control-plane mismo (donde vive /admin/). En dev es
+  // el host actual; en prod, HTMLBOX_PUBLIC_ORIGIN ya apunta al subdomain
+  // de controlplane.htmlbox.dev. Si no hay var, derivamos del request.
+  const adminOrigin = (env.HTMLBOX_PUBLIC_ORIGIN || `${url.protocol}//${url.host}`).replace(/\/+$/, '')
+  // portalOrigin: HTMLBOX_PORTAL_ORIGIN. Default vacío = no redirige al
+  // portal (cae en redirect según `from`).
+  const portalOrigin = env.HTMLBOX_PORTAL_ORIGIN || ''
+  return new Response(loginConfirmHtml(token, peek.from || 'portal', portalOrigin, adminOrigin), {
     status: 200,
     headers: { 'Content-Type': 'text/html; charset=utf-8' },
   })
@@ -126,10 +145,16 @@ async function postLogout(request, env) {
   return json({ ok: true }, 200, { 'Set-Cookie': buildClearCookie(request, env) })
 }
 
-function loginConfirmHtml(token, portalOrigin) {
+function loginConfirmHtml(token, from, portalOrigin, adminOrigin) {
   // JSON.stringify evita reabrir XSS si el token (hoy hex) trajera chars raros.
   const safeToken = JSON.stringify(token)
-  const safeOrigin = JSON.stringify(portalOrigin || '')
+  // `from` viene del token (guardado al pedir el magic link). Si por algún
+  // motivo falta o es desconocido, default 'portal' (backward compat).
+  const safeFrom = JSON.stringify(from === 'admin' ? 'admin' : 'portal')
+  // Inyectamos ambos origins — el JS del browser decide a cuál redirigir
+  // según `from`.
+  const safePortal = JSON.stringify(portalOrigin || '')
+  const safeAdmin = JSON.stringify(adminOrigin || '')
   return `<!doctype html><html><head><meta charset="utf-8"><title>Verificando…</title></head>
 <body style="font-family:-apple-system,sans-serif;max-width:480px;margin:60px auto;padding:0 20px;text-align:center;color:#1f2637">
   <h2 style="color:#6366f1">Verificando tu link</h2>
@@ -144,9 +169,12 @@ function loginConfirmHtml(token, portalOrigin) {
         })
         const data = await res.json()
         if (res.ok && data.ok) {
-          document.getElementById('status').textContent = 'Listo — ya podés cerrar esta pestaña o ir al portal.'
-          const portalOrigin = ${safeOrigin}
-          if (portalOrigin) setTimeout(() => { window.location.href = portalOrigin }, 1200)
+          document.getElementById('status').textContent = 'Listo — podés cerrar esta pestaña.'
+          const from = ${safeFrom}
+          const portalOrigin = ${safePortal}
+          const adminOrigin = ${safeAdmin}
+          const dest = from === 'admin' ? (adminOrigin + '/admin/') : portalOrigin
+          if (dest) setTimeout(() => { window.location.href = dest }, 1200)
         } else {
           document.getElementById('status').textContent = 'Error: ' + (data.error || res.status)
         }

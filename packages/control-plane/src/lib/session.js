@@ -96,19 +96,24 @@ export async function isRateLimited(env, email) {
   return (row?.n ?? 0) >= AUTH_REQUEST_MAX_PER_EMAIL
 }
 
-export async function createMagicLink(env, email) {
+export async function createMagicLink(env, email, from = 'portal') {
   const id = randomToken()
   const expiresAt = new Date(Date.now() + MAGIC_LINK_TTL_MS).toISOString().slice(0, 19).replace('T', ' ')
+  // `from` indica de qué UI vino el pedido ('portal' | 'admin') y determina
+  // adónde redirige el confirmHtml después del login. Persistido en la fila
+  // para que el `verify` (que es GET en el email link) sepa el destino.
+  // Valores permitidos: 'portal' (default para backward compat), 'admin'.
+  const safeFrom = (from === 'admin' || from === 'portal') ? from : 'portal'
   await env.DB.prepare(
-    `INSERT INTO htmlbox_magic_links (id, email, expires_at) VALUES (?1, ?2, ?3)`
-  ).bind(id, email, expiresAt).run()
-  return { id, email, expiresAt }
+    `INSERT INTO htmlbox_magic_links (id, email, expires_at, from) VALUES (?1, ?2, ?3, ?4)`
+  ).bind(id, email, expiresAt, safeFrom).run()
+  return { id, email, expiresAt, from: safeFrom }
 }
 
 export async function peekMagicLink(env, tokenId) {
   if (!tokenId) return { ok: false, reason: 'missing_token' }
   const row = await env.DB.prepare(
-    `SELECT id, email, expires_at, used_at FROM htmlbox_magic_links WHERE id = ?1`
+    `SELECT id, email, expires_at, used_at, from FROM htmlbox_magic_links WHERE id = ?1`
   ).bind(tokenId).first()
   if (!row) return { ok: false, reason: 'invalid_token' }
   if (row.used_at) return { ok: false, reason: 'already_used' }
@@ -116,7 +121,7 @@ export async function peekMagicLink(env, tokenId) {
     `SELECT (datetime(?1) > datetime('now')) AS ok FROM (SELECT 1)`
   ).bind(row.expires_at).first()
   if (!stillValid?.ok) return { ok: false, reason: 'expired' }
-  return { ok: true, email: row.email }
+  return { ok: true, email: row.email, from: row.from || 'portal' }
 }
 
 export async function consumeMagicLink(env, tokenId) {

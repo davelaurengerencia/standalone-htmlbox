@@ -310,7 +310,7 @@
           try {
             const data = await apiFetch('/api/auth/request', {
               method: 'POST',
-              body: { email: this.email },
+              body: { email: this.email, from: 'portal' },
             })
             this.lastMessage = data.message || 'Listo. Revisá tu email.'
             if (data._dev_preview) {

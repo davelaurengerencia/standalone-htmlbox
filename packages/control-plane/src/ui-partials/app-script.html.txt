@@ -181,7 +181,7 @@
           try {
             const data = await apiFetch('/api/auth/request', {
               method: 'POST',
-              body: { email: this.email },
+              body: { email: this.email, from: 'admin' },
             })
             this.lastMessage = data.message || 'Listo. Revisá tu email.'
             if (data._dev_preview) this.previewLink = data._dev_preview
