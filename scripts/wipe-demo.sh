@@ -47,96 +47,131 @@ echo
 # ─────────────────────────────────────────────────────────────────────────────
 header "1/3 Wipe D1 tables"
 
+# Orden importa: primero las tablas con FKs salientes (hijas), después
+# las padres. Las migraciones canónicas viven en packages/control-plane/migrations/
+# y este listado matchea los CREATE TABLE de ahí.
 TABLES=(
-  "htmlbox_api_tokens"
   "htmlbox_ai_analyses"
+  "htmlbox_tenant_app_access"
+  "htmlbox_tenant_app_magic_links"
+  "htmlbox_tenant_app_sessions"
   "htmlbox_tenant_app_users"
-  "htmlbox_box_versions"
-  "htmlbox_boxes"
   "htmlbox_memberships"
+  "htmlbox_versions"
+  "htmlbox_boxes"
   "htmlbox_workspaces"
+  "htmlbox_magic_links"
+  "htmlbox_sessions"
   "htmlbox_tenants"
   "htmlbox_users"
-  "htmlbox_sessions"
-  "htmlbox_magic_links"
+  "htmlbox_api_tokens"
 )
 
+# Desactivamos -e temporalmente — un fallo de wrangler en una tabla
+# no debe cortar las demás. Reportamos el estado final.
+set +e
+declare -a FAILED_TABLES=()
+declare -a OK_COUNT=0
 for t in "${TABLES[@]}"; do
-  echo "  DELETE FROM $t..."
-  npx wrangler d1 execute htmlbox-control-plane --remote \
-    --command "DELETE FROM $t" 2>&1 | tail -2
+  printf "  DELETE FROM %-32s ... " "$t"
+  out=$(npx wrangler d1 execute htmlbox-control-plane --remote \
+    --command "DELETE FROM $t" 2>&1)
+  if echo "$out" | grep -q "success.*true"; then
+    printf "✓\n"
+    OK_COUNT=$((OK_COUNT + 1))
+  else
+    printf "✗\n"
+    FAILED_TABLES+=("$t")
+  fi
 done
-ok "D1 wiped"
+set -e
+
+if [[ ${#FAILED_TABLES[@]} -gt 0 ]]; then
+  warn "Algunas tablas fallaron: ${FAILED_TABLES[*]}"
+  warn "Re-corré el script o wipealas manualmente."
+else
+  ok "D1 wiped (${OK_COUNT} tablas)"
+fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 2. R2 — wipe del bucket
+# 2. R2 — wipe del bucket (tenants/* y raíz si quedó algo suelto)
 # ─────────────────────────────────────────────────────────────────────────────
 header "2/3 Wipe R2 bucket ($BUCKET)"
 
-# Lista todos los objetos y los borra de a batches (max 1000 por list).
-prefix=""
-list_page() {
-  local cursor="$1"
-  local cmd="wrangler r2 object list $BUCKET --prefix=tenants/"
-  if [[ -n "$cursor" ]]; then
-    cmd+=" --cursor=$cursor"
-  fi
-  eval "$cmd" 2>/dev/null
+# API REST directa para listar/borrar (wrangler r2 object list/delete tiene
+# output variable entre versiones). CLOUDFLARE_API_TOKEN es el OAuth de
+# wrangler — funciona para authenticated requests a la cuenta.
+API_BASE="https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/r2/buckets/$BUCKET/objects"
+R2_AUTH="Authorization: Bearer ${CLOUDFLARE_API_TOKEN:-}"
+
+delete_objects() {
+  local prefix="$1"
+  local cursor=""
+  local total=0
+  while : ; do
+    local url="$API_BASE?prefix=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$prefix")"
+    [[ -n "$cursor" ]] && url+="&cursor=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$cursor")"
+    local resp
+    resp=$(curl -sS -H "$R2_AUTH" "$url")
+    local keys
+    keys=$(echo "$resp" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("\n".join(o.get("name") or o.get("Key","") for o in d.get("result", [])))' 2>/dev/null || true)
+    if [[ -z "$keys" ]]; then break; fi
+    while IFS= read -r key; do
+      [[ -z "$key" ]] && continue
+      curl -sS -X DELETE \
+        -H "$R2_AUTH" \
+        "$API_BASE/$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$key")" \
+        >/dev/null 2>&1 || true
+      total=$((total + 1))
+    done <<< "$keys"
+    cursor=$(echo "$resp" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("result_pagination", {}).get("cursor", "") if isinstance(d.get("result_pagination"), dict) else "")' 2>/dev/null || true)
+    [[ -z "$cursor" || "$cursor" == "None" ]] && break
+  done
+  echo "$total"
 }
 
-cursor=""
-total_deleted=0
-while : ; do
-  page=$(wrangler r2 object list "$BUCKET" --prefix="tenants/" 2>&1 || true)
-  keys=$(echo "$page" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("\n".join(o["Key"] for o in d.get("objects", [])))' 2>/dev/null || true)
-  if [[ -z "$keys" ]]; then break; fi
-  count=0
-  while IFS= read -r key; do
-    [[ -z "$key" ]] && continue
-    wrangler r2 object delete "$BUCKET" "$key" >/dev/null 2>&1 || true
-    count=$((count + 1))
-  done <<< "$keys"
-  total_deleted=$((total_deleted + count))
-  echo "  borrados: $total_deleted"
-  # ¿Hay otra página?
-  next_cursor=$(echo "$page" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("cursor", ""))' 2>/dev/null || true)
-  if [[ -z "$next_cursor" || "$next_cursor" == "null" ]]; then break; fi
-  cursor="$next_cursor"
-done
+echo "  borrando tenants/* ..."
+r2_tenants=$(delete_objects "tenants/")
+echo "    $r2_tenants objetos borrados"
 
-ok "R2 wiped ($total_deleted objetos borrados)"
+echo "  borrando _devtools/* (debug panel scripts) ..."
+r2_devtools=$(delete_objects "_devtools/")
+echo "    $r2_devtools objetos borrados"
+
+total_r2=$((r2_tenants + r2_devtools))
+ok "R2 wiped ($total_r2 objetos borrados)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. WFP namespace — wipe de scripts per-box
 # ─────────────────────────────────────────────────────────────────────────────
 header "3/3 Wipe WFP namespace scripts ($NAMESPACE)"
 
-# Lista scripts en el namespace y los borra.
 scripts=$(curl -sS \
   -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN:-}" \
   "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/workers/dispatch/namespaces/$NAMESPACE/scripts" \
   | python3 -c 'import json,sys; d=json.load(sys.stdin); print("\n".join(s["id"] for s in d.get("result", [])))' 2>/dev/null || true)
 
+wfp_deleted=0
 if [[ -z "$scripts" ]]; then
-  ok "WFP namespace vacío (o sin acceso — verificar manualmente)"
+  ok "WFP namespace vacío"
 else
   while IFS= read -r script; do
     [[ -z "$script" ]] && continue
     curl -sS -X DELETE \
       -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN:-}" \
       "https://api.cloudflare.com/client/v4/accounts/$ACCOUNT_ID/workers/dispatch/namespaces/$NAMESPACE/scripts/$script" \
-      >/dev/null 2>&1 || true
+      >/dev/null 2>&1 && wfp_deleted=$((wfp_deleted + 1))
     echo "  borrado: $script"
   done <<< "$scripts"
-  ok "WFP scripts borrados"
+  ok "WFP scripts borrados: $wfp_deleted"
 fi
 
 echo
 header "✓ Wipe completo"
-echo "  - D1: 11 tablas vaciadas"
-echo "  - R2: $total_deleted objetos borrados"
-echo "  - WFP: scripts borrados"
-echo
+echo "  - D1: 14 tablas vaciadas"
+echo "  - R2: $total_r2 objetos borrados"
+echo "  - WFP: $wfp_deleted scripts borrados"
+echo ""
 echo "Próximo paso: deployá control-plane + runtime, y empezá a crear boxes"
 echo "frescos. La próxima vez que crees un box, control-plane auto-deployará"
 echo "su script per-box al namespace."
