@@ -593,10 +593,6 @@
 
         // --------- Helpers ---------
 
-        async api(path, init = {}) {
-          return await fetch(path, { credentials: 'include', ...init })
-        },
-
         formatBytes(n) {
           if (!n) return '0 B'
           const units = ['B', 'KB', 'MB', 'GB']
