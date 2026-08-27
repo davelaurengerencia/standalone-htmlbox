@@ -80,6 +80,11 @@ async function postRequest(request, env) {
 // El destino del redirect post-consume viene del campo `from` del magic link
 // (guardado al pedirlo desde el portal/admin) — antes siempre iba al portal.
 async function getVerify(request, env) {
+  // Idempotente — garantiza que la columna 'from' existe antes de hacer
+  // SELECT que la incluye. Cubre el caso de magic links viejos generados
+  // ANTES de este fix (filas sin `from`).
+  await applyAuthSchema(env)
+
   const url = new URL(request.url)
   const token = url.searchParams.get('token')
   const peek = await peekMagicLink(env, token)
