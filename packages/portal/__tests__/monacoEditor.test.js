@@ -67,13 +67,29 @@ const { reindentHtml } = loadReindent()
 // comments" abajo refuerzan que el app-script.html.txt real también
 // cambió.
 
-function makeStubApp(monacoMock = null, fakeWindow = {}) {
+function makeStubApp({ monacoMock = null, fakeWindow = {}, activeTab = 'preview', refs = {} } = {}) {
   const stub = {
     editorHtml: '',
     _monacoEditor: null,
     _monacoReady: null,
+    _monacoMounted: false,
+    activeTab,
+    $refs: refs,
     showToast(msg) { stub._lastToast = msg },
     _lastToast: null,
+
+    // mountMonacoIfNeeded: monta lazily. NO-OP si (a) ya montó, (b) la tab
+    // editor no está activa, (c) no hay $refs.monacoContainer. Es la
+    // entrada que dispara el <div x-effect='activeTab === "editor" &&
+    // mountMonacoIfNeeded()'> del main-panel.
+    mountMonacoIfNeeded() {
+      if (stub._monacoMounted) return
+      if (stub.activeTab !== 'editor') return
+      const container = stub.$refs && stub.$refs.monacoContainer
+      if (!container) return
+      stub._monacoMounted = true
+      stub.initMonaco(container)
+    },
 
     initMonaco(container) {
       const req = (fakeWindow && fakeWindow.require) || (typeof window !== 'undefined' && window.require)
@@ -186,7 +202,7 @@ test('reindentHtml: HTML de seed del dashboard no se rompe', () => {
 // ============ _syncMonacoValue (sin Monaco cargado) ============
 
 test('_syncMonacoValue: NO-OP si Monaco todavía no montó', () => {
-  const app = makeStubApp(null)
+  const app = makeStubApp({})
   assert.doesNotThrow(() => app._syncMonacoValue('<html><body>x</body></html>'))
   assert.equal(app.editorHtml, '')  // el bridge no se ensució tocando state
 })
@@ -198,7 +214,7 @@ test('_syncMonacoValue: llama setValue solo si el valor difiere del buffer actua
     getValue: () => bufferValue,         // refleja el último setValue
     setValue: (v) => { bufferValue = v; setValueCalls++ },
   }
-  const app = makeStubApp(monacoMock)
+  const app = makeStubApp({ monacoMock })
   app._syncMonacoValue('<initial/>')    // coincide con buffer → no llama
   assert.equal(setValueCalls, 0)
   app._syncMonacoValue('<differ/>')     // buffer sigue '<initial/>' → difiere → llama
@@ -214,7 +230,7 @@ test('_syncMonacoValue: pasa string vacío si html es null/undefined/false/0', (
     getValue: () => '<initial/>',
     setValue: (v) => { passedValue = v },
   }
-  const app = makeStubApp(monacoMock)
+  const app = makeStubApp({ monacoMock })
   app._syncMonacoValue(null)
   assert.equal(passedValue, '')
   app._syncMonacoValue(undefined)
@@ -232,7 +248,7 @@ test('_resetEditorState: setea editorHtml Y sincroniza con Monaco', () => {
     getValue: () => '<prev/>',
     setValue: (v) => { setValueCalled = true; setValueWith = v },
   }
-  const app = makeStubApp(monacoMock)
+  const app = makeStubApp({ monacoMock })
   app.editorHtml = '<old/>'
   app._resetEditorState('<html><body>hello</body></html>')
   assert.equal(app.editorHtml, '<html><body>hello</body></html>')
@@ -241,7 +257,7 @@ test('_resetEditorState: setea editorHtml Y sincroniza con Monaco', () => {
 })
 
 test('_resetEditorState: NO-OP de Monaco si Monaco no montó (no tira)', () => {
-  const app = makeStubApp(null)
+  const app = makeStubApp({})
   assert.doesNotThrow(() => app._resetEditorState('<html></html>'))
   assert.equal(app.editorHtml, '<html></html>')
 })
@@ -253,7 +269,8 @@ test('initMonaco: loggea error y no tira si window.require no existe', () => {
   const origConsoleError = console.error
   console.error = (...args) => errors.push(args.join(' '))
   try {
-    const app = makeStubApp(null, {})  // fakeWindow sin require
+    const app = makeStubApp({ fakeWindow: {}, refs: { monacoContainer: { tagName: 'DIV' } } })
+    app.activeTab = 'editor'
     app.initMonaco({ tagName: 'DIV' })
     assert.ok(errors.some((m) => m.includes('Monaco loader no disponible')))
     assert.equal(app._monacoEditor, null, 'monaco queda sin montar')
@@ -261,6 +278,56 @@ test('initMonaco: loggea error y no tira si window.require no existe', () => {
   } finally {
     console.error = origConsoleError
   }
+})
+
+test('mountMonacoIfNeeded: NO monta si activeTab !== "editor" (evita mount en contenedor oculto)', () => {
+  const app = makeStubApp({
+    activeTab: 'preview',
+    refs: { monacoContainer: { tagName: 'DIV' } },
+  })
+  app.mountMonacoIfNeeded()
+  assert.equal(app._monacoMounted, false)
+  assert.equal(app._monacoEditor, null)
+})
+
+test('mountMonacoIfNeeded: NO monta si ya montó (idempotente)', () => {
+  const monacoMock = { getValue: () => '', setValue: () => {}, onDidChangeModelContent() {} }
+  const app = makeStubApp({
+    activeTab: 'editor',
+    monacoMock,
+    refs: { monacoContainer: { tagName: 'DIV' } },
+  })
+  app._monacoMounted = true  // ya montado
+  app.mountMonacoIfNeeded()
+  assert.equal(app._monacoEditor, monacoMock)
+})
+
+test('mountMonacoIfNeeded: NO monta si $refs.monacoContainer no existe', () => {
+  const app = makeStubApp({ activeTab: 'editor', refs: {} })
+  app.mountMonacoIfNeeded()
+  assert.equal(app._monacoMounted, false)
+  assert.equal(app._monacoEditor, null)
+})
+
+test('mountMonacoIfNeeded: monta cuando activeTab === "editor" y refs OK', async () => {
+  let created = false
+  const fakeRequire = (mods, cb) => cb()
+  fakeRequire.config = () => {}
+  const fakeMonaco = { editor: { create: () => {
+    created = true
+    return { getValue: () => '', setValue: () => {}, onDidChangeModelContent() {} }
+  } } }
+  const app = makeStubApp({
+    activeTab: 'editor',
+    refs: { monacoContainer: { tagName: 'DIV' } },
+    fakeWindow: { require: fakeRequire, monaco: fakeMonaco },
+  })
+  app.mountMonacoIfNeeded()
+  assert.equal(app._monacoMounted, true, 'debe marcar como montado')
+  assert.ok(app._monacoReady instanceof Promise)
+  // Esperar que la Promesa resuelva:
+  await app._monacoReady
+  assert.equal(created, true, 'monaco.editor.create debió llamarse')
 })
 
 test('initMonaco: monta el editor cuando el loader AMD resuelve', async () => {
@@ -289,7 +356,7 @@ test('initMonaco: monta el editor cuando el loader AMD resuelve', async () => {
   fakeRequire.config = (c) => { requireConfig = c }
 
   const fakeWindow = { require: fakeRequire, monaco: fakeMonaco }
-  const app = makeStubApp(null, fakeWindow)
+  const app = makeStubApp({ fakeWindow })
   await app.initMonaco({ tagName: 'DIV' })
   // Verificaciones:
   assert.ok(requireConfig, 'debió llamar require.config')
@@ -322,7 +389,7 @@ test('formatHTML: usa editor.action.formatDocument si Monaco está montado', asy
       return { run: async () => { formatCalled = true } }
     },
   }
-  const app = makeStubApp(monacoMock)
+  const app = makeStubApp({ monacoMock })
   app._monacoReady = Promise.resolve()  // stub: ya resuelta
   app.editorHtml = '<unformatted/>'
   app.formatHTML()
@@ -334,7 +401,7 @@ test('formatHTML: usa editor.action.formatDocument si Monaco está montado', asy
 })
 
 test('formatHTML: usa reindentHtml si Monaco no cargó (fallback offline)', () => {
-  const app = makeStubApp(null)
+  const app = makeStubApp({})
   app.editorHtml = '<html><head><title>x</title></head></html>'
   app.formatHTML()
   assert.equal(app.editorHtml, [
@@ -354,7 +421,7 @@ test('formatHTML: cae al fallback si Monaco formatAction.run() rechaza', async (
     setValue: () => {},
     getAction: () => ({ run: async () => { throw new Error('boom') } }),
   }
-  const app = makeStubApp(monacoMock)
+  const app = makeStubApp({ monacoMock })
   app._monacoReady = Promise.resolve()
   app.editorHtml = '<html><body>x</body></html>'
   app.formatHTML()
@@ -388,7 +455,9 @@ test('app-script.html.txt: el bridge Alpine↔Monaco está implementado', () => 
   const src = fs.readFileSync(appScriptPath, 'utf8')
   assert.match(src, /_monacoEditor:\s*null/, '_monacoEditor debe estar declarado en state')
   assert.match(src, /_monacoReady:\s*null/, '_monacoReady debe estar declarado en state')
+  assert.match(src, /_monacoMounted:\s*false/, '_monacoMounted debe estar declarado en state')
   assert.match(src, /initMonaco\(container\)/, 'initMonaco debe estar como método')
+  assert.match(src, /mountMonacoIfNeeded/, 'mountMonacoIfNeeded debe estar como método (mount lazy)')
   assert.match(src, /_syncMonacoValue\(html\)/, '_syncMonacoValue debe estar como método')
   assert.match(src, /onDidChangeModelContent/, 'onDidChangeModelContent debe estar enganchado')
   assert.match(src, /editor\.action\.formatDocument/, 'formatAction debe invocarse en formatHTML')
@@ -405,9 +474,13 @@ test('app-script.html.txt: NO quedan referencias a _fullHtml / _editorFullHtml /
   assert.doesNotMatch(src, /\bblockCountsLabel\b/, 'blockCountsLabel debería estar borrado')
 })
 
-test('main-panel.html.txt: usa <div x-ref="monacoContainer">, NO <textarea x-model="editorHtml">', () => {
+test('main-panel.html.txt: usa <div x-ref="monacoContainer"> con x-effect (mount lazy), NO x-init', () => {
   const src = fs.readFileSync(mainPanelPath, 'utf8')
-  assert.match(src, /<div\s+x-ref="monacoContainer"\s+x-init="initMonaco\(\$refs\.monacoContainer\)"/)
+  // x-effect dispara mountMonacoIfNeeded() cuando activeTab === 'editor'.
+  // Crítico: NO usar x-init (corre apenas Alpine monta el DOM, con la
+  // tab oculta → freeze por Monaco+automaticLayout+display:none).
+  assert.match(src, /<div\s+x-ref="monacoContainer"\s+x-effect="activeTab === 'editor' && mountMonacoIfNeeded\(\)"/)
+  assert.doesNotMatch(src, /<div[^>]*x-ref="monacoContainer"[^>]*x-init/, 'x-init está prohibido acá')
   assert.doesNotMatch(src, /<textarea\s+x-model="editorHtml"/)
 })
 

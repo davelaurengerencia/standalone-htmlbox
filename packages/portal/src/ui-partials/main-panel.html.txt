@@ -105,7 +105,8 @@
                 </label>
               </div>
             </div>
-            <div x-ref="monacoContainer" x-init="initMonaco($refs.monacoContainer)"
+            <div x-ref="monacoContainer"
+                 x-effect="activeTab === 'editor' && mountMonacoIfNeeded()"
                  class="flex-1 w-full code-editor"></div>
           </div>
 

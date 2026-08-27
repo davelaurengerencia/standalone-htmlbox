@@ -243,6 +243,8 @@
         editorHtml: '',
         _monacoEditor: null,    // instancia de monaco.editor una vez mount() resolvió
         _monacoReady: null,     // Promesa; resuelve cuando window.monaco existe
+        _monacoMounted: false,  // guard: NO montar Monaco en un contenedor oculto (display:none),
+                                // se cuelga con automaticLayout=true. Ver mountMonacoIfNeeded().
 
         // modales
         newBoxModalOpen: false,
@@ -683,13 +685,28 @@
           this._syncMonacoValue(this.editorHtml)
         },
 
-        // --- Editor Monaco (htmlbox-spec-monaco-editor.md) ---
+// --- Editor Monaco (htmlbox-spec-monaco-editor.md) ---
         //
-        // Llamado UNA vez desde x-init en el <div x-ref="monacoContainer">.
-        // Carga el módulo 'vs/editor/editor.main' vía el loader AMD (cargado
-        // en shell.html.txt desde jsdelivr) y monta el editor sobre el div.
-        // No usar arrow functions en el listener porque Alpine proxy-ea
-        // 'this' — bind explícito al final del callback.
+        // mountMonacoIfNeeded() corre cada vez que activeTab cambia (vía
+        // x-effect en el <div>) y monta Monaco la primera vez que la tab
+        // editor está visible. NO usar x-init: Alpine lo corre apenas
+        // monta el DOM, cuando la tab está oculta (display:none) — y
+        // Monaco con automaticLayout=true en un contenedor 0×0 entra en
+        // loop / cuelga el thread. Por eso mount es lazy.
+        mountMonacoIfNeeded() {
+          if (this._monacoMounted) return
+          if (this.activeTab !== 'editor') return
+          const container = this.$refs && this.$refs.monacoContainer
+          if (!container) return
+          this._monacoMounted = true
+          this.initMonaco(container)
+        },
+
+        // initMonaco() hace el mount puro. Cargado lazy por
+        // mountMonacoIfNeeded() — NO llamar directamente. El módulo
+        // 'vs/editor/editor.main' se baja vía el AMD loader (cargado en
+        // shell.html.txt desde jsdelivr). No usar arrow functions en el
+        // listener — Alpine proxy-ea 'this' y necesitamos bind explícito.
         initMonaco(container) {
           if (!window.require) {
             console.error('Monaco loader no disponible (falló la carga desde CDN).')
@@ -715,7 +732,7 @@
                 this.editorHtml = this._monacoEditor.getValue()
               }.bind(this))
               resolve()
-            })
+            }.bind(this))
           })
         },
 
