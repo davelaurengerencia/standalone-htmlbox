@@ -67,6 +67,8 @@
 
       <htmlbox-partial name="modal-share"></htmlbox-partial>
 
+      <htmlbox-partial name="modal-new-tenant"></htmlbox-partial>
+
       <htmlbox-partial name="toast"></htmlbox-partial>
 
       <htmlbox-partial name="modal-ai-schema"></htmlbox-partial>

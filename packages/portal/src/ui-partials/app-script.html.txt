@@ -253,6 +253,18 @@
         saving: false,
         newBox: { name: '', template: 'empty', visibility: 'private', htmlContent: '' },
 
+        // modal nuevo tenant (platform owner only — server también lo valida)
+        newTenantModalOpen: false,
+        creatingTenant: false,
+        newTenantError: '',
+        newTenant: { name: '', slug: '' },
+        // Slug fue editado manualmente? Si sí, no pisamos el autosuggest.
+        newTenantSlugTouched: false,
+        // El regex coincide con TENANT_SLUG_REGEX en @htmlbox/shared. Recomputado
+        // en cada cambio de slug — la validity nativa del input (pattern="...")
+        // es bonus, esto es la autoridad.
+        tenantSlugValid: false,
+
         // share
         shareUrl: '',
 
@@ -577,6 +589,112 @@
           this.newBoxModalOpen = true
         },
         closeNewBoxModal() { this.newBoxModalOpen = false },
+
+        // --------- Modal nuevo tenant (platform owner) ---------
+
+        openNewTenantModal() {
+          if (!this.user?.is_platform_owner) {
+            this.showToast('Solo el platform owner puede crear tenants.')
+            return
+          }
+          this.newTenant = { name: '', slug: '' }
+          this.newTenantError = ''
+          this.newTenantSlugTouched = false
+          this.tenantSlugValid = false
+          this.newTenantModalOpen = true
+        },
+        closeNewTenantModal() {
+          this.newTenantModalOpen = false
+          this.newTenantError = ''
+          this.creatingTenant = false
+        },
+
+        // Autofill slug desde el name. Solo dispara si el user NO editó
+        // el slug manualmente (newTenantSlugTouched = false). Mantiene la
+        // intención del user — si typeás "Mi Empresa" y querés slug
+        // "company-prod", podés forzarlo.
+        onTenantNameInput(event) {
+          this.newTenant.name = event.target.value
+          if (!this.newTenantSlugTouched) {
+            const sug = this._tenantSlugifyFromName(this.newTenant.name)
+            this.newTenant.slug = sug
+            this._recomputeTenantSlugValid()
+          }
+        },
+
+        onTenantSlugInput(event) {
+          this.newTenant.slug = event.target.value
+          this.newTenantSlugTouched = true
+          this._recomputeTenantSlugValid()
+        },
+
+        _recomputeTenantSlugValid() {
+          this.tenantSlugValid = /^[a-z][a-z0-9-]{1,30}[a-z0-9]$/.test(this.newTenant.slug)
+        },
+
+        // Duplicado lógico de packages/shared/src/slugify.js — duplicamos
+        // intencionalmente para que el bundle del portal pueda servir
+        // sin importar @htmlbox/shared (que hoy no se importa desde el
+        // portal; si en el futuro el portal empieza a usar el shared,
+        // podemos borrar esta y reusar). Mismas reglas.
+        _tenantSlugifyFromName(name) {
+          return String(name || '')
+            .toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9_-]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 60) || ''
+        },
+
+        async createTenant() {
+          if (!this.user?.is_platform_owner) {
+            this.newTenantError = 'Solo el platform owner puede crear tenants.'
+            return
+          }
+          const name = this.newTenant.name.trim()
+          const slug = this.newTenant.slug.trim()
+          if (!name) {
+            this.newTenantError = 'Poné un nombre.'
+            return
+          }
+          if (!this.tenantSlugValid) {
+            this.newTenantError = 'Slug inválido. Debe ser minúsculas, números y guiones, empezar con letra (3-32 chars).'
+            return
+          }
+          this.creatingTenant = true
+          this.newTenantError = ''
+          try {
+            const data = await apiFetch('/api/tenants', {
+              method: 'POST',
+              body: { name, slug },
+            })
+            if (!data || data.error) {
+              const code = data?.error
+              this.newTenantError = ({
+                invalid_slug: 'Slug inválido. Mirá las reglas abajo del input.',
+                slug_taken: 'Ya hay un tenant con ese slug. Probá otro.',
+                missing_name: 'Falta el nombre.',
+                platform_owner_only: 'Tu cuenta no es platform owner.',
+              })[code] || ('Error: ' + (code || 'desconocido'))
+              return
+            }
+            // Éxito: refrescar la lista de tenants y autoseleccionar el nuevo.
+            this.showToast(`Tenant "${data.tenant.name}" creado.`)
+            this.closeNewTenantModal()
+            await this.loadTenants()
+            // Si loadTenants ya autoseleccionó, no hacemos nada — el
+            // currentTenantId quedó puesto al primero. Pero si querés
+            // saltar al nuevo explícitamente:
+            if (data.tenant?.id && this.tenants.find((t) => t.id === data.tenant.id)) {
+              this.currentTenantId = data.tenant.id
+              await this.onTenantChange()
+            }
+          } catch (err) {
+            this.newTenantError = 'Error: ' + (err?.code || err?.message || 'desconocido')
+          } finally {
+            this.creatingTenant = false
+          }
+        },
 
         async createBox() {
           if (!this.currentWorkspaceId) {

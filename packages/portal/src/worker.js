@@ -20,6 +20,7 @@ import SIDEBAR_HTML from './ui-partials/sidebar.html.txt'
 import MAIN_PANEL_HTML from './ui-partials/main-panel.html.txt'
 import MODAL_NEW_BOX_HTML from './ui-partials/modal-new-box.html.txt'
 import MODAL_SHARE_HTML from './ui-partials/modal-share.html.txt'
+import MODAL_NEW_TENANT_HTML from './ui-partials/modal-new-tenant.html.txt'
 import TOAST_HTML from './ui-partials/toast.html.txt'
 import MODAL_AI_SCHEMA_HTML from './ui-partials/modal-ai-schema.html.txt'
 import DEV_PREVIEW_OVERLAY_HTML from './ui-partials/dev-preview-overlay.html.txt'
@@ -34,6 +35,7 @@ const PORTAL_PARTIALS = {
   'main-panel': MAIN_PANEL_HTML,
   'modal-new-box': MODAL_NEW_BOX_HTML,
   'modal-share': MODAL_SHARE_HTML,
+  'modal-new-tenant': MODAL_NEW_TENANT_HTML,
   toast: TOAST_HTML,
   'modal-ai-schema': MODAL_AI_SCHEMA_HTML,
   'dev-preview-overlay': DEV_PREVIEW_OVERLAY_HTML,

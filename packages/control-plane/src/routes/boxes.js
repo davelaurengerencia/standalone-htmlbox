@@ -16,7 +16,7 @@
 // creada aunque el deploy falle (wfp_status='failed'), para que el dispatcher
 // caiga al path viejo cuando el binding BOX_DISPATCH esté prendido.
 
-import { boxId as newBoxId, shareId, isValidBoxSlug, isValidTenantSlug } from '@htmlbox/shared'
+import { boxId as newBoxId, shareId, isValidBoxSlug, isValidTenantSlug, slugify } from '@htmlbox/shared'
 import { createBoxDatabase, ensureBoxSchema, deleteBoxDatabase } from '../lib/tursoClient.js'
 import { getSessionIdFromRequest, validateSession, assertTenantScope, assertWorkspaceScope, requireRole } from '../lib/session.js'
 import { applyWfpSchema } from '../lib/dbMigrations.js'
@@ -34,15 +34,6 @@ async function requireUser(request, env) {
   const v = await validateSession(env, sid)
   if (!v) return { error: json({ error: 'unauthenticated' }, 401) }
   return { user: v.user }
-}
-
-function slugify(name) {
-  return String(name || '')
-    .toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60) || 'box'
 }
 
 export async function handleBoxes(request, env, ctx, path, subId, method) {
