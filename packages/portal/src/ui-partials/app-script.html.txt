@@ -94,23 +94,24 @@
 
     debugLog('boot', window.HTMLBOX_PORTAL_VERSION || window.HTMLBOX_ADMIN_VERSION || 'dev')
 
-    // ============ Editor (htmlbox-spec-monaco-editor.md) ============
+    // ============ Editor (htmlbox-spec-codemirror-editor.md) ============
     //
-    // Reemplaza el anterior split-view (Todo | JS | CSS). Monaco entiende
-    // HTML+<script>+<style> embebido nativamente — un único editor, sin
-    // vistas parciales que reensamblar. Helpers puros que viven fuera de
-    // portalApp() para ser testeables en Node vía vm sandbox; el módulo
-    // Monaco en sí se carga vía AMD (jsdelivr) en el browser.
+    // Reemplaza el anterior split-view (Todo | JS | CSS). CodeMirror 6
+    // con @codemirror/lang-html entiende HTML+<script>+<style> embebido
+    // nativamente — un único editor, sin vistas parciales que reensamblar.
+    // Helpers puros que viven fuera de portalApp() para ser testeables en
+    // Node vía vm sandbox; CM6 en sí se carga vía dynamic import (esm.sh)
+    // cuando el usuario abre la tab editor.
     //
-    // Por qué no usar x-model con Monaco: Monaco mantiene su propio model
-    // de texto (undo stack, cursor, syntax). Forzarlo a re-renderizar en
-    // cada cambio reactivo resetea el cursor/undo. Lo correcto es empujar
-    // sus cambios a editorHtml vía evento y sincronizar de afuera solo
+    // Por qué no usar x-model con CM: CM mantiene su propio state
+    // (undo stack, cursor, syntax). Forzarlo a re-renderizar en cada
+    // cambio reactivo resetea el cursor/undo. Lo correcto es empujar sus
+    // cambios a editorHtml vía updateListener y sincronizar de afuera solo
     // cuando HTML cambia por fuera (cargar box, IA, formatear).
 
-    // Re-indent simple del HTML — fallback defensivo si el CDN está caído
-    // y Monaco no carga. NO es un beautifier completo (no entiende
-    // HTML+JS+CSS embebido; el de Monaco sí). Testeado en __tests__/monacoEditor.test.js.
+    // Re-indent simple del HTML — fallback defensivo si js-beautify no
+    // carga. NO es un beautifier completo (no entiende HTML+JS+CSS embebido
+    // tan bien como js-beautify). Testeado en __tests__/codemirrorEditor.test.js.
     function reindentHtml(html) {
       let level = 0
       const out = []
@@ -237,14 +238,13 @@
         toast: null,
         toastTimer: null,
 
-        // editor (htmlbox-spec-monaco-editor.md: Monaco maneja su propio
-        // model interno; editorHtml es el snapshot reactivo que se
-        // sincroniza vía onDidChangeModelContent — ver initMonaco abajo)
+        // editor (htmlbox-spec-codemirror-editor.md: CodeMirror 6 maneja su
+        // propio state interno; editorHtml es el snapshot reactivo que se
+        // sincroniza vía EditorView.updateListener — ver initCM abajo)
         editorHtml: '',
-        _monacoEditor: null,    // instancia de monaco.editor una vez mount() resolvió
-        _monacoReady: null,     // Promesa; resuelve cuando window.monaco existe
-        _monacoMounted: false,  // guard: NO montar Monaco en un contenedor oculto (display:none),
-                                // se cuelga con automaticLayout=true. Ver mountMonacoIfNeeded().
+        _cmEditorView: null,    // instancia de EditorView una vez mount() resolvió
+        _cmReady: null,         // Promesa; resuelve cuando EditorView está montado
+        _cmMounted: false,      // guard: mount lazy, solo cuando la tab editor está activa
 
         // modales
         newBoxModalOpen: false,
@@ -514,9 +514,9 @@
 
         async saveCurrentBox() {
           if (!this.currentBox) return
-          // Con Monaco no hay "vista parcial" — editorHtml SIEMPRE es el
-          // documento completo (un único editor de HTML con resaltado de
-          // <script>/<style> embebidos; ver htmlbox-spec-monaco-editor.md).
+          // editorHtml SIEMPRE es el documento completo (un único editor de
+          // HTML con resaltado de <script>/<style> embebidos; ver
+          // htmlbox-spec-codemirror-editor.md). Sin vista parcial.
           const fullHtml = this.editorHtml || ''
           if (!fullHtml.trim()) {
             this.showToast('El HTML está vacío.')
@@ -676,75 +676,96 @@
           return (this.editorHtml || '').length
         },
 
-        // Reset unificado cuando se asigna un HTML nuevo al editor (cargar
-        // box, subir archivo, crear box, logout, vaciar lista). Si Monaco
-        // ya montó, sincroniza su buffer; si no, no hace nada (el bind
-        // inicial del editor al montar ya lo lee).
+// Reset unificado cuando se asigna un HTML nuevo al editor (cargar
+        // box, subir archivo, crear box, logout, vaciar lista). Si el
+        // editor ya montó, sincroniza su buffer; si no, no hace nada (el
+        // bind inicial del editor al montar ya lo lee).
         _resetEditorState(html) {
           this.editorHtml = html || ''
-          this._syncMonacoValue(this.editorHtml)
+          this._syncCMValue(this.editorHtml)
         },
 
-// --- Editor Monaco (htmlbox-spec-monaco-editor.md) ---
+// --- Editor CodeMirror 6 (htmlbox-spec-codemirror-editor.md) ---
         //
-        // mountMonacoIfNeeded() corre cada vez que activeTab cambia (vía
-        // x-effect en el <div>) y monta Monaco la primera vez que la tab
-        // editor está visible. NO usar x-init: Alpine lo corre apenas
-        // monta el DOM, cuando la tab está oculta (display:none) — y
-        // Monaco con automaticLayout=true en un contenedor 0×0 entra en
-        // loop / cuelga el thread. Por eso mount es lazy.
-        mountMonacoIfNeeded() {
-          if (this._monacoMounted) return
+        // mountCMIfNeeded() corre cada vez que activeTab cambia (vía
+        // x-effect en el <div>) y monta CM la primera vez que la tab
+        // editor está visible. NO usar x-init: la tab arranca oculta con
+        // display:none y montar sobre un contenedor sin dimensiones es
+        // frágil. Idempotente — x-effect re-corre en cada cambio pero
+        // el guard corta.
+        mountCMIfNeeded() {
+          if (this._cmMounted) return
           if (this.activeTab !== 'editor') return
-          const container = this.$refs && this.$refs.monacoContainer
+          const container = this.$refs && this.$refs.cmContainer
           if (!container) return
-          this._monacoMounted = true
-          this.initMonaco(container)
+          this._cmMounted = true
+          this.initCM(container)
         },
 
-        // initMonaco() hace el mount puro. Cargado lazy por
-        // mountMonacoIfNeeded() — NO llamar directamente. El módulo
-        // 'vs/editor/editor.main' se baja vía el AMD loader (cargado en
-        // shell.html.txt desde jsdelivr). No usar arrow functions en el
-        // listener — Alpine proxy-ea 'this' y necesitamos bind explícito.
-        initMonaco(container) {
-          if (!window.require) {
-            console.error('Monaco loader no disponible (falló la carga desde CDN).')
-            return
-          }
-          window.require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs' } })
-          this._monacoReady = new Promise((resolve) => {
-            window.require(['vs/editor/editor.main'], () => {
-              this._monacoEditor = window.monaco.editor.create(container, {
-                value: this.editorHtml || '',
-                language: 'html',
-                theme: 'vs-dark',
-                automaticLayout: true,   // re-mide en cada resize del contenedor, sin listener manual
-                minimap: { enabled: false },
-                fontSize: 13,
-                scrollBeyondLastLine: false,
-                wordWrap: 'off',
-              })
-              // Monaco → Alpine: cada tecleo empuja a editorHtml (mismo rol
-              // que x-model). El bind explícito al final evita problemas
-              // con el proxy de Alpine.
-              this._monacoEditor.onDidChangeModelContent(function () {
-                this.editorHtml = this._monacoEditor.getValue()
-              }.bind(this))
-              resolve()
+        // initCM() hace el mount puro. CM6 es ESM puro — importamos
+        // dinámicamente desde esm.sh (4 imports en paralelo: core,
+        // lang-html, commands para keymaps, theme one-dark). No usar
+        // arrow functions en el updateListener — Alpine proxy-ea 'this'.
+        async initCM(container) {
+          this._cmReady = (async () => {
+            const [
+              { EditorView, EditorState, basicSetup, lineNumbers, history, keymap },
+              { html },
+              { defaultKeymap, historyKeymap },
+              { oneDark },
+            ] = await Promise.all([
+              import('https://esm.sh/codemirror@6.65.1'),
+              import('https://esm.sh/@codemirror/lang-html@6.4.9'),
+              import('https://esm.sh/@codemirror/commands@6.5.0'),
+              import('https://esm.sh/@codemirror/theme-one-dark@6.1.2'),
+            ])
+
+            // CM → Alpine: solo en docChanged (no en selección / scroll /
+            // otras transacciones) para no spamear reactivity. Bind
+            // explícito porque el callback corre fuera del proxy de Alpine.
+            const updateListener = EditorView.updateListener.of(function (update) {
+              if (update.docChanged) {
+                this.editorHtml = update.state.doc.toString()
+              }
             }.bind(this))
-          })
+
+            const state = EditorState.create({
+              doc: this.editorHtml || '',
+              extensions: [
+                lineNumbers(),
+                history(),
+                keymap.of([defaultKeymap, historyKeymap]),
+                // lang-html() reconoce <script>/<style> embebidos y los
+                // tokeniza con JS/CSS automáticamente — no hay que
+                // registrar lenguajes aparte.
+                html(),
+                oneDark,
+                EditorView.theme({
+                  '&': { height: '100%', fontSize: '13px' },
+                  '.cm-scroller': { overflow: 'auto' },
+                  '.cm-gutters': { backgroundColor: 'transparent', borderRight: '1px solid rgba(255,255,255,0.05)' },
+                }, { dark: true }),
+                updateListener,
+              ],
+            })
+
+            this._cmEditorView = new EditorView({ state, parent: container })
+          })()
+          await this._cmReady
         },
 
-        // Alpine → Monaco: llamarlo desde TODO lugar que hoy asigna
-        // editorHtml directamente sin pasar por _resetEditorState (la
-        // carga inicial de una nueva versión, etc.). No-op seguro si
-        // Monaco todavía no montó (primera carga de box antes de que
-        // _monacoReady resuelva).
-        _syncMonacoValue(html) {
-          if (this._monacoEditor && this._monacoEditor.getValue() !== html) {
-            this._monacoEditor.setValue(html || '')
-          }
+        // Alpine → CM: llamarlo cuando HTML cambia por fuera del editor
+        // (carga de box, IA, formatear). No-op seguro si CM todavía no
+        // montó (primera carga antes de que _cmReady resuelva).
+        _syncCMValue(html) {
+          if (!this._cmEditorView) return
+          const view = this._cmEditorView
+          const current = view.state.doc.toString()
+          const next = html || ''
+          if (current === next) return
+          view.dispatch({
+            changes: { from: 0, to: current.length, insert: next },
+          })
         },
 
         get previewSrcdoc() {
@@ -758,27 +779,27 @@
         },
 
         formatHTML() {
-          // Si Monaco está cargado, usar su formateador nativo (sí entiende
-          // HTML+JS+CSS embebido; el reindentHtml casero no). Si el CDN
-          // está caído y Monaco no montó, usar reindentHtml como fallback.
-          if (this._monacoEditor) {
-            this._monacoReady
-              .then(() => this._monacoEditor.getAction('editor.action.formatDocument').run())
-              .then(() => {
-                this.editorHtml = this._monacoEditor.getValue()
-                this.showToast('HTML formateado.')
+          // js-beautify (UMD cargado en shell.html.txt) maneja HTML+JS+CSS
+          // embebido decentemente. Si el CDN está caído y window.html_beautify
+          // no existe, caemos a reindentHtml offline (best-effort).
+          if (typeof window.html_beautify === 'function') {
+            try {
+              this.editorHtml = window.html_beautify(this.editorHtml || '', {
+                indent_size: 2,
+                wrap_line_length: 0,
+                preserve_newlines: true,
               })
-              .catch((err) => {
-                console.warn('Monaco format falló, usando fallback:', err)
-                this.editorHtml = reindentHtml(this.editorHtml || '')
-                this._syncMonacoValue(this.editorHtml)
-                this.showToast('HTML re-indentado (fallback).')
-              })
-            return
+              this._syncCMValue(this.editorHtml)
+              this.showToast('HTML formateado.')
+              return
+            } catch (err) {
+              console.warn('js-beautify falló, usando reindentHtml:', err)
+            }
           }
-          // Fallback: Monaco no cargó (CDN caído). reindentHtml es offline.
+          // Fallback offline.
           this.editorHtml = reindentHtml(this.editorHtml || '')
-          this.showToast('HTML re-indentado (fallback — Monaco no cargó).')
+          this._syncCMValue(this.editorHtml)
+          this.showToast('HTML re-indentado (fallback — js-beautify no cargó).')
         },
 
         showToast(msg, duration = 3000) {
@@ -794,8 +815,8 @@
             if (!silent) this.showToast('Seleccioná un box antes de analizar.')
             return
           }
-          // La IA necesita el HTML completo. Con Monaco siempre es
-          // editorHtml directamente — no hay vista parcial.
+          // La IA necesita el HTML completo. editorHtml directamente — no hay
+          // vista parcial.
           const fullHtml = this.editorHtml || ''
           if (!fullHtml || !fullHtml.trim()) {
             if (!silent) this.showToast('Escribí o pegá HTML antes de analizar.')
@@ -860,8 +881,7 @@
             // el HTML, guarda nueva versión. Por eso mandamos el HTML actual
             // del editor (no el que tenía el server cuando se hizo el
             // análisis): si el tenant editó el box, queremos que el apply
-            // corra sobre lo que está viendo AHORA. Con Monaco siempre es
-            // editorHtml directamente.
+            // corra sobre lo que está viendo AHORA. editorHtml directo.
             const result = await apiFetch(`${CONTROL_PLANE}/api/ai/analyses/${this.aiSchema.analysisId}/apply`, {
               method: 'POST',
               body: { html: this.editorHtml || '' },

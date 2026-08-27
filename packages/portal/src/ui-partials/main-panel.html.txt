@@ -105,8 +105,8 @@
                 </label>
               </div>
             </div>
-            <div x-ref="monacoContainer"
-                 x-effect="activeTab === 'editor' && mountMonacoIfNeeded()"
+            <div x-ref="cmContainer"
+                 x-effect="activeTab === 'editor' && mountCMIfNeeded()"
                  class="flex-1 w-full code-editor"></div>
           </div>
 

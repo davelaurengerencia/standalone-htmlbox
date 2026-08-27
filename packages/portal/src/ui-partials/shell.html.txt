@@ -9,13 +9,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <!-- Monaco editor (htmlbox-spec-monaco-editor.md): el loader AMD se carga
-       ANTES de Alpine (defer) para que window.require esté disponible cuando
-       initMonaco() corra. El editor real + lenguajes + workers se descargan
-       lazy la primera vez que se monta el editor; quedan cacheados por el
-       browser entre sesiones. Solo afecta el portal, nunca el HTML
-       publicado de un box. -->
-  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs/loader.js"></script>
+  <!-- js-beautify UMD (~200KB) — usado por el botón Formatear (ver
+       formatHTML() en portalApp). CodeMirror 6 NO se carga con <script>:
+       es ESM puro, se importa dinámicamente desde initCM() cuando el
+       usuario abre la tab editor (cero costo inicial para quien no edita).
+       Ver htmlbox-spec-codemirror-editor.md. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.11/beautify-html.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js" defer></script>
 
   <style>
