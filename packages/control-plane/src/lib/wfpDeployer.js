@@ -5,21 +5,22 @@
 // mismo criterio que ya usa Turso (best-effort: la box queda creada
 // aunque el provisioning falle).
 //
-// Endpoint Cloudflare (REST, módulo format):
+// Endpoint Cloudflare (REST, módulo format, multipart/form-data):
 //   PUT /accounts/{accountId}/workers/dispatch/namespaces/{namespace}/scripts/{scriptName}
 //   Authorization: Bearer {WFP_DEPLOY_TOKEN}     (scoped: solo namespace)
-//   Content-Type: application/json
-//   Body: {
-//     "metadata": { "main_module": "box-worker.mjs", "bindings": [...] },
-//     "files":    [{ "name": "box-worker.mjs", "content": "<base64>",
-//                    "type": "application/javascript+module" }]
-//   }
+//
+// Body: multipart con dos parts:
+//   - metadata: JSON con { main_module, bindings, compatibility_date, ... }
+//   - box-worker.mjs: el bundle (application/javascript+module)
+//
+// La API oficial (Cloudflare docs 2026-05-05) usa multipart — NO JSON
+// envuelto con base64. Cualquier approach con `application/json` +
+// `files[].content` base64 va a fallar con 415 (Unsupported Media Type).
+// Workers tienen FormData nativo desde 2023.
 //
 // El bundle del per-box script NO se lee desde disco en runtime (Workers
-// no tienen node:fs). Se importa vía wrangler Text rule — ver
-// control-plane/wrangler.jsonc "src/ui-partials/*.mjs.txt". El sync
-// lo hace packages/runtime-box-worker/scripts/build.mjs como postbuild
-// step.
+// no tienen node:fs). Se importa vía el módulo ESM generado por
+// packages/runtime-box-worker/scripts/build.mjs (postbuild step).
 //
 // Por qué no usamos la SDK cloudflare (`workersForPlatforms.dispatch.namespaces.scripts.update`):
 // suma ~1 MB al bundle. Para UN solo PUT es preferible REST directo.
@@ -45,20 +46,6 @@ function buildBindings(env) {
   return bindings
 }
 
-// Convierte el bundle source (string UTF-8) a base64 puro. Cloudflare
-// espera base64 estándar en `files[].content`.
-//
-// Usamos TextEncoder para UTF-8 correcto (caracteres > U+00FF se expanden
-// a multi-byte). TextEncoder existe tanto en Workers isolate como en Node.
-function bundleSourceToBase64(source) {
-  const bytes = new TextEncoder().encode(source)
-  let bin = ''
-  // btoa() solo acepta Latin-1 byte por byte; cada byte 0..255 se mapea
-  // 1:1 a un char de Latin-1, así que es seguro.
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
-  return btoa(bin)
-}
-
 // Valida los inputs antes de gastar el PUT.
 function assertValid(boxId, namespace) {
   if (!BOX_ID_PATTERN.test(boxId)) {
@@ -67,6 +54,18 @@ function assertValid(boxId, namespace) {
   if (!namespace || !/^[a-z][a-z0-9_-]{0,38}$/.test(namespace)) {
     throw new Error(`wfpDeployer: namespace inválido ${JSON.stringify(namespace)}`)
   }
+}
+
+// Arma el metadata JSON que va como part 'metadata' del multipart.
+// main_module tiene que matchear el nombre del archivo que vamos a
+// subir (box-{boxId}.mjs) — Cloudflare resuelve el módulo por ese path.
+function buildMetadataJson(env, fileName) {
+  return JSON.stringify({
+    main_module: fileName,
+    bindings: buildBindings(env),
+    compatibility_date: env.HTMLBOX_WFP_COMPAT_DATE || '2026-08-01',
+    compatibility_flags: ['nodejs_compat'],
+  })
 }
 
 // deployBoxWorker — deploya el per-box script al namespace WFP.
@@ -89,34 +88,33 @@ export async function deployBoxWorker(env, accountId, namespace, boxId, opts = {
   }
 
   const scriptName = `${SCRIPT_NAME_PREFIX}${boxId}`
+  const fileName = `${scriptName}.mjs`  // box-{boxId}.mjs — único por box
   const source = opts.bundleSource ?? BOX_WORKER_BUNDLE_SOURCE
-  const bundleBase64 = bundleSourceToBase64(source)
 
   const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/dispatch/namespaces/${encodeURIComponent(namespace)}/scripts/${encodeURIComponent(scriptName)}`
 
-  const body = {
-    metadata: {
-      main_module: 'box-worker.mjs',
-      bindings: buildBindings(env),
-      compatibility_date: env.HTMLBOX_WFP_COMPAT_DATE || '2026-08-01',
-      compatibility_flags: ['nodejs_compat'],
-    },
-    files: [
-      {
-        name: 'box-worker.mjs',
-        content: bundleBase64,
-        type: 'application/javascript+module',
-      },
-    ],
-  }
+  // FormData multipart — Workers tienen FormData nativo desde 2023.
+  // Sintaxis: formData.append(name, value, filename) para files.
+  // El filename del archivo (part) TIENE que matchear main_module en
+  // metadata — Cloudflare resuelve el módulo por ese path.
+  const form = new FormData()
+  form.append(
+    'metadata',
+    new Blob([buildMetadataJson(env, fileName)], { type: 'application/json' })
+  )
+  form.append(
+    fileName,
+    new Blob([source], { type: 'application/javascript+module' }),
+    fileName
+  )
 
   const res = await fetch(url, {
     method: 'PUT',
     headers: {
       'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
+      // NO seteamos Content-Type — fetch lo calcula del FormData (con boundary).
     },
-    body: JSON.stringify(body),
+    body: form,
   })
 
   if (!res.ok) {
@@ -160,5 +158,5 @@ export async function deleteBoxWorker(env, accountId, namespace, boxId) {
   return { ok: true }
 }
 
-// Hooks para tests (mockear bundleSource o buildBindings).
-export const _internal = { bundleSourceToBase64, buildBindings, assertValid }
+// Hooks para tests (mockear inputs).
+export const _internal = { buildBindings, assertValid, buildMetadataJson }

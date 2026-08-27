@@ -3,24 +3,43 @@
 // Mockeamos globalThis.fetch para capturar la request y validar:
 //   - URL exacta (account/namespace/script)
 //   - Authorization Bearer con token del env
-//   - Body shape: metadata.main_module, bindings, files[].type, files[].content es base64
-//   - bundle source está embebido en el base64
-//   - Mapeo de errores (4xx/5xx → throw con status + body)
+//   - Body multipart/form-data con parts 'metadata' (JSON) y 'box-worker.mjs'
+//   - Errores 4xx/5xx → throw con status + body
+//
+// 2026-05-05: Cloudflare cambió la API. El approach viejo de JSON envuelto
+// con files[].content base64 ya NO funciona — devuelve 415. Ahora hay
+// que usar multipart/form-data con la metadata como Blob JSON y el
+// archivo como Blob con content-type application/javascript+module.
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { deployBoxWorker, _internal } from '../lib/wfpDeployer.js'
+import { deployBoxWorker, deleteBoxWorker, _internal } from '../lib/wfpDeployer.js'
 
 const ACCOUNT_ID = 'bbd6bb71e68887eb0fa9cc8e872ed588'
 const NAMESPACE = 'htmlbox-boxes'
 const VALID_BOX = 'abcdef0123456789'
 
-// Stub mínimo de bundle — el wrapper real mide ~4 KB pero para tests
-// alcanza con verificar que el source viaja intacto al base64.
 const STUB_BUNDLE = '// stub per-box worker\nexport default { fetch() { return new Response("ok") } }\n'
 
 function jsonRes(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+}
+
+// Lee los parts de un FormData. Útil para validar metadata + archivo.
+async function readForm(form) {
+  const parts = {}
+  for (const [name, value] of form.entries()) {
+    if (value instanceof Blob) {
+      parts[name] = {
+        type: value.type,
+        size: value.size,
+        text: await value.text(),
+      }
+    } else {
+      parts[name] = String(value)
+    }
+  }
+  return parts
 }
 
 // ============ Validación de inputs ============
@@ -54,9 +73,9 @@ test('deployBoxWorker rechaza si WFP_DEPLOY_TOKEN no está en env', async () => 
   )
 })
 
-// ============ Validación del PUT ============
+// ============ Validación del PUT multipart ============
 
-test('deployBoxWorker hace PUT al endpoint correcto con auth Bearer', async () => {
+test('deployBoxWorker: URL exacta + Authorization Bearer', async () => {
   const orig = globalThis.fetch
   let capturedUrl, capturedInit
   globalThis.fetch = async (url, init) => {
@@ -73,17 +92,18 @@ test('deployBoxWorker hace PUT al endpoint correcto con auth Bearer', async () =
     assert.equal(capturedUrl, `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT_ID}/workers/dispatch/namespaces/${NAMESPACE}/scripts/box-${VALID_BOX}`)
     assert.equal(capturedInit.method, 'PUT')
     assert.match(capturedInit.headers.Authorization, /^Bearer tok-abc-123$/)
-    assert.equal(capturedInit.headers['Content-Type'], 'application/json')
+    // Importante: NO Content-Type explícito — fetch lo calcula del FormData.
+    assert.equal(capturedInit.headers['Content-Type'], undefined, 'fetch debe calcular el Content-Type del boundary')
   } finally {
     globalThis.fetch = orig
   }
 })
 
-test('deployBoxWorker: body metadata.main_module = "box-worker.mjs"', async () => {
+test('deployBoxWorker: body es multipart con parts "metadata" y "box-{boxId}.mjs"', async () => {
   const orig = globalThis.fetch
-  let capturedBody
+  let capturedInit
   globalThis.fetch = async (url, init) => {
-    capturedBody = JSON.parse(init.body)
+    capturedInit = init
     return jsonRes({ success: true })
   }
   try {
@@ -92,17 +112,20 @@ test('deployBoxWorker: body metadata.main_module = "box-worker.mjs"', async () =
       ACCOUNT_ID, NAMESPACE, VALID_BOX,
       { bundleSource: STUB_BUNDLE }
     )
-    assert.equal(capturedBody.metadata.main_module, 'box-worker.mjs')
+    assert.ok(capturedInit.body instanceof FormData, 'body debe ser FormData')
+    const parts = await readForm(capturedInit.body)
+    assert.ok(parts.metadata, 'debe tener part "metadata"')
+    assert.ok(parts[`box-${VALID_BOX}.mjs`], `debe tener part "box-${VALID_BOX}.mjs"`)
   } finally {
     globalThis.fetch = orig
   }
 })
 
-test('deployBoxWorker: bindings incluye BUCKET (R2) y HTMLBOX_CONTROL_PLANE_ORIGIN', async () => {
+test('deployBoxWorker: metadata JSON tiene main_module + bindings + compat', async () => {
   const orig = globalThis.fetch
-  let capturedBody
+  let capturedInit
   globalThis.fetch = async (url, init) => {
-    capturedBody = JSON.parse(init.body)
+    capturedInit = init
     return jsonRes({ success: true })
   }
   try {
@@ -115,25 +138,30 @@ test('deployBoxWorker: bindings incluye BUCKET (R2) y HTMLBOX_CONTROL_PLANE_ORIG
       ACCOUNT_ID, NAMESPACE, VALID_BOX,
       { bundleSource: STUB_BUNDLE }
     )
-    const bindings = capturedBody.metadata.bindings
-    const r2 = bindings.find(b => b.name === 'BUCKET')
-    const origin = bindings.find(b => b.name === 'HTMLBOX_CONTROL_PLANE_ORIGIN')
+    const parts = await readForm(capturedInit.body)
+    assert.equal(parts.metadata.type, 'application/json')
+    const meta = JSON.parse(parts.metadata.text)
+    assert.equal(meta.main_module, 'box-abcdef0123456789.mjs')
+    const r2 = meta.bindings.find(b => b.name === 'BUCKET')
+    const origin = meta.bindings.find(b => b.name === 'HTMLBOX_CONTROL_PLANE_ORIGIN')
     assert.ok(r2, 'BUCKET binding presente')
     assert.equal(r2.type, 'r2_bucket')
     assert.equal(r2.bucket_name, 'htmlbox-content')
     assert.ok(origin, 'origin binding presente')
     assert.equal(origin.type, 'plain_text')
     assert.equal(origin.text, 'https://controlplane.htmlbox.dev')
+    assert.equal(meta.compatibility_date, '2026-08-01')
+    assert.deepEqual(meta.compatibility_flags, ['nodejs_compat'])
   } finally {
     globalThis.fetch = orig
   }
 })
 
-test('deployBoxWorker: file content es base64 válido del bundle source', async () => {
+test('deployBoxWorker: part "box-{boxId}.mjs" tiene content-type application/javascript+module', async () => {
   const orig = globalThis.fetch
-  let capturedBody
+  let capturedInit
   globalThis.fetch = async (url, init) => {
-    capturedBody = JSON.parse(init.body)
+    capturedInit = init
     return jsonRes({ success: true })
   }
   try {
@@ -142,32 +170,11 @@ test('deployBoxWorker: file content es base64 válido del bundle source', async 
       ACCOUNT_ID, NAMESPACE, VALID_BOX,
       { bundleSource: STUB_BUNDLE }
     )
-    const file = capturedBody.files[0]
-    assert.equal(file.name, 'box-worker.mjs')
-    assert.equal(file.type, 'application/javascript+module')
-    // Decodificar base64 y verificar que matchea el source original.
-    const decoded = atob(file.content)
-    assert.equal(decoded, STUB_BUNDLE, 'base64 round-trip preserva el bundle')
-  } finally {
-    globalThis.fetch = orig
-  }
-})
-
-test('deployBoxWorker: compatibility_date default = 2026-08-01', async () => {
-  const orig = globalThis.fetch
-  let capturedBody
-  globalThis.fetch = async (url, init) => {
-    capturedBody = JSON.parse(init.body)
-    return jsonRes({ success: true })
-  }
-  try {
-    await deployBoxWorker(
-      { WFP_DEPLOY_TOKEN: 't' },
-      ACCOUNT_ID, NAMESPACE, VALID_BOX,
-      { bundleSource: STUB_BUNDLE }
-    )
-    assert.equal(capturedBody.metadata.compatibility_date, '2026-08-01')
-    assert.deepEqual(capturedBody.metadata.compatibility_flags, ['nodejs_compat'])
+    const parts = await readForm(capturedInit.body)
+    const fileKey = `box-${VALID_BOX}.mjs`
+    assert.equal(parts[fileKey].type, 'application/javascript+module')
+    assert.equal(parts[fileKey].size, STUB_BUNDLE.length)
+    assert.equal(parts[fileKey].text, STUB_BUNDLE, 'contenido del bundle preservado')
   } finally {
     globalThis.fetch = orig
   }
@@ -175,9 +182,9 @@ test('deployBoxWorker: compatibility_date default = 2026-08-01', async () => {
 
 test('deployBoxWorker: compatibility_date override desde env', async () => {
   const orig = globalThis.fetch
-  let capturedBody
+  let capturedInit
   globalThis.fetch = async (url, init) => {
-    capturedBody = JSON.parse(init.body)
+    capturedInit = init
     return jsonRes({ success: true })
   }
   try {
@@ -186,7 +193,9 @@ test('deployBoxWorker: compatibility_date override desde env', async () => {
       ACCOUNT_ID, NAMESPACE, VALID_BOX,
       { bundleSource: STUB_BUNDLE }
     )
-    assert.equal(capturedBody.metadata.compatibility_date, '2027-01-01')
+    const parts = await readForm(capturedInit.body)
+    const meta = JSON.parse(parts.metadata.text)
+    assert.equal(meta.compatibility_date, '2027-01-01')
   } finally {
     globalThis.fetch = orig
   }
@@ -194,9 +203,9 @@ test('deployBoxWorker: compatibility_date override desde env', async () => {
 
 test('deployBoxWorker: HTMLBOX_PUBLIC_ORIGIN fallback a HTMLBOX_RUNTIME_ORIGIN', async () => {
   const orig = globalThis.fetch
-  let capturedBody
+  let capturedInit
   globalThis.fetch = async (url, init) => {
-    capturedBody = JSON.parse(init.body)
+    capturedInit = init
     return jsonRes({ success: true })
   }
   try {
@@ -205,7 +214,9 @@ test('deployBoxWorker: HTMLBOX_PUBLIC_ORIGIN fallback a HTMLBOX_RUNTIME_ORIGIN',
       ACCOUNT_ID, NAMESPACE, VALID_BOX,
       { bundleSource: STUB_BUNDLE }
     )
-    const origin = capturedBody.metadata.bindings.find(b => b.name === 'HTMLBOX_CONTROL_PLANE_ORIGIN')
+    const parts = await readForm(capturedInit.body)
+    const meta = JSON.parse(parts.metadata.text)
+    const origin = meta.bindings.find(b => b.name === 'HTMLBOX_CONTROL_PLANE_ORIGIN')
     assert.equal(origin.text, 'https://runtime.htmlbox.dev', 'fallback a RUNTIME_ORIGIN')
   } finally {
     globalThis.fetch = orig
@@ -248,7 +259,7 @@ test('deployBoxWorker: error 5xx de Cloudflare → throw con status', async () =
   }
 })
 
-test('deployBoxWorker: error body se incluye en el mensaje (primeros 500 chars)', async () => {
+test('deployBoxWorker: error body se trunca a 500 chars', async () => {
   const orig = globalThis.fetch
   const longBody = 'X'.repeat(1000)
   globalThis.fetch = async () => new Response(longBody, { status: 502 })
@@ -260,10 +271,9 @@ test('deployBoxWorker: error body se incluye en el mensaje (primeros 500 chars)'
         { bundleSource: STUB_BUNDLE }
       ),
       (err) => {
-        // El mensaje trunca a 500 chars del body + headers
         assert.match(err.message, /Cloudflare respondió 502/)
         assert.match(err.message, /X{500}/, 'primeros 500 X del body')
-        assert.doesNotMatch(err.message, /X{600}/, 'no debería incluir los 1000 chars completos')
+        assert.doesNotMatch(err.message, /X{600}/, 'no debería incluir los 1000 chars')
         return true
       }
     )
@@ -287,31 +297,60 @@ test('deployBoxWorker happy path devuelve { ok: true, scriptName }', async () =>
   }
 })
 
+// ============ deleteBoxWorker ============
+
+test('deleteBoxWorker happy path (200) → { ok: true }', async () => {
+  const orig = globalThis.fetch
+  globalThis.fetch = async () => jsonRes({ success: true })
+  try {
+    const out = await deleteBoxWorker({ WFP_DEPLOY_TOKEN: 't' }, ACCOUNT_ID, NAMESPACE, VALID_BOX)
+    assert.deepEqual(out, { ok: true })
+  } finally {
+    globalThis.fetch = orig
+  }
+})
+
+test('deleteBoxWorker: 404 (script no existe) → { ok: true, idempotent: true }', async () => {
+  const orig = globalThis.fetch
+  globalThis.fetch = async () => jsonRes({ errors: [{ message: 'script not found' }] }, 404)
+  try {
+    const out = await deleteBoxWorker({ WFP_DEPLOY_TOKEN: 't' }, ACCOUNT_ID, NAMESPACE, VALID_BOX)
+    assert.deepEqual(out, { ok: true, idempotent: true })
+  } finally {
+    globalThis.fetch = orig
+  }
+})
+
+test('deleteBoxWorker: error 5xx → throw', async () => {
+  const orig = globalThis.fetch
+  globalThis.fetch = async () => jsonRes({ errors: [{ message: 'fail' }] }, 503)
+  try {
+    await assert.rejects(
+      () => deleteBoxWorker({ WFP_DEPLOY_TOKEN: 't' }, ACCOUNT_ID, NAMESPACE, VALID_BOX),
+      /Cloudflare respondió 503/
+    )
+  } finally {
+    globalThis.fetch = orig
+  }
+})
+
+test('deleteBoxWorker: valida boxId antes de gastar DELETE', async () => {
+  await assert.rejects(
+    () => deleteBoxWorker({ WFP_DEPLOY_TOKEN: 't' }, ACCOUNT_ID, NAMESPACE, 'corto'),
+    /boxId inválido/
+  )
+})
+
 // ============ _internal helpers ============
-
-test('_internal.bundleSourceToBase64 round-trip preserva contenido (UTF-8 correcto)', () => {
-  const src = 'hola ñandú 中文 🚀\n'
-  const b64 = _internal.bundleSourceToBase64(src)
-  // El round-trip es: src (string UTF-8) → TextEncoder.encode (bytes UTF-8)
-  // → string Latin-1 → btoa (base64). Al revés: atob (Latin-1 string) →
-  // TextDecoder (string UTF-8).
-  const latin1 = atob(b64)
-  const bytes = new Uint8Array(latin1.length)
-  for (let i = 0; i < latin1.length; i++) bytes[i] = latin1.charCodeAt(i)
-  const decoded = new TextDecoder().decode(bytes)
-  assert.equal(decoded, src)
-})
-
-test('_internal.bundleSourceToBase64 maneja strings largos', () => {
-  const src = 'X'.repeat(8000)
-  const b64 = _internal.bundleSourceToBase64(src)
-  const latin1 = atob(b64)
-  assert.equal(latin1.length, 8000, 'Latin-1 string debe tener 1 char por byte')
-  assert.match(latin1, /^X+$/, 'Latin-1 puro preserva bytes')
-})
 
 test('_internal.buildBindings default sin HTMLBOX_PUBLIC_ORIGIN → texto vacío', () => {
   const b = _internal.buildBindings({})
   const origin = b.find(x => x.name === 'HTMLBOX_CONTROL_PLANE_ORIGIN')
   assert.equal(origin.text, '')
+})
+
+test('_internal.buildMetadataJson devuelve JSON parseable con main_module esperado', () => {
+  const json = _internal.buildMetadataJson({ HTMLBOX_RUNTIME_ORIGIN: 'https://r.example' }, 'box-abc.mjs')
+  const meta = JSON.parse(json)
+  assert.equal(meta.main_module, 'box-abc.mjs')
 })

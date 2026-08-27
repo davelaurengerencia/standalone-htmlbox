@@ -16,7 +16,7 @@
     "inspector_ip": "127.0.0.1"
   },
 
-  "vars": {
+"vars": {
     "HTMLBOX_ENV": "production",
     "HTMLBOX_TURSO_MODE": "cloud",
     "HTMLBOX_SESSION_DOMAIN": ".htmlbox.dev",
@@ -26,7 +26,9 @@
     "HTMLBOX_EMAIL_MODE": "prod",
     "HTMLBOX_EMAIL_FROM_ADDRESS": "no-reply@htmlbox.dev",
     "HTMLBOX_EMAIL_FROM_NAME": "HTMLBox",
-    "HTMLBOX_ADMIN_VERSION": "0.1.0"
+    "HTMLBOX_ADMIN_VERSION": "0.1.0",
+    "HTMLBOX_CLOUDFLARE_ACCOUNT_ID": "bbd6bb71e68887eb0fa9cc8e872ed588",
+    "HTMLBOX_WFP_NAMESPACE": "htmlbox-boxes"
   },
 
   "d1_databases": [
