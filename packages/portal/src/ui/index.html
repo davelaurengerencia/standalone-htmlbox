@@ -299,7 +299,7 @@
 
           <!-- Preview -->
           <div x-show="activeTab === 'preview'" class="absolute inset-0 flex flex-col bg-slate-900">
-            <iframe x-show="currentBox" :srcdoc="previewSrcdoc" sandbox="allow-scripts allow-modals allow-forms allow-same-origin" class="w-full h-full border-0 bg-white"></iframe>
+            <iframe x-show="currentBox" :srcdoc="previewSrcdoc" sandbox="allow-scripts allow-modals allow-forms" class="w-full h-full border-0 bg-white"></iframe>
             <div x-show="!currentBox" class="flex items-center justify-center h-full text-slate-500 text-sm">
               Seleccioná o creá un box para previsualizarlo.
             </div>
@@ -324,7 +324,7 @@
                 <button @click="formatHTML()" class="hover:text-white transition" title="Re-formatear indentación">
                   <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Formatear
                 </button>
-                <button @click="aiAnalyze()" :disabled="aiAnalyzing || !editorHtml.trim()"
+                <button @click="aiAnalyze()" :disabled="aiAnalyzing || !editorHtml.trim() || !currentBox"
                         class="px-3 py-1 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 rounded-lg text-xs font-medium transition flex items-center gap-1">
                   <i class="fa-solid" :class="aiAnalyzing ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'"></i>
                   <span x-text="aiAnalyzing ? 'Analizando…' : 'Analizar con IA'"></span>
@@ -332,8 +332,8 @@
                 <span class="text-slate-700">|</span>
                 <span><span x-text="editorHtml.length"></span> caracteres</span>
                 <label class="hidden lg:flex items-center gap-2 text-xs text-slate-400 ml-1 pl-3 border-l border-slate-800">
-                  <input type="checkbox" x-model="currentBox.auto_analyze_on_save" @change="toggleAutoAnalyze()"
-                         :disabled="updatingAutoAnalyze" class="rounded">
+                  <input type="checkbox" :checked="!!(currentBox && currentBox.auto_analyze_on_save)" @change="toggleAutoAnalyze($event)"
+                         :disabled="updatingAutoAnalyze || !currentBox" class="rounded">
                   Auto-IA al guardar
                 </label>
               </div>
@@ -1242,7 +1242,7 @@
             if (fresh) await this.selectBox(fresh)
             this.activeTab = 'preview'
             this.showToast(`Guardado como v${confData.version}.`)
-            if (this.currentBox.auto_analyze_on_save) {
+            if (this.currentBox && this.currentBox.auto_analyze_on_save) {
               this.aiAutoAnalyzePending = true
               this.aiAnalyze({ silent: true }).then(() => {
                 this.aiAutoAnalyzePending = false
@@ -1400,7 +1400,14 @@
         // --------- AI (fase 4 v1) ---------
 
         async aiAnalyze({ silent = false } = {}) {
-          if (!this.currentBox || !this.editorHtml.trim()) return
+          if (!this.currentBox) {
+            if (!silent) this.showToast('Seleccioná un box antes de analizar.')
+            return
+          }
+          if (!this.editorHtml || !this.editorHtml.trim()) {
+            if (!silent) this.showToast('Escribí o pegá HTML antes de analizar.')
+            return
+          }
           this.aiAnalyzing = true
           if (silent) this.aiAutoAnalyzePending = true
           try {
@@ -1477,20 +1484,28 @@
           }
         },
 
-        async toggleAutoAnalyze() {
+async toggleAutoAnalyze(evt) {
           if (!this.currentBox) return
+          const newValue = !!(evt && evt.target && evt.target.checked)
+          if (typeof this.currentBox.auto_analyze_on_save === 'boolean') {
+            this.currentBox.auto_analyze_on_save = newValue
+          } else {
+            this.currentBox = { ...this.currentBox, auto_analyze_on_save: newValue }
+          }
           this.updatingAutoAnalyze = true
           try {
-            const r = await fetch(`${CONTROL_PLANE}/api/boxes/${this.currentBox.id}`, {
+            await fetch(`${CONTROL_PLANE}/api/boxes/${this.currentBox.id}`, {
               method: 'PATCH',
               credentials: 'include',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ auto_analyze_on_save: !!this.currentBox.auto_analyze_on_save })
+              body: JSON.stringify({ auto_analyze_on_save: newValue })
             })
-            if (!r.ok) {
-              const err = await r.json().catch(() => ({}))
-              this.showToast('Auto-IA: ' + (err.error || `HTTP ${r.status}`))
-            }
+          } catch (err) {
+            this.toast = 'Auto-IA: ' + err.message
+          } finally {
+            this.updatingAutoAnalyze = false
+          }
+        }
           } catch (err) {
             this.showToast('Auto-IA: ' + err.message)
           } finally {
@@ -1585,10 +1600,15 @@
         previewLoading: false,
 
         async init() {
+          if (!this.$root.currentBox) return
           await this.loadTables()
         },
 
         async loadTables() {
+          if (!this.$root.currentBox) {
+            this.tables = []
+            return
+          }
           this.loadingTables = true
           try {
             const r = await fetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables`, {
