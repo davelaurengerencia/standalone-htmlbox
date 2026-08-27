@@ -1484,7 +1484,7 @@
           }
         },
 
-async toggleAutoAnalyze(evt) {
+        async toggleAutoAnalyze(evt) {
           if (!this.currentBox) return
           const newValue = !!(evt && evt.target && evt.target.checked)
           if (typeof this.currentBox.auto_analyze_on_save === 'boolean') {
@@ -1502,12 +1502,6 @@ async toggleAutoAnalyze(evt) {
             })
           } catch (err) {
             this.toast = 'Auto-IA: ' + err.message
-          } finally {
-            this.updatingAutoAnalyze = false
-          }
-        }
-          } catch (err) {
-            this.showToast('Auto-IA: ' + err.message)
           } finally {
             this.updatingAutoAnalyze = false
           }
