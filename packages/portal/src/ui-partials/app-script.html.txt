@@ -656,18 +656,10 @@
           this.aiAnalyzing = true
           if (silent) this.aiAutoAnalyzePending = true
           try {
-            const r = await fetch(`${CONTROL_PLANE}/api/ai/analyze-html`, {
+            const data = await apiFetch(`${CONTROL_PLANE}/api/ai/analyze-html`, {
               method: 'POST',
-              credentials: 'include',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ boxId: this.currentBox.id, html: this.editorHtml })
+              body: { boxId: this.currentBox.id, html: this.editorHtml },
             })
-            if (!r.ok) {
-              const err = await r.json().catch(() => ({}))
-              this.showToast('IA: ' + (err.error || `HTTP ${r.status}`))
-              return
-            }
-            const data = await r.json()
             if (!data.tables || data.tables.length === 0) {
               this.showToast('La IA no propuso tablas para este HTML.')
               return
@@ -682,7 +674,7 @@
               this.aiPendingReview = false
             }
           } catch (err) {
-            this.showToast('IA: ' + err.message)
+            this.showToast('IA: ' + (err.code || err.message))
           } finally {
             this.aiAnalyzing = false
             this.aiAutoAnalyzePending = false
@@ -698,23 +690,14 @@
           this.aiApplying = true
           try {
             if (this.aiSchema && this.aiSchema.analysisId) {
-              await fetch(`${CONTROL_PLANE}/api/ai/analyses/${this.aiSchema.analysisId}/apply`, {
+              await apiFetch(`${CONTROL_PLANE}/api/ai/analyses/${this.aiSchema.analysisId}/apply`, {
                 method: 'POST',
-                credentials: 'include'
               })
             }
-            const r = await fetch(`${RUNTIME}/api/data/${this.currentBox.id}/tables/bulk-create`, {
+            const result = await apiFetch(`${RUNTIME}/api/data/${this.currentBox.id}/tables/bulk-create`, {
               method: 'POST',
-              credentials: 'include',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ tables: this.aiModalEdited })
+              body: { tables: this.aiModalEdited },
             })
-            if (!r.ok) {
-              const err = await r.json().catch(() => ({}))
-              this.showToast('Aplicar: ' + (err.error || `HTTP ${r.status}`))
-              return
-            }
-            const result = await r.json()
             const created = result.created?.length || 0
             const errors = result.errors?.length || 0
             this.showToast(`Creadas ${created} tabla(s)${errors ? `, ${errors} error(es)` : ''}.`)
@@ -723,7 +706,7 @@
               await this.$refs.dataTabRef.loadTables()
             }
           } catch (err) {
-            this.showToast('Aplicar: ' + err.message)
+            this.showToast('Aplicar: ' + (err.code || err.message))
           } finally {
             this.aiApplying = false
           }
@@ -739,14 +722,12 @@
           }
           this.updatingAutoAnalyze = true
           try {
-            await fetch(`${CONTROL_PLANE}/api/boxes/${this.currentBox.id}`, {
+            await apiFetch(`${CONTROL_PLANE}/api/boxes/${this.currentBox.id}`, {
               method: 'PATCH',
-              credentials: 'include',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ auto_analyze_on_save: newValue })
+              body: { auto_analyze_on_save: newValue },
             })
           } catch (err) {
-            this.toast = 'Auto-IA: ' + err.message
+            this.toast = 'Auto-IA: ' + (err.code || err.message)
           } finally {
             this.updatingAutoAnalyze = false
           }
@@ -755,15 +736,10 @@
         async aiLoadHistory() {
           if (!this.currentBox) return
           try {
-            const r = await fetch(`${CONTROL_PLANE}/api/ai/analyses?boxId=${this.currentBox.id}`, {
-              credentials: 'include'
-            })
-            if (r.ok) {
-              const data = await r.json()
-              this.aiHistory = data.analyses || []
-            }
+            const data = await apiFetch(`${CONTROL_PLANE}/api/ai/analyses?boxId=${this.currentBox.id}`)
+            this.aiHistory = data.analyses || []
           } catch (err) {
-            console.error('aiLoadHistory:', err)
+            debugLog('aiLoadHistory:', err)
           }
         },
 
