@@ -1,7 +1,9 @@
-# HTMLBox — Guía de prueba local (sin Cloudflare)
+# HTMLBox — Guía de desarrollo local
 
-Esta guía describe cómo correr el ciclo E2E completo de HTMLBox en tu máquina,
-sin necesidad de desplegar nada a Cloudflare.
+Esta guía describe cómo correr el ciclo E2E completo de HTMLBox contra el D1
+remoto de Cloudflare, sin necesidad de desplegar nada. El código corre local
+(workerd) pero los bindings D1/R2/KV pegan contra la API real de Cloudflare
+(`wrangler dev --remote`), así que dev = prod en datos.
 
 ---
 
@@ -10,12 +12,14 @@ sin necesidad de desplegar nada a Cloudflare.
 | Herramienta | Uso | Comando de instalación |
 |---|---|---|
 | Node ≥ 18 | runtime | `brew install node` |
-| wrangler ≥ 3 | CLI de Cloudflare | viene con el repo (`npm install`) |
-| turso CLI | sqld local (mock de Turso) | `brew install turso` o `curl -sSfL https://get.turso.io/install.sh \| bash` |
+| wrangler ≥ 4 | CLI de Cloudflare | viene con el repo (`npm install`) |
+| Autenticación CF | hablar con tu cuenta | `wrangler login` o `export CLOUDFLARE_API_TOKEN=…` |
 
-Opcional (para el ciclo de subida de HTML real):
-
-- `node >= 18.17` por el módulo `crypto.subtle` (ya disponible).
+> En macOS los subdominios `*.localhost` resuelven solos a `127.0.0.1`. En Linux
+> agregá a `/etc/hosts`:
+> ```
+> 127.0.0.1   controlplane.localhost portal.localhost runtime.localhost
+> ```
 
 ---
 
@@ -35,9 +39,15 @@ Los archivos `.dev.vars.example` traen placeholders seguros — no hace falta ed
 para dev. Lo único que SÍ querés cambiar antes de producción es
 `HTMLBOX_SESSION_SECRET` (clave HMAC para firmar cookies).
 
+Verificá que estés autenticado:
+
+```bash
+npx wrangler whoami
+```
+
 ---
 
-## 2) Levantar los 3 Workers + sqld local
+## 2) Levantar los 3 Workers (D1 remoto)
 
 ### Opción A — script todo-en-uno
 
@@ -46,33 +56,31 @@ npm run dev
 ```
 
 Esto ejecuta `scripts/dev.sh`, que:
-1. Inicia `turso dev --port 8080` (sqld local, queda corriendo en background).
-2. Aplica las migrations D1 a la base local (`wrangler d1 migrations apply --local`).
-3. Levanta los 3 wrangler dev en paralelo:
-   - `http://localhost:8781` — control-plane (API + UI admin)
-   - `http://localhost:8782` — portal (UI Alpine del tenant)
-   - `http://localhost:8783` — runtime (sirve los boxes publicados)
+1. Mata workerd/wrangler zombi de runs previos en los puertos 8781-8783 / 9229-9231.
+2. Verifica que estés autenticado en Cloudflare.
+3. Aplica las migrations D1 a la base remota (`wrangler d1 migrations apply --remote`).
+4. Levanta los 3 wrangler dev con `--remote` en paralelo:
+   - `http://controlplane.localhost:8781` — control-plane (API + UI admin)
+   - `http://portal.localhost:8782` — portal (UI Alpine del tenant)
+   - `http://runtime.localhost:8783` — runtime (sirve los boxes publicados)
 
 ### Opción B — paso por paso
 
 ```bash
-# Terminal 1: sqld local
-turso dev --port 8080
+# Terminal 1: migraciones D1 a remoto
+npm run migrate:remote
 
-# Terminal 2: migraciones D1
-npm run migrate:local
-
-# Terminal 3: control-plane
+# Terminal 2: control-plane
 cd packages/control-plane
-npx wrangler dev --port 8781 --persist-to ./.wrangler
+npx wrangler dev --remote --persist-to ./.wrangler
 
-# Terminal 4: portal
+# Terminal 3: portal
 cd packages/portal
-npx wrangler dev --port 8782 --persist-to ./.wrangler
+npx wrangler dev --remote --persist-to ./.wrangler
 
-# Terminal 5: runtime
+# Terminal 4: runtime
 cd packages/runtime
-npx wrangler dev --port 8783 --persist-to ./.wrangler --local
+npx wrangler dev --remote --persist-to ./.wrangler
 ```
 
 ---
@@ -81,21 +89,22 @@ npx wrangler dev --port 8783 --persist-to ./.wrangler --local
 
 ### 3.1 UI Admin (control-plane)
 
-1. Abrí `http://localhost:8781/admin/` en el browser.
+1. Abrí `http://controlplane.localhost:8781/admin/` en el browser.
 2. En "Email", ingresá `david@ejemplo.com` y enviá el magic link.
 3. En la consola del control-plane (`npm run dev`), mirá el link de preview:
    ```
    [auth][dev] Magic link NO enviado. Pegá esto en el browser:
-     → http://localhost:8781/api/auth/verify?token=abcd…
+     → http://controlplane.localhost:8781/api/auth/verify?token=abcd…
    ```
 4. Abrilo en el browser — el HTML auto-POSTea al consume y te deja logueado.
 5. Creá un tenant (slug `acme`).
 
 ### 3.2 Portal (UI Alpine)
 
-1. Abrí `http://localhost:8782/`.
+1. Abrí `http://portal.localhost:8782/`.
 2. Iniciá sesión con el mismo email (`david@ejemplo.com`) — el portal habla con
-   el control-plane en `:8781` (configurado vía `window.HTMLBOX_API_ORIGIN`).
+   el control-plane en `http://controlplane.localhost:8781` (configurado vía
+   `window.HTMLBOX_API_ORIGIN`).
 3. Seleccioná el tenant "acme" en el sidebar.
 4. Click **"Nuevo HTML Box"** → nombre "Mi Dashboard" → plantilla "Dashboard de Cartera".
 5. En el tab **Editor HTML** vas a ver el seed. Click **"Guardar"** → confirma con
@@ -124,15 +133,15 @@ Para validar con curl:
 # 1) login (repetí el flujo del magic link en el browser; copiá la cookie 'sid')
 
 # 2) listar boxes de tu workspace
-curl -s "http://localhost:8781/api/boxes?workspace=<WS_ID>" \
+curl -s "http://controlplane.localhost:8781/api/boxes?workspace=<WS_ID>" \
   -H "Cookie: sid=<SID>" | jq
 
 # 3) ver historial de versiones
-curl -s "http://localhost:8781/api/boxes/<BOX_ID>/versions" \
+curl -s "http://controlplane.localhost:8781/api/boxes/<BOX_ID>/versions" \
   -H "Cookie: sid=<SID>" | jq
 
 # 4) rollback a v3
-curl -s -X POST "http://localhost:8781/api/boxes/<BOX_ID>/rollback/3" \
+curl -s -X POST "http://controlplane.localhost:8781/api/boxes/<BOX_ID>/rollback/3" \
   -H "Cookie: sid=<SID>" | jq
 # → {version: 7, ...}  (nunca destruye el historial)
 ```
@@ -141,15 +150,14 @@ curl -s -X POST "http://localhost:8781/api/boxes/<BOX_ID>/rollback/3" \
 
 ## 5) Modo R2 local-fake (sin Cloudflare R2)
 
-Por defecto `wrangler dev --local` simula el bucket R2 en `.wrangler/state/v3/r2/`,
-pero **no expone `createPresignedUrl()`** (es API-only de Cloudflare). Para que el
-ciclo de upload funcione end-to-end sin R2 real, el repo activa
-`HTMLBOX_R2_MODE=local-fake` en el `wrangler.jsonc` del control-plane.
+Por defecto `wrangler dev --remote` usa el bucket R2 real. Si querés trabajar
+offline (sin pegar contra Cloudflare para uploads), el repo expone
+`HTMLBOX_R2_MODE=local-fake` en el `.dev.vars` del control-plane. En ese modo:
 
-En este modo:
 - `POST /api/boxes/:id/upload-url` devuelve una URL que apunta al propio
   control-plane (`POST /api/_local/upload?key=...`).
-- El cliente hace PUT a esa URL y el server escribe a `env.BUCKET` directamente.
+- El cliente hace PUT a esa URL y el server escribe a `env.BUCKET` directamente
+  (con la API local del binding R2 simulado por workerd).
 - El endpoint `/api/_local/upload` solo está activo si
   `HTMLBOX_R2_MODE === 'local-fake'`. En producción, este var se setea a
   `"production"` (o se omite) y se usa el flujo real con `createPresignedUrl()`.
@@ -157,7 +165,7 @@ En este modo:
 Para verificar:
 
 ```bash
-curl -i "http://localhost:8781/api/_local/upload?key=tenants/acme/boxes/x/versions/v1.html" \
+curl -i "http://controlplane.localhost:8781/api/_local/upload?key=tenants/acme/boxes/x/versions/v1.html" \
   -X PUT -H "Content-Type: text/html" --data-binary '<html>test</html>'
 # → 200 OK con body JSON { ok: true, key, size }
 ```
@@ -191,7 +199,7 @@ TOTAL                   → 54 tests, 0 fallos
 Los tests E2E cubren:
 1. Auth flow completo (request → consume → me → logout).
 2. Tenant + workspace creation.
-3. Box creation (turso_status ready si sqld corre, failed si no).
+3. Box creation (turso_status).
 4. Versionado: 6 pushes → quedan 5 versiones, v1 purgada del bucket.
 5. Rollback crea nueva versión con el contenido anterior.
 6. Aislamiento entre tenants (403 cross-tenant).
@@ -200,36 +208,36 @@ Los tests E2E cubren:
 
 ---
 
-## 7) Limitaciones del modo local
+## 7) Limitaciones del modo dev
 
-| Funcionalidad | Estado en local |
+| Funcionalidad | Estado en dev |
 |---|---|
 | Magic link por email | No envía. Loguea + devuelve link en `_dev_preview`. |
-| `createPresignedUrl` (R2) | Reemplazado por URL local-fake. |
-| Cookies cross-host (`Domain=.htmlbox.dev`) | Caídas: en dev son host-only. |
-| Turso Platform API | Caída: se usa sqld local (`http://localhost:8080`). |
+| `createPresignedUrl` (R2) | Activo contra el bucket real (`--remote`). |
+| Cookies cross-host (`Domain=localhost`) | OK en dev — los 3 subdominios `*.localhost` comparten parent domain. |
+| D1 | Real (remoto). Los datos de dev conviven con prod en la misma DB; usá tenant/workspace distintos. |
+| Turso Platform API (boxes DB) | Habla con Turso real vía `--remote`. |
 | HTTPS | Solo HTTP. La cookie sid no lleva flag `Secure`. |
 | Cron trigger | No se dispara solo en `wrangler dev`. |
-| **`@tursodatabase/serverless` en el worker**: el client `connect()` no expone `.execute()` en el contexto de workerd sin hablar con sqld. Si sqld NO está corriendo, `createBoxDatabase` setea `turso_status='failed'` y el ciclo de boxes sigue funcionando (solo falla al intentar escribir datos en la DB del box — irrelevante en fase 1/2). |
 
 ---
 
 ## 8) Troubleshooting comunes
 
 **"no such table: htmlbox_magic_links"**
-Migrations no aplicadas. Corré `npm run migrate:local` o reiniciá `npm run dev` (las aplica automáticamente).
+Migrations no aplicadas. Corré `npm run migrate:remote` o reiniciá `npm run dev` (las aplica automáticamente al inicio).
 
-**"sqld no responde en http://localhost:8080"**
-No iniciaste `turso dev`. El portal puede seguir creando boxes (queda `turso_status=failed`) pero no se pueden leer/escribir datos del box. En fase 1/2 esto no bloquea.
+**"Address already in use: 127.0.0.1:9229"**
+Workerd huérfano. El script `dev.sh` ya los mata al arrancar; si lo levantás a mano, hacé `lsof -iTCP:9229` y `kill -9 <PID>`.
 
 **El portal no carga boxes (queda en blanco)**
-Probable CORS — el portal habla con `:8781`. Verificá que `wrangler.jsonc` del portal tenga `HTMLBOX_CONTROL_PLANE_ORIGIN: http://localhost:8781` y que el control-plane devuelva headers `Access-Control-Allow-Credentials: true` (ya está).
+Probable CORS — el portal habla con `controlplane.localhost:8781`. Verificá que `.dev.vars` del portal tenga `HTMLBOX_CONTROL_PLANE_ORIGIN: http://controlplane.localhost:8781` y que el control-plane devuelva headers `Access-Control-Allow-Credentials: true` (ya está).
 
 **El magic link no abre**
 El dev mode imprime el link por consola. Buscá la línea:
 ```
 [email][dev] Magic link NO enviado. Pegá esto en el browser:
-  → http://localhost:8781/api/auth/verify?token=…
+  → http://controlplane.localhost:8781/api/auth/verify?token=…
 ```
 
 **El runtime devuelve "Box sin versión publicada"**
@@ -237,7 +245,7 @@ El box no tiene `htmlbox_version` aún. Subí un HTML desde el portal primero.
 
 ---
 
-## 9) Producción (cuando vayas a Cloudflare)
+## 9) Producción (deploy a Cloudflare)
 
 1. Reemplazá los IDs placeholder en `wrangler.jsonc` (`database_id`, `kv namespace id`).
 2. Configurá secrets:

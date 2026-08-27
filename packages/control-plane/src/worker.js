@@ -93,7 +93,11 @@ export default {
 
     // Sirve la UI admin (Alpine.js)
     if (path.startsWith('/admin') || path === '/') {
-      if (path === '/') return Response.redirect(`${url.protocol}//${url.host}/admin/`, 302)
+      // En `wrangler dev --remote` request.url trae el host del edge
+      // (workers.dev), no el que vio el browser. Usamos env.HTMLBOX_PUBLIC_ORIGIN
+      // para que el redirect apunte al subdominio local en dev.
+      const adminOrigin = (env.HTMLBOX_PUBLIC_ORIGIN || `${url.protocol}//${url.host}`).replace(/\/+$/, '')
+      if (path === '/') return Response.redirect(`${adminOrigin}/admin/`, 302)
       // Trae el archivo desde ASSETS (binding wrangler).
       const assetPath = path === '/admin' || path === '/admin/'
         ? '/index.html'

@@ -9,11 +9,11 @@
     "test": "node --experimental-test-module-mocks --test __tests__/*.test.js"
   },
   "dependencies": {
-    "@htmlbox/shared": "*",
     "@htmlbox/control-plane": "*",
+    "@htmlbox/shared": "*",
     "@tursodatabase/serverless": "^0.1.0"
   },
   "devDependencies": {
-    "wrangler": "^3.114.0"
+    "wrangler": "^4.127.0"
   }
 }

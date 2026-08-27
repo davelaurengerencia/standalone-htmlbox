@@ -30,6 +30,24 @@ export function randomToken() {
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
+// Devuelve si la cookie de sesión debe llevar el flag `Secure`.
+//
+// En `wrangler dev --remote` request.url refleja el protocolo del edge
+// (https:) aunque el browser esté hablando HTTP con controlplane.localhost.
+// Si mandamos Secure, el browser rechaza el Set-Cookie porque él ve http://.
+//
+// Reglas:
+//   - Si HTMLBOX_COOKIE_SECURE está seteado explícito ('true'/'false'), gana.
+//   - Si el hostname del request es *.localhost o localhost, NO usar Secure.
+//   - Si no, deferir a request.url.protocol.
+function shouldUseSecureCookie(request, env) {
+  if (env.HTMLBOX_COOKIE_SECURE === 'true')  return true
+  if (env.HTMLBOX_COOKIE_SECURE === 'false') return false
+  const url = new URL(request.url)
+  if (url.hostname === 'localhost' || url.hostname.endsWith('.localhost')) return false
+  return url.protocol === 'https:'
+}
+
 // Devuelve el valor del atributo Domain de la cookie. '' = host-only (dev).
 //
 // Reglas:
@@ -157,7 +175,6 @@ export async function validateSession(env, sessionId) {
 
 export function buildSessionCookie(request, sessionId, env) {
   const domain = getCookieDomain(request, env)
-  const url = new URL(request.url)
   const parts = [
     `${SESSION_COOKIE}=${sessionId}`,
     `Max-Age=${SESSION_TTL_SECONDS}`,
@@ -166,13 +183,12 @@ export function buildSessionCookie(request, sessionId, env) {
     'SameSite=Lax',
   ]
   if (domain) parts.push(`Domain=${domain}`)
-  if (url.protocol === 'https:') parts.push('Secure')
+  if (shouldUseSecureCookie(request, env)) parts.push('Secure')
   return parts.join('; ')
 }
 
 export function buildClearCookie(request, env) {
   const domain = getCookieDomain(request, env)
-  const url = new URL(request.url)
   const parts = [
     `${SESSION_COOKIE}=`,
     'Max-Age=0',
@@ -181,7 +197,7 @@ export function buildClearCookie(request, env) {
     'SameSite=Lax',
   ]
   if (domain) parts.push(`Domain=${domain}`)
-  if (url.protocol === 'https:') parts.push('Secure')
+  if (shouldUseSecureCookie(request, env)) parts.push('Secure')
   return parts.join('; ')
 }
 

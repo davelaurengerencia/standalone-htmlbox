@@ -48,7 +48,7 @@
           <i class="fa-solid fa-box-open"></i>
         </div>
         <div>
-          <span class="font-bold text-lg bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">HTMLBox</span>
+          <span class="font-bold text-lg bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">SIVO APPS</span>
           <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 ml-2 font-medium">Runtime v1.2</span>
         </div>
       </div>

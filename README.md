@@ -49,8 +49,8 @@ htmlbox/
 
 ### Prerrequisitos
 - Node >= 18
-- `wrangler` >= 3 (`npx wrangler --version`)
-- `turso` CLI (`brew install turso` o `curl -sSfL https://get.turso.io/install.sh | bash`)
+- `wrangler` >= 4 (`npx wrangler --version`)
+- Autenticado en Cloudflare: `wrangler login` o exportá `CLOUDFLARE_API_TOKEN`
 
 ### 1. Instalar dependencias
 ```bash
@@ -65,28 +65,31 @@ cp packages/runtime/.dev.vars.example         packages/runtime/.dev.vars
 ```
 Edítalos y rellena los secretos (ver archivos `.example`).
 
-### 3. Iniciar sqld local (Turso dev)
-```bash
-turso dev --port 8080
+### 3. (una sola vez por máquina) subdominios *.localhost
+En macOS resuelven solos a 127.0.0.1. En Linux agregá a `/etc/hosts`:
+```
+127.0.0.1   controlplane.localhost portal.localhost runtime.localhost
 ```
 
-### 4. Aplicar migrations D1 a local
+### 4. Aplicar migrations D1 a remoto
 ```bash
-npm run migrate:local
+npm run migrate:remote
 ```
 
-### 5. Arrancar los 3 Workers
+### 5. Arrancar los 3 Workers (D1 remoto, subdominios *.localhost)
 ```bash
 npm run dev
 ```
 
 Esto lanza en paralelo:
-- control-plane en `http://localhost:8781`
-- portal en `http://localhost:8782`
-- runtime en `http://localhost:8783`
+- control-plane en `http://controlplane.localhost:8781`
+- portal en `http://portal.localhost:8782`
+- runtime en `http://runtime.localhost:8783`
+
+Los 3 workers corren con `wrangler dev --remote`: el código se ejecuta local (workerd), pero los bindings D1/R2/KV pegan contra la API real de Cloudflare. dev = prod en datos.
 
 ### 6. Crear el primer tenant
-Visita `http://localhost:8782`, solicita el magic-link del primer usuario. En dev el email se loguea en consola del control-plane (no se envía realmente).
+Visita `http://portal.localhost:8782`, solicita el magic-link del primer usuario. En dev el email se loguea en consola del control-plane (no se envía realmente).
 
 ### 7. Probar el ciclo de versionado
 1. Crear HTML Box desde el portal.

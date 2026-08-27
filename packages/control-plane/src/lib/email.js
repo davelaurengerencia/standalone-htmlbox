@@ -50,9 +50,12 @@ function escapeHtml(s) {
 
 // Devuelve { sent, previewLink? }. previewLink SOLO en modo dev o si falla prod.
 export async function sendMagicLinkEmail(env, request, { toEmail, tokenId, tenantName }) {
-  const url = new URL(request.url)
-  // Apuntamos al control-plane porque es donde se hace el POST de consume.
-  const magicLink = `${url.protocol}//${url.host}/api/auth/verify?token=${tokenId}`
+  // En `wrangler dev --remote` request.url trae el host del edge (workers.dev).
+  // Para que el link funcione en dev, usamos HTMLBOX_PUBLIC_ORIGIN si está
+  // configurado (apunta al subdominio local), sino caemos a request.url.
+  const reqUrl = new URL(request.url)
+  const origin = (env.HTMLBOX_PUBLIC_ORIGIN || `${reqUrl.protocol}//${reqUrl.host}`).replace(/\/+$/, '')
+  const magicLink = `${origin}/api/auth/verify?token=${tokenId}`
   const mode = (env.HTMLBOX_EMAIL_MODE || 'dev').toLowerCase()
   const fromAddress = env.HTMLBOX_EMAIL_FROM_ADDRESS || FROM_ADDRESS_DEFAULT
   const fromName = env.HTMLBOX_EMAIL_FROM_NAME || FROM_NAME_DEFAULT

@@ -5,9 +5,11 @@ node_modules/
 !.dev.vars.example
 dist/
 *.log
+.logs/
 .DS_Store
 .env
 .env.*
 !.env.example
 .turso/
 .turso-dev.log
+.dev-run*.log
