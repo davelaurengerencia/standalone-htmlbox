@@ -54,6 +54,67 @@ async function requireBox(env, boxId, request) {
   return { info, auth: { role, userId: sess.userId } }
 }
 
+// POST /api/data/{boxId}/tables/{slug}/scope  body: { scope: 'private'|'shared' }
+// Cambia el scope de una tabla existente. PELIGRO: cambiar el scope de una
+// tabla con filas existentes puede dejar filas inaccesibles (las 'shared'
+// no tienen owner, las 'private' filtran por owner). Spec §4: "operación
+// manual por ahora".
+async function postScope(request, env, boxId, slug) {
+  const box = await requireBox(env, boxId, request)
+  if (box.error) return json({ error: box.error }, box.status)
+  if (!['owner', 'editor'].includes(box.auth.role)) return json({ error: 'forbidden_role' }, 403)
+
+  let body
+  try { body = await request.json() } catch { return json({ error: 'invalid_body' }, 400) }
+  const scope = body?.scope
+  if (scope !== 'private' && scope !== 'shared') return json({ error: 'invalid_scope' }, 400)
+
+  const client = await getBoxClient(env, box.info)
+  const { ensureTableScopeColumn } = await import('@htmlbox/shared')
+  await ensureTableScopeColumn(client)
+  const exists = await client.execute({
+    sql: 'SELECT slug FROM htmlbox_tables WHERE slug = ?',
+    args: [slug],
+  })
+  if (!exists.rows.length) return json({ error: 'table_not_found' }, 404)
+
+  await client.execute({
+    sql: `UPDATE htmlbox_tables SET scope = ?1, updated_at = datetime('now') WHERE slug = ?2`,
+    args: [scope, slug],
+  })
+  return json({ ok: true, scope })
+}
+
+// POST /api/data/{boxId}/tables/{slug}  body: { name?, scope?, columns? }
+// Crea SOLO la metadata de la tabla (sin filas). Útil para que el tenant
+// pueda registrar una tabla con su scope antes de subirle datos — antes
+// el único flujo era upload (que asumía tabla nueva implícita).
+async function postCreateMeta(request, env, boxId, slug) {
+  const box = await requireBox(env, boxId, request)
+  if (box.error) return json({ error: box.error }, box.status)
+  if (!['owner', 'editor'].includes(box.auth.role)) return json({ error: 'forbidden_role' }, 403)
+
+  let body
+  try { body = await request.json() } catch { return json({ error: 'invalid_body' }, 400) }
+  if (!/^[a-z][a-z0-9_]{0,40}$/.test(slug)) return json({ error: 'invalid_slug' }, 400)
+
+  const scope = body?.scope === 'shared' ? 'shared' : 'private'
+  const columns = Array.isArray(body?.columns) ? body.columns.map(c => c.name || c) : []
+  const name = typeof body?.name === 'string' && body.name.trim() ? body.name.trim() : slug
+
+  const client = await getBoxClient(env, box.info)
+  await ensureTable(client, slug, columns, { scope })
+
+  // Si pasan un display name distinto al slug, actualizar.
+  if (name !== slug) {
+    await client.execute({
+      sql: `UPDATE htmlbox_tables SET name = ?1, updated_at = datetime('now') WHERE slug = ?2`,
+      args: [name, slug],
+    })
+  }
+  return json({ ok: true, slug, name, scope })
+}
+
 // Router principal. Devuelve Response o null si la URL no matchea.
 export async function handleDataApi(request, env, url) {
   // bulk-create: ruta plana (sin slug) — la validamos antes del router general.
@@ -63,7 +124,7 @@ export async function handleDataApi(request, env, url) {
     return await postBulkCreate(request, env, bulkM[1])
   }
 
-  const m = url.pathname.match(/^\/api\/data\/([a-z0-9]{16})\/tables(?:\/([a-z][a-z0-9_]{0,40}))?(?:\/(rows|columns|upsert|upload))?$/)
+  const m = url.pathname.match(/^\/api\/data\/([a-z0-9]{16})\/tables(?:\/([a-z][a-z0-9_]{0,40}))?(?:\/(rows|columns|upsert|upload|scope))?$/)
   if (!m) return null
 
   const [, boxId, slug, op] = m
@@ -74,12 +135,20 @@ export async function handleDataApi(request, env, url) {
     if (method !== 'GET') return json({ error: 'method_not_allowed' }, 405)
     return await listTables(request, env, boxId)
   }
+
+  // /tables/{slug}  POST → crear metadata (con scope)
+  if (slug && !op) {
+    if (method === 'POST') return await postCreateMeta(request, env, boxId, slug)
+    return json({ error: 'method_not_allowed' }, 405)
+  }
+
   if (!slug || !op) return json({ error: 'invalid_path' }, 400)
 
   if (op === 'rows' && method === 'GET')    return await getRows(request, env, boxId, slug, url)
   if (op === 'columns' && method === 'GET') return await getColumns(request, env, boxId, slug)
   if (op === 'upsert' && method === 'POST') return await postUpsert(request, env, boxId, slug)
   if (op === 'upload' && method === 'POST') return await postUpload(request, env, boxId, slug)
+  if (op === 'scope'  && method === 'POST') return await postScope(request, env, boxId, slug)
 
   return json({ error: 'method_not_allowed' }, 405)
 }
@@ -88,14 +157,20 @@ async function listTables(request, env, boxId) {
   const box = await requireBox(env, boxId, request)
   if (box.error) return json({ error: box.error }, box.status)
   const client = await getBoxClient(env, box.info)
+  // scope puede faltar en tablas viejas — usamos COALESCE para default 'private'.
   const result = await client.execute(
-    'SELECT slug, name, mode, flow_id, columns_json, created_at, updated_at FROM htmlbox_tables ORDER BY created_at ASC',
+    `SELECT slug, name, mode, flow_id, columns_json,
+            COALESCE(scope, 'private') AS scope,
+            created_at, updated_at
+       FROM htmlbox_tables
+      ORDER BY created_at ASC`,
   )
   return json({ tables: result.rows.map(r => ({
     slug: r.slug,
     name: r.name,
     mode: r.mode,
     flow_id: r.flow_id,
+    scope: r.scope || 'private',
     columns: safeJson(r.columns_json, []),
     created_at: r.created_at,
     updated_at: r.updated_at,
@@ -187,12 +262,14 @@ async function postUpload(request, env, boxId, slug) {
 
   let parsedRows = null
   let filename = 'upload.csv'
+  let bodyScope = null
   if (contentType.includes('application/json')) {
     let body
     try { body = await request.json() } catch { return json({ error: 'invalid_body' }, 400) }
     if (!Array.isArray(body?.rows)) return json({ error: 'missing_rows' }, 400)
     parsedRows = body.rows
     if (typeof body.filename === 'string') filename = body.filename
+    if (body.scope === 'shared' || body.scope === 'private') bodyScope = body.scope
   } else {
     // text/csv, text/plain, application/octet-stream
     const text = await request.text()
@@ -203,7 +280,10 @@ async function postUpload(request, env, boxId, slug) {
   }
 
   const client = await getBoxClient(env, box.info)
-  await ensureTable(client, slug, inferColumns(parsedRows))
+  // scope: ?scope=private|shared en el query (csv) o body.scope (json)
+  const queryScope = url.searchParams.get('scope')
+  const scope = bodyScope || (queryScope === 'shared' ? 'shared' : 'private')
+  await ensureTable(client, slug, inferColumns(parsedRows), { scope })
 
   // replace: borramos todo lo viejo (soft delete) e insertamos lo nuevo
   // upsert: insertamos filas nuevas con un id derivado del key (data_json)
@@ -266,7 +346,8 @@ async function postBulkCreate(request, env, boxId) {
 
   for (const t of tables) {
     try {
-      await ensureTable(client, t.slug, t.columns.map(c => c.name))
+      const tScope = t.scope === 'shared' ? 'shared' : 'private'
+      await ensureTable(client, t.slug, t.columns.map(c => c.name), { scope: tScope })
 
       const tableName = `htmlbox_${t.slug}`
       let inserted = 0
@@ -315,7 +396,7 @@ function inferColumns(rows) {
   return Array.from(cols)
 }
 
-async function ensureTable(client, slug, columns) {
+async function ensureTable(client, slug, columns, opts = {}) {
   // 1) crear tabla física si no existe
   const create = `
     CREATE TABLE IF NOT EXISTS htmlbox_${slug} (
@@ -330,24 +411,32 @@ async function ensureTable(client, slug, columns) {
   for (const stmt of create.split(/;\s*$/m).map(s => s.trim()).filter(Boolean)) {
     await client.execute(stmt)
   }
-  // 2) upsert metadata
+  // 2) asegurar columna scope (fase 2 — htmlbox-spec-app-customers.md §1)
+  const { ensureTableScopeColumn } = await import('@htmlbox/shared')
+  await ensureTableScopeColumn(client)
+
+  // 3) upsert metadata
   const cols = (columns || []).map((c) => ({
     name: c, type: typeof ({}),
   }))
   // Si la fila ya existe, name puede estar vacío; lo conservamos.
   const exists = await client.execute({
-    sql: 'SELECT name FROM htmlbox_tables WHERE slug = ?',
+    sql: 'SELECT name, scope FROM htmlbox_tables WHERE slug = ?',
     args: [slug],
   })
   const existingName = exists.rows?.[0]?.name
+  const existingScope = exists.rows?.[0]?.scope
   const finalName = existingName || slug
+  // Si ya existe la fila, respetamos su scope (no pisamos). Si es nueva,
+  // usamos el del caller (default 'private').
+  const scope = opts.scope || existingScope || 'private'
   await client.execute({
-    sql: `INSERT INTO htmlbox_tables (slug, name, columns_json, mode)
-          VALUES (?, ?, ?, 'manual')
+    sql: `INSERT INTO htmlbox_tables (slug, name, columns_json, mode, scope)
+          VALUES (?, ?, ?, 'manual', ?)
           ON CONFLICT(slug) DO UPDATE SET
             columns_json = excluded.columns_json,
             updated_at = datetime('now')`,
-    args: [slug, finalName, JSON.stringify(cols)],
+    args: [slug, finalName, JSON.stringify(cols), scope],
   })
 }
 

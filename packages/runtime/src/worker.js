@@ -17,6 +17,8 @@
 import { parseRuntimePath, resolveByShareId, resolveByTenantAndSlug } from './lib/resolver.js'
 import { serveBoxHtml } from './lib/htmlServer.js'
 import { handleDataApi } from './lib/dataApi.js'
+import { handleAppAuth } from './lib/appAuthRoutes.js'
+import { handleAppDataApi } from './lib/appDataApi.js'
 import { SDK_VERSION } from '@htmlbox/shared'
 
 import SDK_SOURCE_BODY from './sdk/htmlbox-sdk.txt' // bundled as Text por wrangler rules
@@ -65,6 +67,16 @@ export default {
     // Data API
     if (path.startsWith('/api/data/')) {
       return (await handleDataApi(request, env, url)) || notFound('not_found')
+    }
+
+    // App-auth API (usuarios de la app — magic link, sesión, admin)
+    if (path.startsWith('/api/app-auth/')) {
+      return (await handleAppAuth(request, env, url)) || notFound('not_found')
+    }
+
+    // App-data API (customers — filas filtradas por owner_user_id)
+    if (path.startsWith('/api/app-data/')) {
+      return (await handleAppDataApi(request, env, url)) || notFound('not_found')
     }
 
     // Box público

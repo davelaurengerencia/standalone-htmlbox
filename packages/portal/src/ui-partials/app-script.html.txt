@@ -398,6 +398,19 @@
           if (window.innerWidth < 1024) this.sidebarOpen = false
         },
 
+        // Cuando el usuario entra a la tab Usuarios después de cargar un box,
+        // forzamos un refresh — el x-init de la tab puede haber corrido antes
+        // de que currentBox existiera.
+        switchTab(tab) {
+          this.activeTab = tab
+          if (tab === 'editor' && this.currentBox && !this.editorHtml) this.loadActiveHtml()
+          if (tab === 'users' && this.currentBox && this.$refs.usersTabRef
+              && typeof this.$refs.usersTabRef.loadUsers === 'function') {
+            this.$refs.usersTabRef.loadUsers()
+            this.$refs.usersTabRef.loadSettings()
+          }
+        },
+
         async loadActiveHtml() {
           if (!this.currentBox) return
           try {
@@ -419,11 +432,6 @@
         },
 
         // --------- Tab ---------
-
-        switchTab(tab) {
-          this.activeTab = tab
-          if (tab === 'editor' && this.currentBox && !this.editorHtml) this.loadActiveHtml()
-        },
 
         // --------- Upload ---------
 
@@ -808,6 +816,135 @@
       }
     }
 
+    // ============ Tab Usuarios (fase 1/2 — htmlbox-spec-app-users.md / app-customers.md) ============
+    function usersTab() {
+      const RUNTIME = (typeof window !== 'undefined' && window.HTMLBOX_RUNTIME_ORIGIN) || ''
+      return {
+        users: [],
+        loadingUsers: false,
+        showAddForm: false,
+        newEmail: '',
+        newDisplayName: '',
+        addingUser: false,
+        signupMode: 'invite_only',
+        updatingSignupMode: false,
+        usersStatus: '',
+        usersStatusOk: false,
+
+        async init() {
+          if (!this.$root.currentBox) return
+          await this.loadUsers()
+          await this.loadSettings()
+        },
+
+        async loadUsers() {
+          if (!this.$root.currentBox) {
+            this.users = []
+            return
+          }
+          this.loadingUsers = true
+          try {
+            const d = await apiFetch(`${RUNTIME}/api/app-auth/${this.$root.currentBox.id}/admin/users`)
+            this.users = d.users || []
+          } catch (err) {
+            debugLog('usersTab.loadUsers:', err)
+            this.users = []
+            this.flash('Error cargando usuarios: ' + (err.code || err.message), false)
+          }
+          this.loadingUsers = false
+        },
+
+        async loadSettings() {
+          if (!this.$root.currentBox) return
+          try {
+            const d = await apiFetch(`${RUNTIME}/api/app-auth/${this.$root.currentBox.id}/admin/settings`)
+            this.signupMode = d.signup_mode || 'invite_only'
+          } catch (err) {
+            debugLog('usersTab.loadSettings:', err)
+            this.signupMode = 'invite_only'
+          }
+        },
+
+        async toggleSignupMode() {
+          if (!this.$root.currentBox) return
+          const next = this.signupMode === 'open' ? 'invite_only' : 'open'
+          this.updatingSignupMode = true
+          try {
+            await apiFetch(`${RUNTIME}/api/app-auth/${this.$root.currentBox.id}/admin/settings`, {
+              method: 'POST',
+              body: { signup_mode: next },
+            })
+            this.signupMode = next
+            this.flash(next === 'open' ? 'Auto-registro activado.' : 'Solo invitados.', true)
+          } catch (err) {
+            this.flash('Error: ' + (err.code || err.message), false)
+          } finally {
+            this.updatingSignupMode = false
+          }
+        },
+
+        async addUser() {
+          if (!this.$root.currentBox) return
+          const email = (this.newEmail || '').trim().toLowerCase()
+          if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+            this.flash('Email inválido.', false)
+            return
+          }
+          this.addingUser = true
+          try {
+            await apiFetch(`${RUNTIME}/api/app-auth/${this.$root.currentBox.id}/admin/users`, {
+              method: 'POST',
+              body: { email, display_name: this.newDisplayName.trim() || null },
+            })
+            this.newEmail = ''
+            this.newDisplayName = ''
+            this.showAddForm = false
+            await this.loadUsers()
+            this.flash('Usuario agregado.', true)
+          } catch (err) {
+            this.flash('Error: ' + (err.code || err.message), false)
+          } finally {
+            this.addingUser = false
+          }
+        },
+
+        async setUserDisabled(userId, disabled) {
+          if (!this.$root.currentBox) return
+          try {
+            await apiFetch(
+              `${RUNTIME}/api/app-auth/${this.$root.currentBox.id}/admin/users/${userId}/${disabled ? 'disable' : 'enable'}`,
+              { method: 'POST' },
+            )
+            await this.loadUsers()
+            this.flash(disabled ? 'Usuario deshabilitado.' : 'Usuario reactivado.', true)
+          } catch (err) {
+            this.flash('Error: ' + (err.code || err.message), false)
+          }
+        },
+
+        async deleteUser(u) {
+          if (!this.$root.currentBox) return
+          if (!confirm(`¿Borrar a ${u.email}? Esto también cierra sus sesiones activas.`)) return
+          try {
+            await apiFetch(
+              `${RUNTIME}/api/app-auth/${this.$root.currentBox.id}/admin/users/${u.id}`,
+              { method: 'DELETE' },
+            )
+            await this.loadUsers()
+            this.flash('Usuario borrado.', true)
+          } catch (err) {
+            this.flash('Error: ' + (err.code || err.message), false)
+          }
+        },
+
+        flash(msg, ok) {
+          this.usersStatus = msg
+          this.usersStatusOk = !!ok
+          setTimeout(() => { this.usersStatus = '' }, 3000)
+        },
+      }
+    }
+
     // ============ Tab Datos (fase 3 v1) ============
     function dataTab() {
       const RUNTIME = (typeof window !== 'undefined' && window.HTMLBOX_RUNTIME_ORIGIN) || ''
@@ -817,6 +954,7 @@
         showNewTable: false,
         newTableSlug: '',
         newTableName: '',
+        newTableScope: 'private',
         creatingTable: false,
         activeTable: null,
         uploadStrategy: 'replace',
@@ -856,15 +994,19 @@
           }
           this.creatingTable = true
           try {
-            // Crear la tabla subiendo 1 fila vacía + la metadata se genera en el upload.
-            // Mejor: insertar metadata directo en htmlbox_tables via API.
-            // Por ahora: simular creando con un upsert de 0 filas para registrar metadata.
-            await apiFetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables/${slug}/upsert`, {
+            // Crea metadata (incluye scope — fase 2). El upload posterior
+            // respetará el scope si la tabla ya existe.
+            await apiFetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables/${slug}`, {
               method: 'POST',
-              body: { rows: [] },
+              body: {
+                name: this.newTableName.trim() || slug,
+                scope: this.newTableScope,
+                columns: [],
+              },
             })
             this.newTableSlug = ''
             this.newTableName = ''
+            this.newTableScope = 'private'
             this.showNewTable = false
             await this.loadTables()
           } catch (err) {
@@ -872,6 +1014,25 @@
             debugLog('dataTab.createTable:', err)
           }
           this.creatingTable = false
+        },
+
+        async toggleTableScope(t) {
+          const current = t.scope || 'private'
+          const next = current === 'private' ? 'shared' : 'private'
+          const msg = next === 'shared'
+            ? `Vas a cambiar "${t.slug}" a SHARED. Todos los customers van a poder escribir sobre las mismas filas. ¿Continuar?`
+            : `Vas a cambiar "${t.slug}" a PRIVATE. Las filas existentes sin owner_user_id van a quedar inaccesibles para los customers. ¿Continuar?`
+          if (!confirm(msg)) return
+          try {
+            await apiFetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables/${t.slug}/scope`, {
+              method: 'POST',
+              body: { scope: next },
+            })
+            await this.loadTables()
+          } catch (err) {
+            alert(`Error: ${err.code || err.message}`)
+            debugLog('dataTab.toggleTableScope:', err)
+          }
         },
 
         selectTable(t) {

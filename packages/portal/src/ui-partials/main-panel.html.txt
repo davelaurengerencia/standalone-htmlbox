@@ -29,6 +29,11 @@
                     class="px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-2">
               <i class="fa-solid fa-database text-xs"></i><span class="hidden sm:inline">Archivos &amp; Datos</span>
             </button>
+            <button @click="switchTab('users')"
+                    :class="activeTab === 'users' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'"
+                    class="px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-2">
+              <i class="fa-solid fa-users text-xs"></i><span class="hidden md:inline">Usuarios</span>
+            </button>
             <button @click="switchTab('mcp')"
                     :class="activeTab === 'mcp' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'"
                     class="px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-2">
@@ -136,6 +141,11 @@
                            class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500">
                   <input x-model="newTableName" placeholder="Nombre (opcional)"
                            class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500">
+                  <select x-model="newTableScope"
+                          class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500">
+                    <option value="private">Private — cada customer ve solo lo suyo</option>
+                    <option value="shared">Shared — todos ven lo mismo (catálogo)</option>
+                  </select>
                   <button @click="createTable()" :disabled="!newTableSlug || creatingTable"
                           class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 rounded-lg text-sm font-medium transition">
                     <span x-show="!creatingTable">Crear</span>
@@ -144,7 +154,7 @@
                   <button @click="showNewTable = false"
                           class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm transition">Cancelar</button>
                 </div>
-                <p class="text-[10px] text-slate-500">El slug debe ser minúsculas, sin espacios (se usa como nombre de tabla SQL y para el SDK).</p>
+                <p class="text-[10px] text-slate-500">El slug debe ser minúsculas, sin espacios. "Private" filtra por usuario (default); "Shared" todos ven lo mismo.</p>
               </div>
 
               <!-- Dropzone upload -->
@@ -188,6 +198,9 @@
                         <h3 class="font-medium text-sm">
                           <i class="fa-solid fa-table text-indigo-400 mr-2"></i>
                           <span x-text="t.name || t.slug"></span>
+                          <span class="text-[9px] px-1.5 py-0.5 rounded ml-2 font-semibold"
+                                :class="(t.scope || 'private') === 'private' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30' : 'bg-sky-500/10 text-sky-400 border border-sky-500/30'"
+                                x-text="(t.scope || 'private') === 'private' ? 'PRIVATE' : 'SHARED'"></span>
                         </h3>
                         <p class="text-[10px] text-slate-500 mt-0.5">
                           slug: <code class="text-slate-400" x-text="t.slug"></code>
@@ -196,6 +209,12 @@
                         </p>
                       </div>
                       <div class="flex gap-1">
+                        <button @click="toggleTableScope(t)"
+                                class="px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-lg text-[11px] transition"
+                                :title="'Cambiar a ' + ((t.scope || 'private') === 'private' ? 'shared' : 'private')">
+                          <i class="fa-solid fa-arrows-rotate mr-1"></i>
+                          <span x-text="(t.scope || 'private') === 'private' ? 'private' : 'shared'"></span>
+                        </button>
                         <button @click="selectTable(t)"
                                 class="px-3 py-1 bg-slate-800 hover:bg-indigo-600 rounded-lg text-[11px] transition">
                           Subir archivo
@@ -247,7 +266,123 @@
             </div>
           </div>
 
-          <!-- MCP placeholder (fase 6) -->
+          <!-- Tab Usuarios (fase 1 — htmlbox-spec-app-users.md / app-customers.md) -->
+          <div x-show="activeTab === 'users'" class="absolute inset-0 p-6 overflow-y-auto bg-slate-950">
+            <div class="max-w-4xl mx-auto space-y-4" x-data="usersTab()" x-ref="usersTabRef" x-init="init()">
+
+              <div class="flex items-center justify-between">
+                <div>
+                  <h2 class="text-lg font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-users text-indigo-400"></i>
+                    Usuarios de la app
+                  </h2>
+                  <p class="text-xs text-slate-400 mt-1">
+                    Gente que puede entrar al box publicado con su propio email (vía magic link).
+                    Cada alta vive en la DB aislada del box.
+                  </p>
+                </div>
+                <button @click="showAddForm = !showAddForm"
+                        class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-medium transition">
+                  <i class="fa-solid fa-plus mr-1"></i> Agregar usuario
+                </button>
+              </div>
+
+              <!-- Toggle signup_mode (fase 2 — htmlbox-spec-app-customers.md §3) -->
+              <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+                <div>
+                  <h3 class="font-medium text-sm">
+                    <i class="fa-solid fa-user-plus text-indigo-400 mr-2"></i>
+                    Auto-registro
+                  </h3>
+                  <p class="text-[10px] text-slate-500 mt-0.5">
+                    Si está activo, cualquiera puede pedir un magic link y se crea la cuenta al toque
+                    (modo ecommerce / customer-facing). Si está apagado, solo pueden entrar los emails
+                    que vos agregues a mano acá.
+                  </p>
+                </div>
+                <label class="relative inline-flex items-center cursor-pointer">
+                  <input type="checkbox" :checked="signupMode === 'open'" @change="toggleSignupMode()"
+                         :disabled="updatingSignupMode" class="sr-only peer">
+                  <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer
+                              peer-checked:after:translate-x-full peer-checked:after:border-white
+                              after:content-[''] after:absolute after:top-[2px] after:left-[2px]
+                              after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all
+                              peer-checked:bg-indigo-600"></div>
+                  <span class="ml-3 text-xs font-medium text-slate-300"
+                        x-text="signupMode === 'open' ? 'Abierto' : 'Solo invitados'"></span>
+                </label>
+              </div>
+
+              <!-- Form alta -->
+              <div x-show="showAddForm" x-transition
+                   class="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Agregar app-user</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input x-model="newEmail" placeholder="email@ejemplo.com"
+                         class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500">
+                  <input x-model="newDisplayName" placeholder="Nombre (opcional)"
+                         class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500">
+                </div>
+                <div class="flex gap-2">
+                  <button @click="addUser()" :disabled="!newEmail.trim() || addingUser"
+                          class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 rounded-lg text-sm font-medium transition">
+                    <span x-show="!addingUser">Agregar</span>
+                    <span x-show="addingUser"><i class="fa-solid fa-spinner fa-spin"></i></span>
+                  </button>
+                  <button @click="showAddForm = false"
+                          class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm transition">Cancelar</button>
+                </div>
+                <p class="text-[10px] text-slate-500">
+                  Una vez agregado, esa persona puede pedir un magic link desde el box publicado.
+                  Si el modo es "Abierto" este paso no hace falta (se auto-crean al pedir el link).
+                </p>
+              </div>
+
+              <!-- Lista -->
+              <div class="space-y-2">
+                <template x-for="u in users" :key="u.id">
+                  <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+                    <div class="min-w-0">
+                      <h3 class="font-medium text-sm truncate" x-text="u.display_name || u.email"></h3>
+                      <p class="text-[10px] text-slate-500 mt-0.5">
+                        <code class="text-slate-400" x-text="u.email"></code>
+                        · <span x-text="u.role"></span>
+                        · <span x-text="u.disabled_at ? 'Deshabilitado' : 'Activo'"></span>
+                      </p>
+                    </div>
+                    <div class="flex gap-1 flex-shrink-0">
+                      <button x-show="!u.disabled_at" @click="setUserDisabled(u.id, true)"
+                              class="px-3 py-1 bg-slate-800 hover:bg-amber-600 rounded-lg text-[11px] transition">
+                        Deshabilitar
+                      </button>
+                      <button x-show="u.disabled_at" @click="setUserDisabled(u.id, false)"
+                              class="px-3 py-1 bg-slate-800 hover:bg-emerald-600 rounded-lg text-[11px] transition">
+                        Reactivar
+                      </button>
+                      <button @click="deleteUser(u)"
+                              class="px-3 py-1 bg-slate-800 hover:bg-rose-600 rounded-lg text-[11px] transition">
+                        <i class="fa-solid fa-trash"></i>
+                      </button>
+                    </div>
+                  </div>
+                </template>
+                <div x-show="users.length === 0 && !loadingUsers" class="text-xs text-slate-500 italic text-center py-6">
+                  No hay app-users todavía.
+                </div>
+                <div x-show="loadingUsers" class="text-xs text-slate-500 text-center py-6">
+                  <i class="fa-solid fa-spinner fa-spin mr-1"></i> Cargando…
+                </div>
+              </div>
+
+              <!-- Status -->
+              <div x-show="usersStatus" x-text="usersStatus"
+                   class="text-xs px-3 py-2 rounded-lg"
+                   :class="usersStatusOk ? 'bg-emerald-900/30 text-emerald-300' : 'bg-rose-900/30 text-rose-300'"></div>
+
+            </div>
+          </div>
+
+<!-- MCP placeholder (fase 6) -->
           <div x-show="activeTab === 'mcp'" class="absolute inset-0 p-6 overflow-y-auto bg-slate-950">
             <div class="max-w-4xl mx-auto space-y-4">
               <div class="flex items-center justify-between">

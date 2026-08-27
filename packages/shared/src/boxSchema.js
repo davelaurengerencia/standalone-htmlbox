@@ -6,6 +6,14 @@
 //   - applyBoxSchema(client): helper que conecta vía @tursodatabase/serverless
 //     y aplica el schema en orden. Pensado para correr una sola vez en el
 //     provision de cada box.
+//   - APP_USERS_SCHEMA_SQL: tablas para usuarios de la app (fase 1 de
+//     htmlbox-spec-app-users.md). Se aplica on-demand, no en el provision.
+//   - applyAppUsersSchema(client): helper idempotente.
+//   - APP_SETTINGS_SCHEMA_SQL: tabla de settings por box (fase 2 — signup_mode).
+//   - applyAppSettingsSchema(client): helper idempotente.
+//   - ensureColumn()/ensureTableScopeColumn()/ensureOwnerColumn(): helpers
+//     para agregar columnas a tablas existentes sin `ADD COLUMN IF NOT EXISTS`
+//     (que SQLite no soporta).
 
 export const BOX_BASE_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS htmlbox_tables (
@@ -88,4 +96,154 @@ CREATE TABLE IF NOT EXISTS htmlbox_${slug} (
 );
 CREATE INDEX IF NOT EXISTS idx_htmlbox_${slug}_deleted ON htmlbox_${slug}(deleted_at);
 `
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase 1 — htmlbox-spec-app-users.md
+//
+// 3 tablas para usuarios de la app (NO usuarios de plataforma HTMLBox):
+//   - htmlbox_app_users: el registro del app-user (email, display_name, role, disabled_at).
+//   - htmlbox_app_sessions: sesiones activas (cookie hbx_app_sid → app_user_id).
+//   - htmlbox_app_magic_links: magic links para passwordless login.
+//
+// Se aplican on-demand (no en el provision del box) — un box puede no usar
+// esta funcionalidad nunca (ej. un dashboard de una sola persona). Se llama
+// desde runtime/src/lib/appAuth.js y desde el alta del primer app-user por el
+// tenant, vía applyAppUsersSchema(client).
+//
+// Role existe desde v1 pero NO se valida en ningún chequeo de autorización —
+// ver htmlbox-spec-app-users.md §7. La columna se crea ahora para que la
+// fase 2+ de roles/permisos no requiera un ALTER TABLE.
+//
+// disabled_at es nullable: si está seteado, el usuario no puede pedir magic
+// link ni loguearse (chequeos en appAuth.js §isRateLimited/validateAppSession).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const APP_USERS_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS htmlbox_app_users (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  display_name TEXT,
+  role TEXT NOT NULL DEFAULT 'member',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  disabled_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS htmlbox_app_sessions (
+  id TEXT PRIMARY KEY,
+  app_user_id TEXT NOT NULL REFERENCES htmlbox_app_users(id) ON DELETE CASCADE,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS htmlbox_app_magic_links (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_htmlbox_app_sessions_user ON htmlbox_app_sessions(app_user_id);
+CREATE INDEX IF NOT EXISTS idx_htmlbox_app_sessions_expires ON htmlbox_app_sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_htmlbox_app_magic_links_email_created ON htmlbox_app_magic_links(email, created_at);
+CREATE INDEX IF NOT EXISTS idx_htmlbox_app_magic_links_expires ON htmlbox_app_magic_links(expires_at);
+`
+
+// Idéntico patrón a applyBoxSchema() — reusa el mismo split-por-';' y el
+// mismo fallback exec()/execute() (ver comentario original en applyBoxSchema).
+export async function applyAppUsersSchema(client) {
+  const stmts = APP_USERS_SCHEMA_SQL
+    .split(/;\s*$/m)
+    .map(s => s.trim())
+    .filter(s => s.length > 0)
+
+  for (const stmt of stmts) {
+    if (typeof client.exec === 'function') {
+      await client.exec(stmt)
+    } else if (typeof client.execute === 'function') {
+      await client.execute(stmt)
+    } else {
+      throw new Error('applyAppUsersSchema: cliente Turso no expone exec() ni execute()')
+    }
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase 2 — htmlbox-spec-app-customers.md
+//
+// Tabla de settings por box (1 sola fila, id=1). Hoy solo guarda signup_mode
+// para el comportamiento de auto-registro de customers:
+//   - 'invite_only' (default): comportamiento de fase 1 — el tenant agrega
+//     cada email a mano desde el portal; el que no está agregado, NO puede
+//     pedir magic link.
+//   - 'open': cualquier email puede pedir magic link y la cuenta se crea
+//     sola al consumirlo (modo ecommerce / customer-facing).
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const APP_SETTINGS_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS htmlbox_app_settings (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  signup_mode TEXT NOT NULL DEFAULT 'invite_only'
+);
+`
+
+export async function applyAppSettingsSchema(client) {
+  const stmts = APP_SETTINGS_SCHEMA_SQL
+    .split(/;\s*$/m)
+    .map(s => s.trim())
+    .filter(s => s.length > 0)
+
+  for (const stmt of stmts) {
+    if (typeof client.exec === 'function') {
+      await client.exec(stmt)
+    } else if (typeof client.execute === 'function') {
+      await client.execute(stmt)
+    } else {
+      throw new Error('applyAppSettingsSchema: cliente Turso no expone exec() ni execute()')
+    }
+  }
+
+  // fila única por default — INSERT OR IGNORE porque puede llamarse varias veces
+  const insert = `INSERT OR IGNORE INTO htmlbox_app_settings (id, signup_mode) VALUES (1, 'invite_only')`
+  if (typeof client.exec === 'function') await client.exec(insert)
+  else await client.execute(insert)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers para agregar columnas a tablas existentes sin `ADD COLUMN IF NOT
+// EXISTS` (SQLite no lo soporta). Usado por la fase 2 para:
+//   - htmlbox_tables.scope (¿la tabla es 'private' por app_user o 'shared'?)
+//
+//   - htmlbox_{slug}.owner_user_id (¿qué app_user es dueño de esta fila?)
+//
+// Se chequea con PRAGMA table_info antes de alterar — correrlo dos veces
+// sobre el mismo box no debe tirar "duplicate column name".
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function ensureColumn(client, tableName, columnName, columnDefSql) {
+  const info = await (typeof client.execute === 'function'
+    ? client.execute(`PRAGMA table_info(${tableName})`)
+    : client.exec(`PRAGMA table_info(${tableName})`))
+  const rows = info.rows || info || []
+  const exists = rows.some(r => (r.name || r[1]) === columnName)
+  if (exists) return
+  const alter = `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefSql}`
+  if (typeof client.exec === 'function') await client.exec(alter)
+  else await client.execute(alter)
+}
+
+// scope de una tabla de datos del box: 'private' (default, cada app_user ve
+// solo lo suyo) | 'shared' (todos ven lo mismo — catálogos, listas, etc.)
+export async function ensureTableScopeColumn(client) {
+  await ensureColumn(client, 'htmlbox_tables', 'scope', `TEXT NOT NULL DEFAULT 'private'`)
+}
+
+// dueño de una fila. Nullable: filas creadas por otra vía (ej. el tenant
+// cargó un CSV desde el portal, vía dataApi.js) quedan sin dueño y no las ve
+// ningún app_user en una tabla 'private' hasta que se les asigne uno — mismo
+// criterio fail-closed que en cualquier otra parte de este sistema.
+export async function ensureOwnerColumn(client, slug) {
+  await ensureColumn(client, `htmlbox_${slug}`, 'owner_user_id', 'TEXT')
 }

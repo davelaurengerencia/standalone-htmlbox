@@ -4,11 +4,13 @@
 //   GET  /api/internal/boxes-by-slug/:tenant/:slug    → lookup privado
 //   GET  /api/internal/boxes/:boxId/db                → credenciales Turso (runtime)
 //   POST /api/internal/retry-schema/:boxId            → re-aplica el schema (diagnóstico desde el admin)
+//   POST /api/internal/send-app-magic-link            → envío de magic link para usuarios de la app (runtime → control-plane)
 //
 // Estos endpoints NO se exponen al browser (públicos con rate-limit) — solo
 // se llaman desde el runtime worker con la cookie de sesión cuando aplica.
 
 import { retrySchema } from './boxes.js'
+import { sendAppMagicLinkEmail } from '../lib/email.js'
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -29,7 +31,9 @@ export async function handleInternal(request, env, ctx, path, method) {
   // (resolución shareId/tenant+slug → boxId) que el runtime hace ANTES
   // de tener credenciales para agregar headers.
   const requiresInternalSecret =
-    path.startsWith('/api/internal/boxes/') || path === '/api/internal/whoami'
+    path.startsWith('/api/internal/boxes/') ||
+    path === '/api/internal/whoami' ||
+    path === '/api/internal/send-app-magic-link'
 
   if (requiresInternalSecret) {
     const provided = request.headers.get('X-HTMLBox-Internal-Secret') || ''
@@ -74,7 +78,30 @@ export async function handleInternal(request, env, ctx, path, method) {
     return json(result, result.ok ? 200 : 500)
   }
 
+  // POST /api/internal/send-app-magic-link  — runtime delega el envío al
+  // control-plane (que tiene binding MAIL). El body trae el magic link YA
+  // ARMADO apuntando a runtime — esta función solo renderiza y envía.
+  if (path === '/api/internal/send-app-magic-link' && method === 'POST') {
+    return await postSendAppMagicLink(request, env)
+  }
+
   return json({ error: 'not_found' }, 404)
+}
+
+// POST /api/internal/send-app-magic-link
+// Body: { toEmail, magicLink, boxName }
+// Devuelve el mismo shape que sendAppMagicLinkEmail: { sent, previewLink?, mode, error? }
+async function postSendAppMagicLink(request, env) {
+  let body
+  try { body = await request.json() } catch { return json({ error: 'invalid_body' }, 400) }
+  const toEmail = (body?.toEmail || '').trim().toLowerCase()
+  const magicLink = body?.magicLink || ''
+  const boxName = body?.boxName || null
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(toEmail) || !magicLink) {
+    return json({ error: 'invalid_body' }, 400)
+  }
+  const result = await sendAppMagicLinkEmail(env, { toEmail, magicLink, boxName })
+  return json(result)
 }
 
 async function getByShare(env, shareId) {
