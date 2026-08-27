@@ -237,15 +237,14 @@
 
         async loadMe() {
           try {
-            const res = await this.api('/api/auth/me')
-            const data = await res.json()
+            const data = await apiFetch('/api/auth/me')
             this.user = data.user
             if (this.user) {
               this.showDevPreview = false
               await this.loadTenants()
             }
           } catch (err) {
-            console.error('loadMe:', err)
+            debugLog('loadMe:', err)
           }
         },
 
@@ -255,12 +254,10 @@
           this.previewLink = null
           this.showDevPreview = false
           try {
-            const res = await this.api('/api/auth/request', {
+            const data = await apiFetch('/api/auth/request', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email: this.email }),
+              body: { email: this.email },
             })
-            const data = await res.json()
             this.lastMessage = data.message || 'Listo. Revisá tu email.'
             if (data._dev_preview) {
               this.previewLink = data._dev_preview
@@ -275,7 +272,11 @@
         },
 
         async logout() {
-          await this.api('/api/auth/logout', { method: 'POST' })
+          try {
+            await apiFetch('/api/auth/logout', { method: 'POST' })
+          } catch (err) {
+            debugLog('logout:', err)
+          }
           this.user = null
           this.tenants = []
           this.workspaces = []
@@ -326,19 +327,17 @@
           }
           this.busy = true
           try {
-            const res = await this.api('/api/auth/consume', {
+            const data = await apiFetch('/api/auth/consume', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ token }),
+              body: { token },
             })
-            const data = await res.json()
-            if (res.ok && data.ok) {
+            if (data.ok) {
               this.showDevPreview = false
               this.previewLink = null
               await this.loadMe()
               this.showToast(`Bienvenido, ${data.user.email}`)
             } else {
-              this.showToast('Error consumiendo link: ' + (data.error || res.status))
+              this.showToast('Error consumiendo link: ' + (data.error || 'desconocido'))
             }
           } catch (err) {
             this.showToast('Error: ' + err.message)
