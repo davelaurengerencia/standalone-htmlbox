@@ -252,3 +252,167 @@ export function requireRole(membership, ...allowed) {
     throw new Error(`Rol "${membership.role}" no autorizado (requiere uno de: ${allowed.join(', ')})`)
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fase 3 — htmlbox-spec-app-users-centralized.md
+//
+// Tenant app users: identidad + accesos, separados. Vive en D1 (control-plane)
+// porque cruza boxes/workspaces. Mismo mecanismo de magic link que plataforma
+// (randomToken reusado) y que app-users por-box (mismas constantes TTL), pero
+// contra htmlbox_tenant_app_*.
+//
+// Cookie: `hbx_tapp_sid`, Domain-scoped (no Path-scoped como hbx_app_sid) para
+// que viaje a cualquier box del tenant. Reusa getCookieDomain() y
+// shouldUseSecureCookie() de arriba (mismas reglas que `sid` plataforma).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TENANT_APP_SESSION_COOKIE = 'hbx_tapp_sid'
+
+// --- Magic links ---
+
+export async function isTenantAppRateLimited(env, email, tenantId) {
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM htmlbox_tenant_app_magic_links
+      WHERE email = ?1 AND tenant_id = ?2
+        AND created_at > datetime('now', '-${AUTH_REQUEST_WINDOW_SEC} seconds')`
+  ).bind(email, tenantId).first()
+  return (row?.n ?? 0) >= AUTH_REQUEST_MAX_PER_EMAIL
+}
+
+export async function createTenantAppMagicLink(env, email, tenantId) {
+  const id = randomToken()
+  const expiresAt = new Date(Date.now() + MAGIC_LINK_TTL_MS).toISOString().slice(0, 19).replace('T', ' ')
+  await env.DB.prepare(
+    `INSERT INTO htmlbox_tenant_app_magic_links (id, email, tenant_id, expires_at) VALUES (?1, ?2, ?3, ?4)`
+  ).bind(id, email, tenantId, expiresAt).run()
+  return { id, email, tenantId, expiresAt }
+}
+
+export async function consumeTenantAppMagicLink(env, tokenId) {
+  const result = await env.DB.prepare(
+    `UPDATE htmlbox_tenant_app_magic_links SET used_at = datetime('now')
+      WHERE id = ?1 AND used_at IS NULL AND datetime(expires_at) > datetime('now')`
+  ).bind(tokenId).run()
+  if (!result.meta || result.meta.changes === 0) return null
+  const row = await env.DB.prepare(
+    `SELECT email, tenant_id FROM htmlbox_tenant_app_magic_links WHERE id = ?1`
+  ).bind(tokenId).first()
+  return row || null
+}
+
+// --- Tenant app users ---
+
+export async function findTenantAppUserByEmail(env, tenantId, email) {
+  return await env.DB.prepare(
+    `SELECT id, email, display_name, disabled_at
+       FROM htmlbox_tenant_app_users
+      WHERE tenant_id = ?1 AND email = ?2`
+  ).bind(tenantId, email).first()
+}
+
+export async function createTenantAppUser(env, tenantId, email, displayName = null) {
+  const id = `tu_${crypto.randomUUID().replace(/-/g, '').slice(0, 20)}`
+  await env.DB.prepare(
+    `INSERT INTO htmlbox_tenant_app_users (id, tenant_id, email, display_name) VALUES (?1, ?2, ?3, ?4)`
+  ).bind(id, tenantId, email, displayName).run()
+  return { id, tenant_id: tenantId, email, display_name: displayName }
+}
+
+// --- Sessions ---
+
+export async function createTenantAppSession(env, tenantAppUserId) {
+  const id = randomToken()
+  const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000).toISOString().slice(0, 19).replace('T', ' ')
+  await env.DB.prepare(
+    `INSERT INTO htmlbox_tenant_app_sessions (id, tenant_app_user_id, expires_at) VALUES (?1, ?2, ?3)`
+  ).bind(id, tenantAppUserId, expiresAt).run()
+  return { id, tenantAppUserId, expiresAt }
+}
+
+export async function deleteTenantAppSession(env, sessionId) {
+  if (!sessionId) return
+  await env.DB.prepare(`DELETE FROM htmlbox_tenant_app_sessions WHERE id = ?1`).bind(sessionId).run()
+}
+
+export async function validateTenantAppSession(env, sessionId) {
+  if (!sessionId) return null
+  const row = await env.DB.prepare(
+    `SELECT s.id AS sid, u.id AS user_id, u.email, u.display_name, u.tenant_id, u.disabled_at
+       FROM htmlbox_tenant_app_sessions s
+       JOIN htmlbox_tenant_app_users u ON u.id = s.tenant_app_user_id
+      WHERE s.id = ?1 AND datetime(s.expires_at) > datetime('now')`
+  ).bind(sessionId).first()
+  if (!row || row.disabled_at) return null
+  return {
+    sessionId: row.sid,
+    tenantAppUser: {
+      id: row.user_id,
+      email: row.email,
+      display_name: row.display_name,
+      tenant_id: row.tenant_id,
+    },
+  }
+}
+
+// --- Access checks ---
+
+// Resuelve si un tenant_app_user tiene acceso a un box puntual, mirando las
+// 3 formas posibles de acceso (tenant entero / workspace / box puntual).
+// box debe traer { id, tenant_id, workspace_id }.
+export async function checkTenantAppAccess(env, tenantAppUserId, box) {
+  const row = await env.DB.prepare(`
+    SELECT role FROM htmlbox_tenant_app_access
+     WHERE tenant_app_user_id = ?1
+       AND (
+         scope_type = 'tenant'
+         OR (scope_type = 'workspace' AND scope_id = ?2)
+         OR (scope_type = 'box' AND scope_id = ?3)
+       )
+     ORDER BY CASE scope_type WHEN 'box' THEN 0 WHEN 'workspace' THEN 1 ELSE 2 END
+     LIMIT 1
+  `).bind(tenantAppUserId, box.workspace_id, box.id).first()
+  return row ? { allowed: true, role: row.role } : { allowed: false }
+}
+
+// --- Cookie ---
+
+export function buildTenantAppSessionCookie(request, sessionId, env) {
+  const domain = getCookieDomain(request, env)
+  const parts = [
+    `${TENANT_APP_SESSION_COOKIE}=${sessionId}`,
+    `Max-Age=${SESSION_TTL_SECONDS}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+  ]
+  if (domain) parts.push(`Domain=${domain}`)
+  if (shouldUseSecureCookie(request, env)) parts.push('Secure')
+  return parts.join('; ')
+}
+
+export function buildTenantAppClearCookie(request, env) {
+  const domain = getCookieDomain(request, env)
+  const parts = [
+    `${TENANT_APP_SESSION_COOKIE}=`,
+    'Max-Age=0',
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+  ]
+  if (domain) parts.push(`Domain=${domain}`)
+  if (shouldUseSecureCookie(request, env)) parts.push('Secure')
+  return parts.join('; ')
+}
+
+export function getTenantAppSessionIdFromRequest(request) {
+  const cookieHeader = request.headers.get('Cookie') || request.headers.get('cookie') || ''
+  for (const part of cookieHeader.split(/;\s*/)) {
+    const eq = part.indexOf('=')
+    if (eq === -1) continue
+    if (part.slice(0, eq).trim() === TENANT_APP_SESSION_COOKIE) return part.slice(eq + 1).trim()
+  }
+  return null
+}
+
+// Export del nombre de cookie por si alguien lo necesita (no se usa hoy).
+export const TENANT_APP_SESSION_COOKIE_NAME = TENANT_APP_SESSION_COOKIE

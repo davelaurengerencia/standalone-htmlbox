@@ -11,7 +11,7 @@ function k(boxId) {
   return `boxdb:${boxId}`
 }
 
-// Devuelve { url, token, visibility, tenantSlug, boxSlug } o null.
+// Devuelve { url, token, visibility, tenantId, tenantSlug, boxSlug } o null.
 // Acepta `request` opcional para reenviar cookies (no usado en reads de tabla).
 export async function resolveBoxDb(env, boxId, request) {
   if (!boxId || !/^[a-z0-9]{16}$/.test(boxId)) return null
@@ -39,6 +39,7 @@ export async function resolveBoxDb(env, boxId, request) {
 
   const out = {
     boxId: data.box.id,
+    tenantId: data.box.tenant_id,  // agregado en fase 3 — lo necesita tenantAppAuth.js
     tenantSlug: data.box.tenant_slug,
     boxSlug: data.box.slug,
     visibility: data.box.visibility,

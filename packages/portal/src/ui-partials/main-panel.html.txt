@@ -382,6 +382,166 @@
             </div>
           </div>
 
+<!-- Tab Team (fase 3 — usuarios centralizados, tenant-level) -->
+          <div x-show="activeTab === 'team'" class="absolute inset-0 p-6 overflow-y-auto bg-slate-950">
+            <div class="max-w-4xl mx-auto space-y-4" x-data="teamTab()" x-ref="teamTabRef" x-init="init()">
+
+              <div class="flex items-center justify-between">
+                <div>
+                  <h2 class="text-lg font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-user-tie text-indigo-400"></i>
+                    Equipo Centralizado
+                  </h2>
+                  <p class="text-xs text-slate-400 mt-1">
+                    Gente con acceso a múltiples boxes del tenant con un solo login (vía magic link).
+                    Distinto de los "Usuarios" de cada box — esta lista es a nivel tenant y vive en
+                    D1, no en la Turso de cada box.
+                  </p>
+                </div>
+                <button @click="showAddForm = !showAddForm"
+                        class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-medium transition">
+                  <i class="fa-solid fa-plus mr-1"></i> Agregar persona
+                </button>
+              </div>
+
+              <!-- Form alta -->
+              <div x-show="showAddForm" x-transition
+                   class="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Agregar al equipo</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input x-model="newEmail" placeholder="email@ejemplo.com"
+                         class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500">
+                  <input x-model="newDisplayName" placeholder="Nombre (opcional)"
+                         class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500">
+                </div>
+                <div class="flex gap-2">
+                  <button @click="addUser()" :disabled="!newEmail.trim() || addingUser"
+                          class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 rounded-lg text-sm font-medium transition">
+                    <span x-show="!addingUser">Agregar</span>
+                    <span x-show="addingUser"><i class="fa-solid fa-spinner fa-spin"></i></span>
+                  </button>
+                  <button @click="showAddForm = false"
+                          class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm transition">Cancelar</button>
+                </div>
+              </div>
+
+              <!-- Lista -->
+              <div class="space-y-2">
+                <template x-for="u in users" :key="u.id">
+                  <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+                    <div class="flex items-center justify-between">
+                      <div class="min-w-0">
+                        <h3 class="font-medium text-sm truncate" x-text="u.display_name || u.email"></h3>
+                        <p class="text-[10px] text-slate-500 mt-0.5">
+                          <code class="text-slate-400" x-text="u.email"></code>
+                          · <span x-text="u.disabled_at ? 'Deshabilitado' : 'Activo'"></span>
+                        </p>
+                      </div>
+                      <div class="flex gap-1 flex-shrink-0">
+                        <button @click="openGrant(u)"
+                                class="px-3 py-1 bg-slate-800 hover:bg-indigo-600 rounded-lg text-[11px] transition">
+                          <i class="fa-solid fa-key mr-1"></i> Otorgar acceso
+                        </button>
+                        <button @click="deleteUser(u)"
+                                class="px-3 py-1 bg-slate-800 hover:bg-rose-600 rounded-lg text-[11px] transition">
+                          <i class="fa-solid fa-trash"></i>
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- Lista de accesos del user -->
+                    <div class="mt-3 space-y-1">
+                      <template x-for="a in u.accesses" :key="a.id">
+                        <div class="flex items-center justify-between p-2 rounded-lg bg-slate-950/50 border border-slate-800/60">
+                          <div class="flex items-center gap-2 min-w-0">
+                            <span class="text-[10px] px-1.5 py-0.5 rounded font-semibold flex-shrink-0"
+                                  :class="a.scope_type === 'tenant' ? 'bg-purple-500/10 text-purple-400 border border-purple-500/30'
+                                        : a.scope_type === 'workspace' ? 'bg-sky-500/10 text-sky-400 border border-sky-500/30'
+                                        : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'"
+                                  x-text="a.scope_type"></span>
+                            <span class="text-[11px] text-slate-300 truncate" x-text="scopeLabel(a)"></span>
+                            <span class="text-[10px] text-slate-500 font-mono" x-text="a.role"></span>
+                          </div>
+                          <button @click="revokeAccess(u, a)"
+                                  class="px-2 py-0.5 bg-slate-800 hover:bg-rose-700 rounded text-[10px] transition flex-shrink-0">
+                            <i class="fa-solid fa-times"></i>
+                          </button>
+                        </div>
+                      </template>
+                      <div x-show="u.accesses.length === 0" class="text-[10px] text-slate-500 italic">
+                        Sin accesos otorgados.
+                      </div>
+                    </div>
+                  </div>
+                </template>
+                <div x-show="users.length === 0 && !loadingTeam" class="text-xs text-slate-500 italic text-center py-6">
+                  No hay gente en el equipo todavía.
+                </div>
+                <div x-show="loadingTeam" class="text-xs text-slate-500 text-center py-6">
+                  <i class="fa-solid fa-spinner fa-spin mr-1"></i> Cargando…
+                </div>
+              </div>
+
+              <!-- Modal grant -->
+              <div x-show="grantModalOpen" x-transition.opacity
+                   class="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+                   @click.self="grantModalOpen = false">
+                <div class="w-full max-w-md bg-slate-900 rounded-2xl border border-slate-800 p-6 space-y-4">
+                  <h3 class="font-bold text-lg flex items-center gap-2">
+                    <i class="fa-solid fa-key text-indigo-400"></i>
+                    Otorgar acceso
+                  </h3>
+                  <p class="text-xs text-slate-400">
+                    Para <strong x-text="grantTarget?.email"></strong>
+                  </p>
+                  <div class="space-y-2">
+                    <label class="text-[10px] uppercase font-bold text-slate-400 block">Tipo de acceso</label>
+                    <select x-model="grantForm.scope_type"
+                            class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm">
+                      <option value="box">Box puntual</option>
+                      <option value="workspace">Workspace entero</option>
+                      <option value="tenant">Tenant entero (todo)</option>
+                    </select>
+                  </div>
+                  <div x-show="grantForm.scope_type !== 'tenant'" class="space-y-2">
+                    <label class="text-[10px] uppercase font-bold text-slate-400 block">
+                      <span x-show="grantForm.scope_type === 'box'">Box</span>
+                      <span x-show="grantForm.scope_type === 'workspace'">Workspace</span>
+                    </label>
+                    <select x-model="grantForm.scope_id"
+                            class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm">
+                      <template x-if="grantForm.scope_type === 'box'">
+                        <template x-for="b in boxes" :key="b.id">
+                          <option :value="b.id" x-text="b.name + ' (' + b.slug + ')'"></option>
+                        </template>
+                      </template>
+                      <template x-if="grantForm.scope_type === 'workspace'">
+                        <template x-for="w in workspaces" :key="w.id">
+                          <option :value="w.id" x-text="w.name"></option>
+                        </template>
+                      </template>
+                    </select>
+                  </div>
+                  <div class="flex gap-2 justify-end">
+                    <button @click="grantModalOpen = false"
+                            class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm transition">Cancelar</button>
+                    <button @click="grantAccess()" :disabled="granting"
+                            class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 rounded-lg text-sm font-medium transition">
+                      <span x-show="!granting">Otorgar</span>
+                      <span x-show="granting"><i class="fa-solid fa-spinner fa-spin"></i></span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Status -->
+              <div x-show="teamStatus" x-text="teamStatus"
+                   class="text-xs px-3 py-2 rounded-lg"
+                   :class="teamStatusOk ? 'bg-emerald-900/30 text-emerald-300' : 'bg-rose-900/30 text-rose-300'"></div>
+
+            </div>
+          </div>
+
 <!-- MCP placeholder (fase 6) -->
           <div x-show="activeTab === 'mcp'" class="absolute inset-0 p-6 overflow-y-auto bg-slate-950">
             <div class="max-w-4xl mx-auto space-y-4">

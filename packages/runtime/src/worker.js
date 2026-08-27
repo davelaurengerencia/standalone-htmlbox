@@ -19,6 +19,7 @@ import { serveBoxHtml } from './lib/htmlServer.js'
 import { handleDataApi } from './lib/dataApi.js'
 import { handleAppAuth } from './lib/appAuthRoutes.js'
 import { handleAppDataApi } from './lib/appDataApi.js'
+import { handleTenantAppAuth } from './lib/tenantAppAuth.js'
 import { SDK_VERSION } from '@htmlbox/shared'
 
 import SDK_SOURCE_BODY from './sdk/htmlbox-sdk.txt' // bundled as Text por wrangler rules
@@ -77,6 +78,11 @@ export default {
     // App-data API (customers — filas filtradas por owner_user_id)
     if (path.startsWith('/api/app-data/')) {
       return (await handleAppDataApi(request, env, url)) || notFound('not_found')
+    }
+
+    // Tenant-app-auth (fase 3 — usuarios centralizados, magic link cross-box)
+    if (path.startsWith('/api/tenant-app-auth/')) {
+      return (await handleTenantAppAuth(request, env, url)) || notFound('not_found')
     }
 
     // Box público

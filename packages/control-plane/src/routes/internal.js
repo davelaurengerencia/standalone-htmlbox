@@ -5,12 +5,24 @@
 //   GET  /api/internal/boxes/:boxId/db                → credenciales Turso (runtime)
 //   POST /api/internal/retry-schema/:boxId            → re-aplica el schema (diagnóstico desde el admin)
 //   POST /api/internal/send-app-magic-link            → envío de magic link para usuarios de la app (runtime → control-plane)
+//   POST /api/internal/tenant-app-auth/request        → magic link TENANT-app-user (fase 3)
+//   POST /api/internal/tenant-app-auth/consume        → consume + crea sesión TENANT-app-user (fase 3)
+//   POST /api/internal/tenant-app-auth/access         → chequea si tenant-app-user tiene acceso al box (fase 3)
+//
+//   GET/POST/DELETE /api/tenant-app-users/...         → admin portal de usuarios centralizados (fase 3)
 //
 // Estos endpoints NO se exponen al browser (públicos con rate-limit) — solo
 // se llaman desde el runtime worker con la cookie de sesión cuando aplica.
 
 import { retrySchema } from './boxes.js'
 import { sendAppMagicLinkEmail } from '../lib/email.js'
+import {
+  isTenantAppRateLimited, createTenantAppMagicLink, consumeTenantAppMagicLink,
+  findTenantAppUserByEmail, createTenantAppSession, validateTenantAppSession,
+  checkTenantAppAccess, buildTenantAppSessionCookie,
+  buildTenantAppClearCookie, getTenantAppSessionIdFromRequest,
+  requireRole, assertTenantScope,
+} from '../lib/session.js'
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -33,7 +45,8 @@ export async function handleInternal(request, env, ctx, path, method) {
   const requiresInternalSecret =
     path.startsWith('/api/internal/boxes/') ||
     path === '/api/internal/whoami' ||
-    path === '/api/internal/send-app-magic-link'
+    path === '/api/internal/send-app-magic-link' ||
+    path.startsWith('/api/internal/tenant-app-auth/')
 
   if (requiresInternalSecret) {
     const provided = request.headers.get('X-HTMLBox-Internal-Secret') || ''
@@ -85,7 +98,98 @@ export async function handleInternal(request, env, ctx, path, method) {
     return await postSendAppMagicLink(request, env)
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Fase 3 — htmlbox-spec-app-users-centralized.md
+  // ─────────────────────────────────────────────────────────────────────────
+
+  if (path === '/api/internal/tenant-app-auth/request' && method === 'POST') {
+    return await postTenantAppRequest(request, env)
+  }
+  if (path === '/api/internal/tenant-app-auth/consume' && method === 'POST') {
+    return await postTenantAppConsume(request, env)
+  }
+  if (path === '/api/internal/tenant-app-auth/access' && method === 'POST') {
+    return await postTenantAppAccessCheck(request, env)
+  }
+
   return json({ error: 'not_found' }, 404)
+}
+
+// POST /api/internal/tenant-app-auth/request
+// Body: { tenantId, email, magicLinkBase }
+// Devuelve { ok, _dev_preview?, _email_mode? }. Genera magic link en D1,
+// delega el envío a control-plane (binding MAIL). El magicLink lo arma
+// runtime (sabe su origin); control-plane solo le agrega el token al final.
+async function postTenantAppRequest(request, env) {
+  let body
+  try { body = await request.json() } catch { return json({ ok: true }) }
+  const { tenantId, email: rawEmail } = body || {}
+  const email = (rawEmail || '').trim().toLowerCase()
+  const GENERIC = { ok: true }
+  if (!tenantId || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json(GENERIC)
+
+  const appUser = await findTenantAppUserByEmail(env, tenantId, email)
+  if (!appUser || appUser.disabled_at) return json(GENERIC) // invite_only siempre acá
+
+  if (await isTenantAppRateLimited(env, email, tenantId)) return json(GENERIC)
+
+  const { id: tokenId } = await createTenantAppMagicLink(env, email, tenantId)
+  const magicLinkBase = body.magicLinkBase
+  if (!magicLinkBase) return json({ error: 'missing_magic_link_base' }, 400)
+  const magicLink = `${magicLinkBase}${tokenId}`
+
+  const tenant = await env.DB.prepare(`SELECT name FROM htmlbox_tenants WHERE id = ?1`).bind(tenantId).first()
+  const emailResult = await sendAppMagicLinkEmail(env, { toEmail: email, magicLink, boxName: tenant?.name || null })
+  return json({ ...GENERIC, _dev_preview: emailResult?.previewLink, _email_mode: emailResult?.mode })
+}
+
+// POST /api/internal/tenant-app-auth/consume
+// Body: { token }
+// Devuelve { ok, tenantAppUser, cookie }. Runtime reenvía el cookie tal cual
+// en su respuesta (control-plane no puede setear cookies en el browser del
+// visitante del box — el response que llega al browser lo arma runtime).
+async function postTenantAppConsume(request, env) {
+  let body
+  try { body = await request.json() } catch { return json({ error: 'invalid_body' }, 400) }
+  const token = body?.token
+  if (!token) return json({ error: 'missing_token' }, 400)
+
+  const consumed = await consumeTenantAppMagicLink(env, token)
+  if (!consumed) return json({ error: 'invalid_or_expired_token' }, 400)
+
+  const appUser = await findTenantAppUserByEmail(env, consumed.tenant_id, consumed.email)
+  if (!appUser || appUser.disabled_at) return json({ error: 'user_not_found_or_disabled' }, 403)
+
+  const sess = await createTenantAppSession(env, appUser.id)
+  const cookie = buildTenantAppSessionCookie(request, sess.id, env)
+  return json({
+    ok: true,
+    tenantAppUser: { id: appUser.id, email: appUser.email, display_name: appUser.display_name },
+    cookie,
+  })
+}
+
+// POST /api/internal/tenant-app-auth/access
+// Body: { boxId } + cookie hbx_tapp_sid reenviada por runtime
+// Devuelve { allowed, role?, tenantAppUser? }
+async function postTenantAppAccessCheck(request, env) {
+  let body
+  try { body = await request.json() } catch { return json({ allowed: false }) }
+  const boxId = body?.boxId
+  if (!boxId) return json({ allowed: false })
+
+  const sid = getTenantAppSessionIdFromRequest(request)
+  const v = await validateTenantAppSession(env, sid)
+  if (!v) return json({ allowed: false })
+
+  const box = await env.DB.prepare(
+    `SELECT id, tenant_id, workspace_id FROM htmlbox_boxes WHERE id = ?1`
+  ).bind(boxId).first()
+  if (!box || box.tenant_id !== v.tenantAppUser.tenant_id) return json({ allowed: false })
+
+  const access = await checkTenantAppAccess(env, v.tenantAppUser.id, box)
+  if (!access.allowed) return json({ allowed: false })
+  return json({ allowed: true, role: access.role, tenantAppUser: v.tenantAppUser })
 }
 
 // POST /api/internal/send-app-magic-link

@@ -409,6 +409,10 @@
             this.$refs.usersTabRef.loadUsers()
             this.$refs.usersTabRef.loadSettings()
           }
+          if (tab === 'team' && this.$refs.teamTabRef
+              && typeof this.$refs.teamTabRef.loadTeam === 'function') {
+            this.$refs.teamTabRef.loadTeam()
+          }
         },
 
         async loadActiveHtml() {
@@ -812,6 +816,151 @@
             document.body.removeChild(ta)
             this.showToast('Copiado.')
           }
+        },
+      }
+    }
+
+    // ============ Tab Equipo Centralizado (fase 3 — htmlbox-spec-app-users-centralized.md) ============
+    function teamTab() {
+      return {
+        users: [],
+        loadingTeam: false,
+        showAddForm: false,
+        newEmail: '',
+        newDisplayName: '',
+        addingUser: false,
+        teamStatus: '',
+        teamStatusOk: false,
+
+        // Modal grant
+        grantModalOpen: false,
+        grantTarget: null,
+        grantForm: { scope_type: 'box', scope_id: '' },
+        granting: false,
+
+        async init() {
+          // Cargar al toque — el tab es tenant-level, no necesita currentBox.
+          await this.loadTeam()
+          if (!this.grantForm.scope_id) {
+            // Pre-seleccionar el primer box si existe, para que el form ya
+            // tenga un scope_id válido al abrir el modal.
+            const firstBox = (this.$root.boxes || [])[0]
+            if (firstBox) this.grantForm.scope_id = firstBox.id
+          }
+        },
+
+        async loadTeam() {
+          this.loadingTeam = true
+          try {
+            const d = await apiFetch('/api/tenant-app-users')
+            this.users = d.users || []
+          } catch (err) {
+            debugLog('teamTab.loadTeam:', err)
+            this.users = []
+            this.flash('Error cargando equipo: ' + (err.code || err.message), false)
+          }
+          this.loadingTeam = false
+        },
+
+        async addUser() {
+          const email = (this.newEmail || '').trim().toLowerCase()
+          if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+            this.flash('Email inválido.', false)
+            return
+          }
+          this.addingUser = true
+          try {
+            await apiFetch('/api/tenant-app-users', {
+              method: 'POST',
+              body: { email, display_name: this.newDisplayName.trim() || null },
+            })
+            this.newEmail = ''
+            this.newDisplayName = ''
+            this.showAddForm = false
+            await this.loadTeam()
+            this.flash('Persona agregada al equipo.', true)
+          } catch (err) {
+            this.flash('Error: ' + (err.code || err.message), false)
+          } finally {
+            this.addingUser = false
+          }
+        },
+
+        async deleteUser(u) {
+          if (!confirm(`¿Borrar a ${u.email} del equipo? Esto también quita todos sus accesos y cierra sus sesiones.`)) return
+          try {
+            await apiFetch(`/api/tenant-app-users/${u.id}`, { method: 'DELETE' })
+            await this.loadTeam()
+            this.flash('Persona borrada del equipo.', true)
+          } catch (err) {
+            this.flash('Error: ' + (err.code || err.message), false)
+          }
+        },
+
+        openGrant(u) {
+          this.grantTarget = u
+          this.grantModalOpen = true
+          // Default: box, pre-seleccionar el primero
+          this.grantForm = { scope_type: 'box', scope_id: this.$root.boxes?.[0]?.id || '' }
+        },
+
+        async grantAccess() {
+          if (!this.grantTarget) return
+          const body = {
+            scope_type: this.grantForm.scope_type,
+          }
+          if (this.grantForm.scope_type !== 'tenant') {
+            if (!this.grantForm.scope_id) {
+              this.flash('Elegí un box o workspace.', false)
+              return
+            }
+            body.scope_id = this.grantForm.scope_id
+          }
+          this.granting = true
+          try {
+            await apiFetch(`/api/tenant-app-users/${this.grantTarget.id}/access`, {
+              method: 'POST',
+              body,
+            })
+            this.grantModalOpen = false
+            await this.loadTeam()
+            this.flash('Acceso otorgado.', true)
+          } catch (err) {
+            this.flash('Error: ' + (err.code || err.message), false)
+          } finally {
+            this.granting = false
+          }
+        },
+
+        async revokeAccess(u, a) {
+          if (!confirm(`¿Revocar el acceso "${a.scope_type}" a esta persona?`)) return
+          try {
+            await apiFetch(`/api/tenant-app-users/${u.id}/access/${a.id}`, { method: 'DELETE' })
+            await this.loadTeam()
+            this.flash('Acceso revocado.', true)
+          } catch (err) {
+            this.flash('Error: ' + (err.code || err.message), false)
+          }
+        },
+
+        // Etiqueta legible para el scope (muestra box/workspace name, no id)
+        scopeLabel(a) {
+          if (a.scope_type === 'tenant') return '(todo el tenant)'
+          if (a.scope_type === 'workspace') {
+            const ws = (this.$root.workspaces || []).find(w => w.id === a.scope_id)
+            return ws ? ws.name : a.scope_id
+          }
+          if (a.scope_type === 'box') {
+            const box = (this.$root.boxes || []).find(b => b.id === a.scope_id)
+            return box ? `${box.name} (${box.slug})` : a.scope_id
+          }
+          return a.scope_id || ''
+        },
+
+        flash(msg, ok) {
+          this.teamStatus = msg
+          this.teamStatusOk = !!ok
+          setTimeout(() => { this.teamStatus = '' }, 3000)
         },
       }
     }

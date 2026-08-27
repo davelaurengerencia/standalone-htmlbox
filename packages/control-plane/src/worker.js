@@ -17,6 +17,7 @@
 import { handleAuth } from './routes/auth.js'
 import { handleTenants } from './routes/tenants.js'
 import { handleBoxes } from './routes/boxes.js'
+import { handleTenantAppUsers } from './routes/tenantAppUsers.js'
 import { handleUploads } from './routes/uploads.js'
 import { handleInternal } from './routes/internal.js'
 import { handleAi } from './routes/ai.js'
@@ -182,6 +183,12 @@ export default {
           ? path.slice('/api/tenants/'.length).split('/')[0]
           : null
         const res = await handleTenants(request, env, ctx, path, sub, method)
+        return withCors(res, request)
+      }
+
+      // Tenant app users (fase 3 — htmlbox-spec-app-users-centralized.md)
+      if (path.startsWith('/api/tenant-app-users')) {
+        const res = await handleTenantAppUsers(request, env, ctx, path, method)
         return withCors(res, request)
       }
 

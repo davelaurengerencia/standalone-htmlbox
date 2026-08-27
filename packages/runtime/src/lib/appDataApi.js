@@ -22,6 +22,7 @@
 
 import { resolveBoxDb, getBoxClient } from './boxDb.js'
 import { getAppSessionIdFromRequest, validateAppSession } from './appAuth.js'
+import { getTenantAppSessionIdFromRequest } from './tenantAppAuth.js'
 import { ensureColumn, ensureTableScopeColumn, ensureOwnerColumn } from '@htmlbox/shared'
 
 function json(data, status = 200, extraHeaders = {}) {
@@ -31,14 +32,47 @@ function json(data, status = 200, extraHeaders = {}) {
   })
 }
 
+// Resuelve al app-user autenticado. Primero intenta la sesión box-local
+// (fase 1/2, hbx_app_sid); si falla, intenta el fallback de tenant-app-user
+// (fase 3, hbx_tapp_sid) — alguien que el tenant dio de alta UNA vez y le
+// otorgó acceso al box o a su workspace o al tenant entero.
 async function requireAppUser(env, boxId, request) {
   const info = await resolveBoxDb(env, boxId, request)
   if (!info) return { error: 'box_not_found', status: 404 }
   const client = await getBoxClient(env, info)
+
+  // 1) Sesión box-local (customer "real")
   const sid = getAppSessionIdFromRequest(request)
   const sess = await validateAppSession(client, sid)
-  if (!sess) return { error: 'unauthenticated', status: 401 }
-  return { client, appUser: sess.appUser, info }
+  if (sess) {
+    return { client, appUser: sess.appUser, info, isTenantWide: false }
+  }
+
+  // 2) Fallback: tenant-app-user (fase 3). Reusa el client (misma DB, misma
+  // tabla física) — solo cambia la autorización.
+  const tsid = getTenantAppSessionIdFromRequest(request)
+  if (tsid) {
+    const res = await fetch(`${env.HTMLBOX_CONTROL_PLANE_ORIGIN}/api/internal/tenant-app-auth/access`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cookie': `hbx_tapp_sid=${tsid}`,
+        ...(env.HTMLBOX_INTERNAL_SECRET ? { 'X-HTMLBox-Internal-Secret': env.HTMLBOX_INTERNAL_SECRET } : {}),
+      },
+      body: JSON.stringify({ boxId }),
+    })
+    const data = await res.json().catch(() => ({ allowed: false }))
+    if (data.allowed) {
+      return {
+        client,
+        appUser: { id: data.tenantAppUser.id, email: data.tenantAppUser.email, display_name: data.tenantAppUser.display_name },
+        info,
+        isTenantWide: true,
+      }
+    }
+  }
+
+  return { error: 'unauthenticated', status: 401 }
 }
 
 async function getTableScope(client, slug) {
@@ -67,11 +101,13 @@ async function getRows(request, env, boxId, slug, url) {
                FROM htmlbox_${slug}
               WHERE deleted_at IS NULL`
   const args = []
-  if (scope === 'private') {
+  // scope === 'private' + box-local user → filtra por owner_user_id
+  // scope === 'private' + tenant-wide user (fase 3) → ve TODO sin filtro
+  // scope === 'shared' → sin filtro, todos ven lo mismo
+  if (scope === 'private' && !auth.isTenantWide) {
     sql += ` AND owner_user_id = ?1`
     args.push(auth.appUser.id)
   }
-  // scope === 'shared': sin filtro, todos ven lo mismo.
   sql += ` ORDER BY id ASC LIMIT ${limit} OFFSET ${offset}`
 
   const result = await auth.client.execute({ sql, args })
@@ -92,6 +128,13 @@ async function getRows(request, env, boxId, slug, url) {
 async function postUpsert(request, env, boxId, slug) {
   const auth = await requireAppUser(env, boxId, request)
   if (auth.error) return json({ error: auth.error }, auth.status)
+
+  // v1: tenant-wide users son SOLO LECTURA — escribir "a nombre de" un
+  // tenant-app-user no tiene owner_user_id natural, depende de cómo se
+  // diseñe el sistema de roles (§4 del spec). Devolvemos 403 explícito.
+  if (auth.isTenantWide) {
+    return json({ error: 'tenant_wide_users_are_read_only_in_v1' }, 403)
+  }
 
   const scope = await getTableScope(auth.client, slug)
   if (!scope) return json({ error: 'table_not_found' }, 404)
