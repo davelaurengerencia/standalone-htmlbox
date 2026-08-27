@@ -1,17 +1,20 @@
 // src/boxDispatch.js — constantes y predicados compartidos entre el
 // dispatcher (packages/runtime) y el per-box script (Phase 2).
 //
-// El header X-HTMLBox-Box-Id es el canal por el que el dispatcher pasa
-// la identidad del box al per-box script. Ambos lados importan este
-// módulo para evitar drift — si alguien renombra el header en un solo
-// lado, el spec test del runtime-core no detecta el cambio (es string
-// puro), pero al menos el contrato vive en un lugar único y un grep
-// `BOX_ID_HEADER` encuentra las referencias.
+// Estos headers son el canal por el que el dispatcher pasa el contexto
+// del box al per-box script. Ambos lados importan este módulo para
+// evitar drift — si alguien renombra un header en un solo lado, los
+// tests de runtime-core no detectan el cambio (son strings puros), pero
+// el spec test del wrapper sí (busca nombres literales en dist/).
+//
+// Headers (todos prefijados X-HTMLBox- para evitar colisión con headers
+// de proxy estándar — solo entre dispatcher y per-box script en el mismo
+// isolate WFP de Cloudflare):
 
-// El header es deliberadamente NO estándar (prefijo X-) porque no
-// debería tener semántica de proxy — solo entre dispatcher y per-box
-// script corriendo en el mismo isolate WFP de Cloudflare.
-export const BOX_ID_HEADER = 'X-HTMLBox-Box-Id'
+export const BOX_ID_HEADER = 'X-HTMLBox-Box-Id'        // 16 chars [a-z0-9]
+export const TENANT_HEADER = 'X-HTMLBox-Tenant-Slug'   // slug del tenant
+export const SLUG_HEADER = 'X-HTMLBox-Box-Slug'        // slug del box
+export const VIS_HEADER = 'X-HTMLBox-Visibility'       // 'public' | 'private'
 
 // boxId siempre matchea este regex. Reusar la misma regex en:
 //   - dispatcher: validar antes de armar el script name "box-{boxId}"

@@ -1,10 +1,11 @@
-// src/lib/boxDispatch.js — glue dispatcher-side para Workers for Platforms (Phase 1).
+// src/lib/boxDispatch.js — glue dispatcher-side para Workers for Platforms (Phase 2).
 //
-// Por ahora el binding BOX_DISPATCH está COMENTADO en runtime/wrangler.jsonc,
-// así que env.BOX_DISPATCH siempre es undefined y dispatchToBoxWorker siempre
-// devuelve null (cayendo al path viejo — fetchActiveHtml + serveBoxHtml). En
-// Phase 2 se prende el binding y ahí el helper empieza a tener comportamiento
-// real.
+// Phase 1 (WFP scaffolding apagado): con binding BOX_DISPATCH comentado
+// en wrangler.jsonc, dispatchToBoxWorker siempre devuelve null y el
+// dispatcher cae al path viejo (fetchActiveHtml + serveBoxHtml).
+// Phase 2: se prende el binding, dispatchToBoxWorker invoca el per-box
+// script (packages/runtime-box-worker), y dispatchToBoxWorker devuelve
+// la Response del script o null si el script no existe en el namespace.
 //
 // Comportamiento de dispatchToBoxWorker:
 //
@@ -15,28 +16,45 @@
 //   - throw    → cualquier otro error (no se silencia — queremos verlo en
 //                logs en vez de pretender que el path viejo lo arregla).
 
-import { BOX_ID_HEADER, BOX_ID_PATTERN, isWorkerNotFoundError } from '@htmlbox/runtime-core'
+import {
+  BOX_ID_HEADER,
+  TENANT_HEADER,
+  SLUG_HEADER,
+  VIS_HEADER,
+  BOX_ID_PATTERN,
+  isWorkerNotFoundError,
+} from '@htmlbox/runtime-core'
 
-// El dispatcher siempre tiene un boxId válido (viene de resolver.js, que
-// ya validó contra BOX_ID_PATTERN en su regex interno). Pero igual
-// validamos acá antes de armar el script name "box-{boxId}".
-// Defensa-en-profundidad por si un día alguien refactorea resolver.js
-// y empieza a meter un string crudo sin normalizar.
+// Validamos boxId antes de armar el script name "box-{boxId}". El dispatcher
+// siempre tiene un boxId válido (viene de resolver.js, que ya validó contra
+// BOX_ID_PATTERN en su regex interno), pero igual validamos acá como
+// defensa-en-profundidad por si un día alguien refactorea resolver.js y
+// empieza a meter un string crudo sin normalizar.
 function assertValidBoxId(boxId) {
   if (!BOX_ID_PATTERN.test(boxId)) {
     throw new Error(`boxDispatch: boxId inválido ${JSON.stringify(boxId)}`)
   }
 }
 
-// Clona el Request con el header de identidad. Cloudflare Workers Request
-// es inmutable; hay que construir uno nuevo copiando headers + body.
+// Clona el Request con TODOS los headers de contexto que el per-box script
+// necesita: boxId + tenantSlug + boxSlug + visibility. Cloudflare Workers
+// Request es inmutable; hay que construir uno nuevo copiando headers + body.
 // En GET (el caso del serving de boxes) no hay body, así que la copia es
 // barata. Para POST/PUT/PATCH copiamos body con duplex:'half' (Cloudflare
 // exige duplex en body streaming).
-export function withBoxIdHeader(request, boxId) {
-  assertValidBoxId(boxId)
+//
+// `resolved` viene de resolver.js (resolveByShareId / resolveByTenantAndSlug)
+// y tiene shape { boxId, tenantSlug, boxSlug, visibility }. Validamos
+// boxId contra el regex; el resto se confía en resolver (sus inputs
+// también están validados contra regex).
+export function withDispatchContext(request, resolved) {
+  assertValidBoxId(resolved.boxId)
   const headers = new Headers(request.headers)
-  headers.set(BOX_ID_HEADER, boxId)
+  headers.set(BOX_ID_HEADER, resolved.boxId)
+  headers.set(TENANT_HEADER, resolved.tenantSlug)
+  headers.set(SLUG_HEADER, resolved.boxSlug)
+  // visibility puede no estar en algunos shapes viejos; default 'private'.
+  headers.set(VIS_HEADER, resolved.visibility === 'public' ? 'public' : 'private')
   const init = {
     method: request.method,
     headers,
@@ -60,7 +78,7 @@ export async function dispatchToBoxWorker(env, request, resolved) {
   // de operación cuando BOX_DISPATCH no está configurado todavía.
   if (!env || !env.BOX_DISPATCH) return null
 
-  const newReq = withBoxIdHeader(request, resolved.boxId)
+  const newReq = withDispatchContext(request, resolved)
 
   // .get(name) puede tirar "Worker not found" si el script no existe en
   // el namespace. Eso NO es un error — es la señal para caer al path viejo

@@ -37,4 +37,13 @@ export { shouldShowDebugPanel } from './debugPanel.js'
 // BOX_ID_PATTERN: regex del boxId, mismo que ya usaba cookiePathForBox.
 // isWorkerNotFoundError: predicado para detectar "script no existe en
 // el namespace" y caer al path viejo sin propagar el error.
-export { BOX_ID_HEADER, BOX_ID_PATTERN, isWorkerNotFoundError } from './boxDispatch.js'
+// TENANT_HEADER, SLUG_HEADER, VIS_HEADER: contexto extra que el
+// per-box script necesita (R2 key namespace, debug panel ctx, CSP).
+export {
+  BOX_ID_HEADER,
+  TENANT_HEADER,
+  SLUG_HEADER,
+  VIS_HEADER,
+  BOX_ID_PATTERN,
+  isWorkerNotFoundError,
+} from './boxDispatch.js'
