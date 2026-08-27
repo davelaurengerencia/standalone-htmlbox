@@ -31,3 +31,10 @@ export {
 } from './resolver.js'
 
 export { shouldShowDebugPanel } from './debugPanel.js'
+
+// Constantes compartidas dispatcher ↔ per-box script (Phase 2).
+// BOX_ID_HEADER: canal de identidad (dispatcher → script).
+// BOX_ID_PATTERN: regex del boxId, mismo que ya usaba cookiePathForBox.
+// isWorkerNotFoundError: predicado para detectar "script no existe en
+// el namespace" y caer al path viejo sin propagar el error.
+export { BOX_ID_HEADER, BOX_ID_PATTERN, isWorkerNotFoundError } from './boxDispatch.js'

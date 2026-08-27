@@ -34,5 +34,13 @@
     { "binding": "CACHE", "id": "0388238bb30747819a845f94e1373390" }
   ],
 
+  // Phase 1 (WFP scaffolding apagado): el binding NO está activo. Mientras
+  // esté comentado, env.BOX_DISPATCH es undefined y el dispatcher siempre
+  // cae al path viejo (fetchActiveHtml + serveBoxHtml). Phase 2 lo prende.
+  //
+  // "dispatch_namespaces": [
+  //   { "binding": "BOX_DISPATCH", "namespace": "htmlbox-boxes" }
+  // ],
+
   "observability": { "enabled": true }
 }

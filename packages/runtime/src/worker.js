@@ -13,6 +13,14 @@
 // es /api/data/{boxId}/... y el SDK del box la consume con credentials=include
 // (cookie de sesión reenviada). El control-plane valida membresía vía
 // /api/internal/boxes/{boxId}/membership.
+//
+// Phase 1 (WFP scaffolding apagado): los bloques /s/{shareId} y
+// /t/{tenantSlug}/{boxSlug} (más el subdomain) consultan primero
+// dispatchToBoxWorker(env, request, resolved). Mientras el binding
+// BOX_DISPATCH esté ausente de wrangler.jsonc (todavía en Phase 1), el
+// helper siempre devuelve null y el dispatcher cae al path viejo
+// (fetchActiveHtml + serveBoxHtml). En Phase 2 se prende el binding y
+// el per-box script empieza a responder.
 
 import {
   parseRuntimePath,
@@ -24,6 +32,7 @@ import { handleDataApi } from './lib/dataApi.js'
 import { handleAppAuth } from './lib/appAuthRoutes.js'
 import { handleAppDataApi } from './lib/appDataApi.js'
 import { handleTenantAppAuth } from './lib/tenantAppAuth.js'
+import { dispatchToBoxWorker } from './lib/boxDispatch.js'
 import { SDK_VERSION } from '@htmlbox/shared'
 
 import SDK_SOURCE_BODY from './sdk/htmlbox-sdk.txt' // bundled as Text por wrangler rules
@@ -95,6 +104,15 @@ export default {
       const shareId = shareMatch[1]
       const resolved = await resolveByShareId(env, shareId, request)
       if (!resolved) return notFound('box_not_found_or_private')
+
+      // Phase 1: dispatchToBoxWorker devuelve null (binding ausente).
+      // Phase 2: si el binding está y el script existe, devuelve la Response
+      // del per-box script sin pasar por aca. Si devuelve null (script no
+      // existe), caemos al path viejo — útil para boxes viejos durante el
+      // rollout.
+      const dispatched = await dispatchToBoxWorker(env, request, resolved)
+      if (dispatched) return dispatched
+
       const active = await fetchActiveHtml(env, resolved.boxId, request)
       if (active.error) return notFound(active.error)
       return await serveBoxHtml({
@@ -110,11 +128,15 @@ export default {
       })
     }
 
-    // Box privado
+    // Box privado (subdomain + /t/{tenant}/{box})
     const parsed = parseRuntimePath(url)
     if (parsed?.mode === 'private') {
       const resolved = await resolveByTenantAndSlug(env, parsed.tenantSlug, parsed.boxSlug, request)
       if (!resolved) return notFound('box_not_found_or_private')
+
+      const dispatched = await dispatchToBoxWorker(env, request, resolved)
+      if (dispatched) return dispatched
+
       const active = await fetchActiveHtml(env, resolved.boxId, request)
       if (active.error) return notFound(active.error)
       return await serveBoxHtml({
