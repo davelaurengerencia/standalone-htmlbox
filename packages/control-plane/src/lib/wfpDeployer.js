@@ -127,5 +127,38 @@ export async function deployBoxWorker(env, accountId, namespace, boxId, opts = {
   return { ok: true, scriptName }
 }
 
+// deleteBoxWorker — borra el per-box script del namespace WFP.
+// Devuelve { ok: true } si Cloudflare responde 200; lanza si falla.
+//   404 ("Worker not found") se considera éxito idempotente — la limpieza
+//   es best-effort y queremos que deleteBox() en control-plane no falle
+//   si el script ya no existe.
+export async function deleteBoxWorker(env, accountId, namespace, boxId) {
+  assertValid(boxId, namespace)
+
+  const token = env.WFP_DEPLOY_TOKEN
+  if (!token) {
+    throw new Error('wfpDeployer: WFP_DEPLOY_TOKEN no configurado en control-plane')
+  }
+
+  const scriptName = `${SCRIPT_NAME_PREFIX}${boxId}`
+  const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/dispatch/namespaces/${encodeURIComponent(namespace)}/scripts/${encodeURIComponent(scriptName)}`
+
+  const res = await fetch(url, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  })
+
+  if (res.status === 404) {
+    return { ok: true, idempotent: true }
+  }
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`wfpDeployer.delete: Cloudflare respondió ${res.status} — ${text.slice(0, 500)}`)
+  }
+  return { ok: true }
+}
+
 // Hooks para tests (mockear bundleSource o buildBindings).
 export const _internal = { bundleSourceToBase64, buildBindings, assertValid }

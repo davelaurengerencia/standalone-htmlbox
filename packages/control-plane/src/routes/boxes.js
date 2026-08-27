@@ -1,18 +1,26 @@
 // src/routes/boxes.js — CRUD de boxes (HTMLBox).
 //
 //   GET    /api/boxes?workspace=:id                  → lista
-//   POST   /api/boxes                                → crea + provisiona Turso
+//   POST   /api/boxes                                → crea + provisiona Turso + WFP
 //   GET    /api/boxes/:id                            → detalle
 //   PATCH  /api/boxes/:id   { name, visibility, … }  → edita metadata
-//   DELETE /api/boxes/:id                            → soft + cleanup R2/D1
+//   DELETE /api/boxes/:id                            → soft + cleanup R2/D1 + WFP
 //
 // La provisión de la Turso DB se dispara con `provision=true` (default true)
 // y corre como una awaitable — si falla, la box queda en turso_status=failed
 // y se puede reintentar desde el admin panel.
+//
+// Phase 2 (Workers for Platforms): después del Turso provisioning, también
+// deployamos el per-box script al dispatch namespace 'htmlbox-boxes' vía
+// wfpDeployer.deployBoxWorker. Mismo criterio best-effort — la box queda
+// creada aunque el deploy falle (wfp_status='failed'), para que el dispatcher
+// caiga al path viejo cuando el binding BOX_DISPATCH esté prendido.
 
 import { boxId as newBoxId, shareId, isValidBoxSlug, isValidTenantSlug } from '@htmlbox/shared'
 import { createBoxDatabase, ensureBoxSchema, deleteBoxDatabase } from '../lib/tursoClient.js'
 import { getSessionIdFromRequest, validateSession, assertTenantScope, assertWorkspaceScope, requireRole } from '../lib/session.js'
+import { applyWfpSchema } from '../lib/dbMigrations.js'
+import { deployBoxWorker, deleteBoxWorker } from '../lib/wfpDeployer.js'
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -76,6 +84,10 @@ async function listBoxes(request, env) {
 async function createBox(request, env) {
   const { user, error } = await requireUser(request, env)
   if (error) return error
+
+  // Phase 2: aplicar schema de WFP (idempotente — no-op si ya corrió).
+  // Solo agrega wfp_status y wfp_error a htmlbox_boxes.
+  await applyWfpSchema(env)
 
   let body
   try { body = await request.json() } catch { return json({ error: 'invalid_body' }, 400) }
@@ -142,8 +154,39 @@ async function createBox(request, env) {
     // Devolvemos 200 con la box creada igual — el caller verá turso_status=failed.
   }
 
+  // Aprovisionar el per-box script de WFP (Phase 2 — best-effort).
+  // Si WFP_DEPLOY_TOKEN no está configurado o el deploy falla, la box
+  // queda con wfp_status='failed' y el dispatcher cae al path viejo
+  // (asumiendo que el binding BOX_DISPATCH está prendido en runtime).
+  const accountId = env.HTMLBOX_CLOUDFLARE_ACCOUNT_ID
+  const namespace = env.HTMLBOX_WFP_NAMESPACE || 'htmlbox-boxes'
+  if (env.WFP_DEPLOY_TOKEN && accountId) {
+    try {
+      await deployBoxWorker(env, accountId, namespace, id)
+      await env.DB.prepare(
+        `UPDATE htmlbox_boxes SET wfp_status = 'ready', wfp_error = NULL, updated_at = datetime('now') WHERE id = ?1`
+      ).bind(id).run()
+    } catch (wfpErr) {
+      console.error(`[boxes] WFP deploy failed for ${id}:`, wfpErr)
+      const errMsg = String(wfpErr?.message || wfpErr).slice(0, 500)
+      await env.DB.prepare(
+        `UPDATE htmlbox_boxes SET wfp_status = 'failed', wfp_error = ?1, updated_at = datetime('now') WHERE id = ?2`
+      ).bind(errMsg, id).run()
+      // La box queda creada igual — el caller verá wfp_status='failed'.
+    }
+  } else {
+    // WFP no configurado (sin token o sin account ID). Marcamos como
+    // 'failed' con mensaje explícito — útil para diagnóstico.
+    const msg = !env.WFP_DEPLOY_TOKEN
+      ? 'WFP_DEPLOY_TOKEN no configurado'
+      : 'HTMLBOX_CLOUDFLARE_ACCOUNT_ID no configurado'
+    await env.DB.prepare(
+      `UPDATE htmlbox_boxes SET wfp_status = 'failed', wfp_error = ?1, updated_at = datetime('now') WHERE id = ?2`
+    ).bind(msg, id).run()
+  }
+
   const created = await env.DB.prepare(
-    `SELECT id, slug, name, visibility, template, htmlbox_version, turso_status, share_id, auto_analyze_on_save, created_at, updated_at
+    `SELECT id, slug, name, visibility, template, htmlbox_version, turso_status, wfp_status, wfp_error, share_id, auto_analyze_on_save, created_at, updated_at
        FROM htmlbox_boxes WHERE id = ?1`
   ).bind(id).first()
   return json({ box: created }, 201)
@@ -217,7 +260,7 @@ async function patchBox(request, env, boxId) {
   ).bind(...binds).run()
 
   const updated = await env.DB.prepare(
-    `SELECT id, slug, name, visibility, template, htmlbox_version, turso_status, share_id, auto_analyze_on_save, created_at, updated_at
+    `SELECT id, slug, name, visibility, template, htmlbox_version, turso_status, wfp_status, wfp_error, share_id, auto_analyze_on_save, created_at, updated_at
        FROM htmlbox_boxes WHERE id = ?1`
   ).bind(boxId).first()
   return json({ box: updated })
@@ -255,6 +298,17 @@ async function deleteBox(request, env, boxId) {
       }
     } catch (err) {
       console.error(`[boxes] turso cleanup failed for ${boxId}:`, err)
+    }
+  }
+
+  // Limpiar el per-box script de WFP (Phase 2 — best-effort).
+  // Si WFP_DEPLOY_TOKEN no está o el namespace no existe, esto es no-op.
+  if (env.WFP_DEPLOY_TOKEN && env.HTMLBOX_CLOUDFLARE_ACCOUNT_ID) {
+    try {
+      await deleteBoxWorker(env, env.HTMLBOX_CLOUDFLARE_ACCOUNT_ID, env.HTMLBOX_WFP_NAMESPACE || 'htmlbox-boxes', boxId)
+    } catch (wfpErr) {
+      console.error(`[boxes] WFP cleanup failed for ${boxId}:`, wfpErr)
+      // No fallamos el delete — la limpieza es best-effort, queda en el namespace.
     }
   }
 
