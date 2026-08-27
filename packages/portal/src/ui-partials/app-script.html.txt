@@ -1,4 +1,99 @@
   <script>
+
+    // ============ Core: debug, apiFetch, reporte de errores ============
+    // Se carga primero dentro de este mismo <script> — todo lo de abajo
+    // (portalApp()/dataTab() o adminApp()) puede usar debugLog()/apiFetch().
+    //
+    // window.HTMLBOX_ENV y window.HTMLBOX_*_VERSION los inyecta el Worker
+    // (ver renderShell() en lib/partials.js) leyendo sus vars de wrangler.jsonc.
+
+    const HBX_DEBUG = (window.HTMLBOX_ENV || 'production') !== 'production'
+
+    function debugLog(...args) {
+      if (HBX_DEBUG) console.log('[HTMLBox]', ...args)
+    }
+
+    // Manda un error del browser al control-plane para que quede en Workers
+    // Logs del lado servidor, no solo en la consola del usuario (que nadie va
+    // a ver). Best-effort: si el propio reporte falla, no hace nada más — un
+    // error de reporting nunca debe generar un error nuevo.
+    function reportClientError(payload) {
+      try {
+        fetch('/api/client-error', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: String(payload.message || '').slice(0, 2000),
+            stack: String(payload.stack || '').slice(0, 4000),
+            url: window.location.href,
+            userAgent: navigator.userAgent,
+          }),
+          keepalive: true,
+        }).catch(() => {})
+      } catch { /* nunca romper por esto */ }
+    }
+
+    window.addEventListener('error', (e) => {
+      debugLog('window.onerror:', e.error || e.message)
+      reportClientError({ message: e.message, stack: e.error && e.error.stack })
+    })
+
+    window.addEventListener('unhandledrejection', (e) => {
+      const reason = e.reason
+      debugLog('unhandledrejection:', reason)
+      reportClientError({
+        message: reason && reason.message ? reason.message : String(reason),
+        stack: reason && reason.stack,
+      })
+    })
+
+    // Wrapper centralizado para llamadas a /api/*. Maneja de forma consistente:
+    // status no-2xx, respuesta que no es JSON válido, y errores de red — y
+    // adjunta el cf-ray de la respuesta (si vino) al error, para poder buscar
+    // esa request exacta en los logs de Cloudflare en vez de adivinar.
+    //
+    // Uso: const data = await apiFetch('/api/boxes', { method: 'POST', body: {...} })
+    // El error lanzado trae .status, .code (si el server mandó {error:'code'}) y .rayId.
+    async function apiFetch(path, opts = {}) {
+      const { body, headers, ...rest } = opts
+      const init = {
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...(headers || {}) },
+        ...rest,
+      }
+      if (body !== undefined) init.body = typeof body === 'string' ? body : JSON.stringify(body)
+
+      let res
+      try {
+        res = await fetch(path, init)
+      } catch (err) {
+        const netErr = new Error('Sin conexión con el servidor.')
+        netErr.cause = err
+        throw netErr
+      }
+
+      const rayId = res.headers.get('cf-ray') || null
+      let data = null
+      try {
+        data = await res.json()
+      } catch {
+        // Respuesta no era JSON (ej. un 500 en HTML del edge) — seguimos con data=null.
+      }
+
+      if (!res.ok) {
+        const err = new Error((data && (data.error || data.message)) || `Error ${res.status}`)
+        err.status = res.status
+        err.code = data && data.error
+        err.rayId = rayId
+        throw err
+      }
+
+      return data
+    }
+
+    debugLog('boot', window.HTMLBOX_PORTAL_VERSION || window.HTMLBOX_ADMIN_VERSION || 'dev')
+
     // ============ Constantes de seed ============
 
     const SEED_DASHBOARD = `<!doctype html>

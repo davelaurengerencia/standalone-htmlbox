@@ -134,7 +134,9 @@ export default {
       // HTMLRewriter (ver renderShell) en vez de un regex sobre el string.
       const runtimeOrigin = env.HTMLBOX_RUNTIME_ORIGIN || ''
       const safeOrigin = JSON.stringify(runtimeOrigin).replace(/</g, '\\u003c')
-      const injection = `<script>window.HTMLBOX_RUNTIME_ORIGIN=${safeOrigin};</script>`
+      const safeEnv = JSON.stringify(env.HTMLBOX_ENV || 'production')
+      const safeVersion = JSON.stringify(env.HTMLBOX_PORTAL_VERSION || 'dev')
+      const injection = `<script>window.HTMLBOX_RUNTIME_ORIGIN=${safeOrigin};window.HTMLBOX_ENV=${safeEnv};window.HTMLBOX_PORTAL_VERSION=${safeVersion};</script>`
       const rewritten = renderShell(PORTAL_SHELL_HTML, PORTAL_PARTIALS, injection)
       const headers = new Headers(rewritten.headers)
       headers.set('Content-Type', 'text/html; charset=utf-8')

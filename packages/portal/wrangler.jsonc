@@ -15,7 +15,8 @@
   "vars": {
     "HTMLBOX_ENV": "production",
     "HTMLBOX_CONTROL_PLANE_ORIGIN": "https://controlplane.htmlbox.dev",
-    "HTMLBOX_RUNTIME_ORIGIN": "https://htmlbox.dev"
+    "HTMLBOX_RUNTIME_ORIGIN": "https://htmlbox.dev",
+    "HTMLBOX_PORTAL_VERSION": "0.1.0"
   },
 
   "rules": [
