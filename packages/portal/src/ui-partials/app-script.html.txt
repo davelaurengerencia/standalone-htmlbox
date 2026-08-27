@@ -746,8 +746,25 @@
                 html(),
                 oneDark,
                 EditorView.theme({
-                  '&': { height: '100%', fontSize: '13px' },
-                  '.cm-scroller': { overflow: 'auto' },
+                  // Layout flexbox-style para que el scroller ocupe
+                  // exactamente el alto del wrapper. Sin esto, CM mide
+                  // el alto por su contenido y overflow nunca se
+                  // dispara. Crítico el display:flex + flexDirection
+                  // column — el wrapper es hijo de un flex item y
+                  // necesita propagar altura disponible al scroller
+                  // (no al contenido directo).
+                  '&': {
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    fontSize: '13px',
+                  },
+                  '.cm-scroller': {
+                    flex: '1 1 0',
+                    minHeight: '0',
+                    overflow: 'auto',
+                  },
+                  '.cm-content': { minHeight: '0' },
                   '.cm-gutters': { backgroundColor: 'transparent', borderRight: '1px solid rgba(255,255,255,0.05)' },
                 }, { dark: true }),
                 updateListener,

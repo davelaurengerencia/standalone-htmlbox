@@ -535,6 +535,23 @@ test('app-script.html.txt: el bridge Alpine↔CM6 está implementado', () => {
   assert.match(src, /window\.html_beautify/, 'formatHTML debe usar window.html_beautify')
 })
 
+test('app-script.html.txt: el theme del editor habilita scroll vertical (flex + minHeight:0)', () => {
+  const src = fs.readFileSync(appScriptPath, 'utf8')
+  // Trampa típica de CM6 dentro de un flex item: el scroller no
+  // scrollea porque flex shrinkea con min-height:auto. Forzamos el
+  // layout flex-style en el theme + min-height:0 en el scroller.
+  assert.match(src, /display:\s*'flex'/, 'theme debe poner .cm-editor como flex column')
+  assert.match(src, /flexDirection:\s*'column'/, 'theme debe usar flexDirection column')
+  assert.match(src, /minHeight:\s*'0'/, 'theme debe usar minHeight:0 (sin esto CM asume auto y bloquea el shrink)')
+  assert.match(src, /\.cm-scroller[\s\S]*flex:\s*'1 1 0'/, '.cm-scroller debe ocupar el espacio flexible del column')
+})
+
+test('main-panel.html.txt: el contenedor del editor tiene min-h-0 + overflow-hidden (crítico para scroll)', () => {
+  const src = fs.readFileSync(mainPanelPath, 'utf8')
+  assert.match(src, /<div\s+x-ref="cmContainer"[^>]*class="[^"]*min-h-0/, 'cmContainer debe tener min-h-0 para que flex no bloquee el shrink')
+  assert.match(src, /<div\s+x-ref="cmContainer"[^>]*class="[^"]*overflow-hidden/, 'cmContainer debe tener overflow-hidden (el scroll vive en .cm-scroller adentro)')
+})
+
 test('app-script.html.txt: NO quedan referencias operativas a _monaco / monacoEditor / automaticLayout', () => {
   const src = fs.readFileSync(appScriptPath, 'utf8')
   assert.doesNotMatch(src, /_monacoEditor/, '_monacoEditor debería estar borrado')

@@ -107,7 +107,7 @@
             </div>
             <div x-ref="cmContainer"
                  x-effect="activeTab === 'editor' && mountCMIfNeeded()"
-                 class="flex-1 w-full code-editor"></div>
+                 class="flex-1 w-full code-editor min-h-0 overflow-hidden"></div>
           </div>
 
           <!-- Tabla & Ingesta de Datos (fase 3 v1) -->
