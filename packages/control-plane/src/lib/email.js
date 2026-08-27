@@ -50,12 +50,16 @@ function escapeHtml(s) {
 
 // Devuelve { sent, previewLink? }. previewLink SOLO en modo dev o si falla prod.
 export async function sendMagicLinkEmail(env, request, { toEmail, tokenId, tenantName }) {
-  // En `wrangler dev --remote` request.url trae el host del edge (workers.dev).
-  // Para que el link funcione en dev, usamos HTMLBOX_PUBLIC_ORIGIN si está
-  // configurado (apunta al subdominio local), sino caemos a request.url.
+  // El magic link apunta al PORTAL (no al controlplane). Razón: el consume
+  // ocurre vía fetch desde el browser, y queremos que la Set-Cookie quede
+  // atada al origin del portal. En dev `*.localhost` no tiene dominio padre
+  // registrable, así que `Domain=localhost` se trata como host-only — el
+  // cookie sólo viaja si el origin del Set-Cookie coincide con el del consumer.
+  // En prod sigue funcionando: HTMLBOX_PORTAL_ORIGIN = https://portal.htmlbox.dev,
+  // y la cookie se setea con Domain=.htmlbox.dev (cross-subdomain real).
   const reqUrl = new URL(request.url)
-  const origin = (env.HTMLBOX_PUBLIC_ORIGIN || `${reqUrl.protocol}//${reqUrl.host}`).replace(/\/+$/, '')
-  const magicLink = `${origin}/api/auth/verify?token=${tokenId}`
+  const portalOrigin = (env.HTMLBOX_PORTAL_ORIGIN || `${reqUrl.protocol}//${reqUrl.host}`).replace(/\/+$/, '')
+  const magicLink = `${portalOrigin}/api/auth/verify?token=${tokenId}`
   const mode = (env.HTMLBOX_EMAIL_MODE || 'dev').toLowerCase()
   const fromAddress = env.HTMLBOX_EMAIL_FROM_ADDRESS || FROM_ADDRESS_DEFAULT
   const fromName = env.HTMLBOX_EMAIL_FROM_NAME || FROM_NAME_DEFAULT

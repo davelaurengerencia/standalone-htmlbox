@@ -926,8 +926,11 @@
     // ============ App Alpine ============
 
     function portalApp() {
-      const CONTROL_PLANE = 'https://controlplane.htmlbox.dev'
-      const RUNTIME = 'https://htmlbox.dev'
+      // URLs inyectadas por el worker antes de servir el HTML (window.HTMLBOX_*).
+      // Las llamadas a /api/* al control-plane van relativas (mismo origen) y el
+      // portal las proxy-ea. RUNTIME sí necesita URL absoluta (es otro worker).
+      const CONTROL_PLANE = ''
+      const RUNTIME = (typeof window !== 'undefined' && window.HTMLBOX_RUNTIME_ORIGIN) || ''
       return {
         // sesión
         user: null,
@@ -1576,7 +1579,7 @@
 
     // ============ Tab Datos (fase 3 v1) ============
     function dataTab() {
-      const RUNTIME = 'https://htmlbox.dev'
+      const RUNTIME = (typeof window !== 'undefined' && window.HTMLBOX_RUNTIME_ORIGIN) || ''
       return {
         tables: [],
         loadingTables: false,

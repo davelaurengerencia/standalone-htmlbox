@@ -50,7 +50,8 @@ async function proxyToControlPlane(request, env, path, search) {
   }
   try {
     const res = await fetch(upstreamUrl, init)
-    // Copiar todos los headers (incluyendo Set-Cookie) y status.
+    // Copiar todos los headers (incluyendo Set-Cookie, que Workers preserva
+    // en `new Headers(res.headers)`) y status.
     const resHeaders = new Headers(res.headers)
     // No propagar headers CORS del upstream — el browser está hablando con el
     // portal (mismo origen), no con el control-plane.
@@ -99,7 +100,20 @@ export default {
     // Sirve la SPA desde el bundle (importado como texto). No depende del cache
 // edge de ASSETS — cada deploy rebuilds el bundle con la última versión.
     if (!path.startsWith('/api/') && !path.includes('.')) {
-      return new Response(PORTAL_HTML, {
+      // Inyectamos las env vars como window.HTMLBOX_* antes del HTML para que el
+      // JS de la SPA pueda hablar con el runtime directamente (cross-origin desde
+      // portal). En dev .dev.vars del portal apunta a runtime.localhost:8783; en
+      // prod wrangler.jsonc#vars apunta a htmlbox.dev.
+      const runtimeOrigin = env.HTMLBOX_RUNTIME_ORIGIN || ''
+      const safeOrigin = JSON.stringify(runtimeOrigin).replace(/</g, '\\u003c')
+      const injection = `<script>window.HTMLBOX_RUNTIME_ORIGIN=${safeOrigin};</script>`
+      // El HTML viene de portal.html.txt que arranca con <!doctype html>; le
+      // metemos el <script> dentro de <head>. Si el archivo ya tiene <head>,
+      // insertamos después; si no, prepende uno.
+      const html = PORTAL_HTML.includes('<head>')
+        ? PORTAL_HTML.replace('<head>', '<head>' + injection)
+        : injection + PORTAL_HTML
+      return new Response(html, {
         headers: {
           'Content-Type': 'text/html; charset=utf-8',
           'Cache-Control': 'no-store, no-cache, must-revalidate',

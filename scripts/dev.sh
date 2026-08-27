@@ -97,20 +97,25 @@ echo
 # 6) Lanza cada worker en background. Su stdout/stderr va a su propio log
 #    con prefijo "[name] " por línea (sin color, para que grep siga limpio).
 launch_worker() {
-  local pkg=$1 name=$2
+  local pkg=$1 name=$2 mode=${3:--remote}
   (
     cd "$HERE/packages/$pkg"
     # stdbuf -o L fuerza line-buffering (BSD stdbuf usa sintaxis corta).
-    stdbuf -o L -e L npx wrangler dev --remote \
+    stdbuf -o L -e L npx wrangler dev "$mode" \
       --persist-to "$HERE/packages/$pkg/.wrangler" 2>&1
   ) | awk -v p="[$name] " '{ printf "%s%s\n", p, $0; fflush() }' \
     > "$LOG_DIR/$name.log" 2>&1 &
   printf '%s' "$!" > "$LOG_DIR/$name.pid"
 }
 
-launch_worker control-plane "control-plane"
-launch_worker portal        "portal"
-launch_worker runtime       "runtime"
+# control-plane y runtime usan --remote (bindings D1/R2/KV reales).
+# Portal usa --local: NO tiene bindings (solo ASSETS local + env vars) y DEBE
+# correr local para poder hacer fetch() a controlplane vía localhost (si
+# corriera en --remote, su worker estaría en el edge de Cloudflare y no podría
+# resolver controlplane.localhost).
+launch_worker control-plane "control-plane" "--remote"
+launch_worker portal        "portal"       "--local"
+launch_worker runtime       "runtime"      "--remote"
 
 # 7) Espera Ready en los 3 logs (timeout 90s c/u).
 echo "→ esperando Ready on los 3 workers (timeout 90s)…"
