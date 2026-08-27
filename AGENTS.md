@@ -137,10 +137,14 @@ Specs ya implementadas:
 - `htmlbox-spec-app-users-centralized-IMPLEMENTED.md`
 - `htmlbox-spec-debug-panel-IMPLEMENTED.md`
 - `htmlbox-spec-migracion-apifetch-IMPLEMENTED.md`
+- `htmlbox-spec-monaco-editor-IMPLEMENTED.md`
 - `htmlbox-spec-partials-htmlrewriter-IMPLEMENTED.md`
 
-Spec pendiente:
-- `htmlbox-spec-editor-split-view.md`
+Anexo cerrado (mismo sufijo `-IMPLEMENTED` significa "todos los
+hallazgos cerrados con tests"):
+- `htmlbox-anexo-revision-seguridad-app-users-IMPLEMENTED.md` (4 hallazgos cerrados en commit `995a475`)
+
+No hay specs pendientes — todos los `htmlbox-spec-*.md` están en estado `-IMPLEMENTED`. Si necesitás levantar uno nuevo, crealo con nombre nuevo siguiendo el patrón `htmlbox-spec-{nombre}.md`.
 
 ## 7. Patrones del proyecto
 
