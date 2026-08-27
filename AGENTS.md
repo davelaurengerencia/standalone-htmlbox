@@ -135,9 +135,10 @@ Specs ya implementadas:
 - `htmlbox-spec-app-customers-IMPLEMENTED.md`
 - `htmlbox-spec-app-users-IMPLEMENTED.md`
 - `htmlbox-spec-app-users-centralized-IMPLEMENTED.md`
+- `htmlbox-spec-codemirror-editor-IMPLEMENTED.md` (reemplazó a monaco-editor en `eb1500e`; este queda como histórico con header de superseded)
 - `htmlbox-spec-debug-panel-IMPLEMENTED.md`
 - `htmlbox-spec-migracion-apifetch-IMPLEMENTED.md`
-- `htmlbox-spec-monaco-editor-IMPLEMENTED.md`
+- `htmlbox-spec-monaco-editor-IMPLEMENTED.md` (HISTÓRICO — superseded por codemirror-editor)
 - `htmlbox-spec-partials-htmlrewriter-IMPLEMENTED.md`
 
 Anexo cerrado (mismo sufijo `-IMPLEMENTED` significa "todos los

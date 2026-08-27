@@ -1,5 +1,7 @@
 # HTMLBox — Spec: reemplazar el editor por Monaco Editor
 
+> **HISTÓRICO — superseded.** Esta spec fue implementada en los commits `5bebf3e` + `5de73d5`, pero reemplazada por `htmlbox-spec-codemirror-editor-IMPLEMENTED.md` (commit `eb1500e`) por bundle size + el bug del freeze. Queda como referencia histórica del camino que probamos.
+
 **Esta spec reemplaza `htmlbox-spec-editor-split-view.md`.** El split-view (`editorView: 'all'|'js'|'css'`, botones Todo/JS/CSS, `findEditableBlocks`, `spliceBlock`) ya está implementado en `packages/portal/src/ui-partials/app-script.html.txt` y `main-panel.html.txt` — funciona, pero existe para compensar la limitación de un `<textarea>` plano: no puede resaltar HTML+JS+CSS embebidos a la vez, así que el usuario tiene que "entrar" a una vista parcial para ver su JS con algo de contexto. Monaco resuelve esto nativamente (reconoce `<script>`/`<style>` embebidos dentro de un documento HTML y los tokeniza con sus propios lenguajes, en el mismo buffer, sin cambiar de vista) — el mecanismo de split-view deja de tener motivo. Se puede borrar ese archivo; esta spec lo supera.
 
 ## 1. Qué cambia
