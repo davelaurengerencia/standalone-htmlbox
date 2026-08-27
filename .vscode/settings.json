@@ -12,5 +12,10 @@
   // archivos, ya que por defecto solo corre en lenguajes marcados como HTML.
   "emmet.includeLanguages": {
     "html.txt": "html"
-  }
+  },
+  // Colorea cada par de paréntesis/llaves/corchetes que hacen pareja con un
+  // color distinto (y distinto de sus vecinos anidados) — útil para leer
+  // llamadas tipo @click="copyShareLink()" de un vistazo.
+  "editor.bracketPairColorization.enabled": true,
+  "editor.guides.bracketPairs": true
 }

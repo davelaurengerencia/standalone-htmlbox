@@ -123,7 +123,10 @@ export default {
       // partials (ver src/ui-partials/ y src/lib/partials.js). Cualquier
       // otro asset estático (si lo hubiera) sigue viniendo de ASSETS.
       if (assetPath === '/index.html') {
-        const rewritten = renderShell(ADMIN_SHELL_HTML, ADMIN_PARTIALS)
+        const safeEnv = JSON.stringify(env.HTMLBOX_ENV || 'production')
+        const safeVersion = JSON.stringify(env.HTMLBOX_ADMIN_VERSION || 'dev')
+        const injection = `<script>window.HTMLBOX_ENV=${safeEnv};window.HTMLBOX_ADMIN_VERSION=${safeVersion};</script>`
+        const rewritten = renderShell(ADMIN_SHELL_HTML, ADMIN_PARTIALS, injection)
         const headers = new Headers(rewritten.headers)
         headers.set('Content-Type', 'text/html; charset=utf-8')
         return new Response(rewritten.body, { status: 200, headers })
@@ -143,6 +146,26 @@ export default {
       return new Response(JSON.stringify({ ok: true, env: env.HTMLBOX_ENV || 'unknown' }), {
         headers: { 'Content-Type': 'application/json', ...corsHeaders(request) },
       })
+    }
+
+    // Reporte de errores del browser (portal admin, y portal vía proxy /api/*).
+    // Público a propósito — un error puede pasar incluso sin sesión (ej: falló
+    // el propio loadMe()). Solo loguea server-side (Workers Logs, ya habilitado
+    // en wrangler.jsonc → observability) — nunca debe poder tumbar nada más.
+    if (path === '/api/client-error' && method === 'POST') {
+      try {
+        const body = await request.json()
+        console.error('[client-error]', {
+          message: String(body?.message || '').slice(0, 2000),
+          stack: String(body?.stack || '').slice(0, 4000),
+          url: String(body?.url || '').slice(0, 500),
+          userAgent: String(body?.userAgent || '').slice(0, 300),
+          ip: request.headers.get('CF-Connecting-IP') || null,
+        })
+      } catch {
+        // Body inválido — no hay nada más que hacer, igual respondemos 204.
+      }
+      return new Response(null, { status: 204, headers: corsHeaders(request) })
     }
 
     try {

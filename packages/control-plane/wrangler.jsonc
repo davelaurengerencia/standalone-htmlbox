@@ -25,7 +25,8 @@
     "HTMLBOX_PORTAL_ORIGIN": "https://portal.htmlbox.dev",
     "HTMLBOX_EMAIL_MODE": "prod",
     "HTMLBOX_EMAIL_FROM_ADDRESS": "no-reply@htmlbox.dev",
-    "HTMLBOX_EMAIL_FROM_NAME": "HTMLBox"
+    "HTMLBOX_EMAIL_FROM_NAME": "HTMLBox",
+    "HTMLBOX_ADMIN_VERSION": "0.1.0"
   },
 
   "d1_databases": [
