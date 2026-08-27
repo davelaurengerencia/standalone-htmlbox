@@ -349,37 +349,46 @@
         // --------- Tenants / Workspaces / Boxes ---------
 
         async loadTenants() {
-          const res = await this.api('/api/me/tenants')
-          const data = await res.json()
-          this.tenants = data.tenants ?? []
-          if (this.tenants.length > 0 && !this.currentTenantId) {
-            this.currentTenantId = this.tenants[0].id
-            await this.onTenantChange()
+          try {
+            const data = await apiFetch('/api/me/tenants')
+            this.tenants = data.tenants ?? []
+            if (this.tenants.length > 0 && !this.currentTenantId) {
+              this.currentTenantId = this.tenants[0].id
+              await this.onTenantChange()
+            }
+          } catch (err) {
+            debugLog('loadTenants:', err)
           }
         },
 
         async onTenantChange() {
           if (!this.currentTenantId) return
-          const res = await this.api(`/api/tenants/${this.currentTenantId}/workspaces`)
-          const data = await res.json()
-          this.workspaces = data.workspaces ?? []
-          if (this.workspaces.length > 0) {
-            this.currentWorkspaceId = this.workspaces[0].id
-            await this.loadBoxes()
-          } else {
-            this.boxes = []
-            this.currentBox = null
-            this.editorHtml = ''
+          try {
+            const data = await apiFetch(`/api/tenants/${this.currentTenantId}/workspaces`)
+            this.workspaces = data.workspaces ?? []
+            if (this.workspaces.length > 0) {
+              this.currentWorkspaceId = this.workspaces[0].id
+              await this.loadBoxes()
+            } else {
+              this.boxes = []
+              this.currentBox = null
+              this.editorHtml = ''
+            }
+          } catch (err) {
+            debugLog('onTenantChange:', err)
           }
         },
 
         async loadBoxes() {
           if (!this.currentWorkspaceId) return
-          const res = await this.api(`/api/boxes?workspace=${this.currentWorkspaceId}`)
-          const data = await res.json()
-          this.boxes = data.boxes ?? []
-          if (this.boxes.length > 0) await this.selectBox(this.boxes[0])
-          else { this.currentBox = null; this.editorHtml = ''; this.activeTab = 'preview' }
+          try {
+            const data = await apiFetch(`/api/boxes?workspace=${this.currentWorkspaceId}`)
+            this.boxes = data.boxes ?? []
+            if (this.boxes.length > 0) await this.selectBox(this.boxes[0])
+            else { this.currentBox = null; this.editorHtml = ''; this.activeTab = 'preview' }
+          } catch (err) {
+            debugLog('loadBoxes:', err)
+          }
         },
 
         async selectBox(b) {
@@ -391,12 +400,15 @@
 
         async loadActiveHtml() {
           if (!this.currentBox) return
-          const res = await this.api(`/api/boxes/${this.currentBox.id}/active-html`)
-          if (res.ok) {
-            const data = await res.json()
+          try {
+            const data = await apiFetch(`/api/boxes/${this.currentBox.id}/active-html`)
             this.editorHtml = data.html
-          } else {
+          } catch (err) {
+            // Si el endpoint falla (404 cuando el box no tiene versión publicada
+            // todavía, 500, etc.), caemos al seed del template para que el editor
+            // no se quede vacío.
             this.editorHtml = this.seedFor(this.currentBox.template)
+            debugLog('loadActiveHtml:', err)
           }
         },
 
@@ -455,13 +467,10 @@
           this.saving = true
           try {
             const size = new Blob([this.editorHtml]).size
-            const urlRes = await this.api(`/api/boxes/${this.currentBox.id}/upload-url`, {
+            const urlData = await apiFetch(`/api/boxes/${this.currentBox.id}/upload-url`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ size, contentType: 'text/html' }),
+              body: { size, contentType: 'text/html' },
             })
-            const urlData = await urlRes.json()
-            if (!urlRes.ok) throw new Error(urlData.error || 'no se pudo firmar upload')
 
             const putRes = await fetch(urlData.uploadUrl, {
               method: 'PUT',
@@ -475,13 +484,10 @@
               this.showToast('Versión cancelada.')
               return
             }
-            const confRes = await this.api(`/api/boxes/${this.currentBox.id}/html`, {
+            const confData = await apiFetch(`/api/boxes/${this.currentBox.id}/html`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ r2Key: urlData.key, summary, source: 'portal' }),
+              body: { r2Key: urlData.key, summary, source: 'portal' },
             })
-            const confData = await confRes.json()
-            if (!confRes.ok) throw new Error(confData.error || 'confirmar versión falló')
 
             await this.loadBoxes()
             const fresh = this.boxes.find((b) => b.id === this.currentBox.id)
@@ -495,8 +501,8 @@
               })
             }
           } catch (err) {
-            console.error(err)
-            this.showToast('Error: ' + err.message)
+            debugLog('saveCurrentBox:', err)
+            this.showToast('Error: ' + (err.code || err.message))
           } finally {
             this.saving = false
           }
@@ -525,18 +531,15 @@
           }
           this.creating = true
           try {
-            const res = await this.api('/api/boxes', {
+            const data = await apiFetch('/api/boxes', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
+              body: {
                 name: this.newBox.name,
                 template: this.newBox.template,
                 visibility: this.newBox.visibility,
                 workspace_id: this.currentWorkspaceId,
-              }),
+              },
             })
-            const data = await res.json()
-            if (!res.ok) throw new Error(data.error || 'falló')
             await this.loadBoxes()
             const fresh = this.boxes.find((b) => b.id === data.box.id)
             if (fresh) {
@@ -554,7 +557,7 @@
             this.closeNewBoxModal()
             this.showToast(`Box "${data.box.name}" creado (v${data.box.htmlbox_version}).`)
           } catch (err) {
-            this.showToast('Error: ' + err.message)
+            this.showToast('Error: ' + (err.code || err.message))
           } finally {
             this.creating = false
           }
