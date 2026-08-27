@@ -571,6 +571,19 @@
           this.shareUrl = `https://htmlbox.dev/s/${share}    https://${tenantSlug}.htmlbox.dev/${slug}`
           this.shareModalOpen = true
         },
+
+        // Abre el box en una pestaña nueva con el flag de debug. El gate real es
+        // server-side (shouldShowDebugPanel en el runtime) — nunca confiar solo
+        // en este query param. Si el usuario no es owner/editor, el runtime NO
+        // inyecta el script del panel aunque el query param esté presente.
+        openBoxWithDebug() {
+          if (!this.currentBox) return
+          const slug = this.currentBox.slug
+          const tenantSlug = (this.tenants.find((t) => t.id === this.currentTenantId) || {}).slug || 'tenant'
+          const base = `https://${tenantSlug}.htmlbox.dev/${slug}`
+          const url = base.includes('?') ? `${base}&hbx_debug=1` : `${base}?hbx_debug=1`
+          window.open(url, '_blank', 'noopener')
+        },
         closeShareModal() { this.shareModalOpen = false },
 
         async copyShareLink() {
