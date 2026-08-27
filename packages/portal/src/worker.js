@@ -4,11 +4,14 @@
 // para que el portal pueda vivir en cualquier host/origen sin CORS issues.
 //
 //   GET  /            → SPA (Alpine) servida desde ASSETS
-//   /assets/...        → estáticos servidos por ASSETS binding
 //   /api/*             → proxy al control-plane (env.HTMLBOX_CONTROL_PLANE_ORIGIN)
 //
-// Los assets estáticos (CSS, JS, imágenes de la SPA) se sirven desde
-// wrangler.jsonc → assets.directory = ./src/ui. El index.html vive en src/ui/.
+// El HTML de la SPA se importa como texto en build-time (wrangler rule "Text")
+// para evitar depender del cache edge de ASSETS que se pegó con un 404 viejo
+// en /index.html. Cada deploy rebuilds el bundle, lo que invalida cualquier
+// cache stale en el edge.
+
+import PORTAL_HTML from './ui/portal.html.txt'
 
 function corsHeaders(origin) {
   return {
@@ -93,28 +96,24 @@ export default {
       return await proxyToControlPlane(request, env, path, url.search)
     }
 
-    // Sirve la SPA desde ASSETS. Catch-all: rutas no encontradas caen a index.html.
+    // Sirve la SPA desde el bundle (importado como texto). No depende del cache
+// edge de ASSETS — cada deploy rebuilds el bundle con la última versión.
+    if (!path.startsWith('/api/') && !path.includes('.')) {
+      return new Response(PORTAL_HTML, {
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+        },
+      })
+    }
+
+    // Static assets (CSS, JS, imágenes) desde el ASSETS binding.
     if (env.ASSETS && typeof env.ASSETS.fetch === 'function') {
-      // Para `/` pedimos `/index.html` (ASSETS canónico). Aceptamos redirects.
-      const assetPath = path === '/' ? '/index.html' : path
-      const res = await env.ASSETS.fetch(new URL(assetPath, url))
-      // Si el asset existe (200) o es un redirect interno (3xx), devolverlo.
+      const res = await env.ASSETS.fetch(request)
       if (res.status >= 200 && res.status < 400) {
-        // Forzar no-store para evitar que Cloudflare cachee respuestas viejas
-        // cuando cambiamos el config del worker (importante para evitar 404
-        // cacheados cuando se actualiza el config).
         const newHeaders = new Headers(res.headers)
         newHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate')
         return new Response(res.body, { status: res.status, headers: newHeaders })
-      }
-      // SPA fallback: servir index.html para rutas SPA (no /api/*).
-      if (!path.startsWith('/api/') && !path.startsWith('/assets/')) {
-        const spa = await env.ASSETS.fetch(new URL('/index.html', url))
-        if (spa.status >= 200 && spa.status < 400) {
-          const newHeaders = new Headers(spa.headers)
-          newHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate')
-          return new Response(spa.body, { status: spa.status, headers: newHeaders })
-        }
       }
     }
 
