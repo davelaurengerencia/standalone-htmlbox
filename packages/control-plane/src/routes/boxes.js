@@ -65,7 +65,7 @@ async function listBoxes(request, env) {
 
   const rows = await env.DB.prepare(
     `SELECT id, slug, name, visibility, template, htmlbox_version,
-            turso_status, share_id, created_at, updated_at
+            turso_status, share_id, auto_analyze_on_save, created_at, updated_at
        FROM htmlbox_boxes
       WHERE workspace_id = ?1
       ORDER BY updated_at DESC`
@@ -143,7 +143,7 @@ async function createBox(request, env) {
   }
 
   const created = await env.DB.prepare(
-    `SELECT id, slug, name, visibility, template, htmlbox_version, turso_status, share_id, created_at, updated_at
+    `SELECT id, slug, name, visibility, template, htmlbox_version, turso_status, share_id, auto_analyze_on_save, created_at, updated_at
        FROM htmlbox_boxes WHERE id = ?1`
   ).bind(id).first()
   return json({ box: created }, 201)
@@ -203,6 +203,10 @@ async function patchBox(request, env, boxId) {
   if (body?.visibility === 'public' || body?.visibility === 'private') {
     fields.push(`visibility = ?${i++}`); binds.push(body.visibility)
   }
+  if (typeof body?.auto_analyze_on_save === 'boolean') {
+    fields.push(`auto_analyze_on_save = ?${i++}`)
+    binds.push(body.auto_analyze_on_save ? 1 : 0)
+  }
   if (fields.length === 0) return json({ error: 'nothing_to_update' }, 400)
 
   fields.push(`updated_at = datetime('now')`)
@@ -213,7 +217,7 @@ async function patchBox(request, env, boxId) {
   ).bind(...binds).run()
 
   const updated = await env.DB.prepare(
-    `SELECT id, slug, name, visibility, template, htmlbox_version, turso_status, share_id, created_at, updated_at
+    `SELECT id, slug, name, visibility, template, htmlbox_version, turso_status, share_id, auto_analyze_on_save, created_at, updated_at
        FROM htmlbox_boxes WHERE id = ?1`
   ).bind(boxId).first()
   return json({ box: updated })

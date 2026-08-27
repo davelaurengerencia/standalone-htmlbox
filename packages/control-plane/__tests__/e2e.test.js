@@ -118,6 +118,23 @@ const MIGRATIONS = [
   );
   CREATE INDEX IF NOT EXISTS idx_htmlbox_api_tokens_box ON htmlbox_api_tokens (box_id, revoked_at);
   CREATE INDEX IF NOT EXISTS idx_htmlbox_api_tokens_user ON htmlbox_api_tokens (user_id, revoked_at);`,
+
+  // 0008_ai_analyses.sql
+  `CREATE TABLE IF NOT EXISTS htmlbox_ai_analyses (
+    id TEXT PRIMARY KEY,
+    box_id TEXT NOT NULL REFERENCES htmlbox_boxes(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES htmlbox_users(id),
+    prompt_html_size INTEGER NOT NULL,
+    proposal_json TEXT NOT NULL,
+    model TEXT NOT NULL,
+    tokens_used INTEGER,
+    applied INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_htmlbox_ai_analyses_box ON htmlbox_ai_analyses(box_id, created_at DESC);`,
+
+  // 0009_box_auto_analyze.sql
+  `ALTER TABLE htmlbox_boxes ADD COLUMN auto_analyze_on_save INTEGER NOT NULL DEFAULT 0;`,
 ]
 
 // Aplica migrations antes de toda la suite.

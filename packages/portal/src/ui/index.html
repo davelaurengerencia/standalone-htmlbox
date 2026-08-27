@@ -315,13 +315,27 @@
                 <span x-show="currentBox" class="text-slate-500">
                   versión <span class="text-indigo-400" x-text="currentBox?.htmlbox_version ?? 0"></span>
                 </span>
+                <span x-show="aiAutoAnalyzePending" class="flex items-center gap-1.5 text-purple-400">
+                  <i class="fa-solid fa-wand-magic-sparkles fa-beat"></i>
+                  <span>IA trabajando en segundo plano…</span>
+                </span>
               </div>
               <div class="flex gap-3 items-center">
                 <button @click="formatHTML()" class="hover:text-white transition" title="Re-formatear indentación">
                   <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Formatear
                 </button>
+                <button @click="aiAnalyze()" :disabled="aiAnalyzing || !editorHtml.trim()"
+                        class="px-3 py-1 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 rounded-lg text-xs font-medium transition flex items-center gap-1">
+                  <i class="fa-solid" :class="aiAnalyzing ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'"></i>
+                  <span x-text="aiAnalyzing ? 'Analizando…' : 'Analizar con IA'"></span>
+                </button>
                 <span class="text-slate-700">|</span>
                 <span><span x-text="editorHtml.length"></span> caracteres</span>
+                <label class="hidden lg:flex items-center gap-2 text-xs text-slate-400 ml-1 pl-3 border-l border-slate-800">
+                  <input type="checkbox" x-model="currentBox.auto_analyze_on_save" @change="toggleAutoAnalyze()"
+                         :disabled="updatingAutoAnalyze" class="rounded">
+                  Auto-IA al guardar
+                </label>
               </div>
             </div>
             <textarea x-model="editorHtml" spellcheck="false"
@@ -331,7 +345,7 @@
 
           <!-- Tabla & Ingesta de Datos (fase 3 v1) -->
           <div x-show="activeTab === 'data'" class="absolute inset-0 p-6 overflow-y-auto bg-slate-950">
-            <div class="max-w-4xl mx-auto space-y-4" x-data="dataTab()" x-init="init()">
+            <div class="max-w-4xl mx-auto space-y-4" x-data="dataTab()" x-ref="dataTabRef" x-init="init()">
 
               <!-- Header con acciones -->
               <div class="flex items-center justify-between">
@@ -633,6 +647,180 @@
       <div x-show="toast" x-transition class="fixed bottom-6 right-6 z-50 transform bg-slate-900 border border-slate-700 text-slate-100 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3" x-cloak>
         <i class="fa-solid fa-circle-check text-emerald-400"></i>
         <span class="text-xs font-medium" x-text="toast"></span>
+        <template x-if="aiPendingReview">
+          <button @click="aiReviewPending()"
+                  class="ml-2 px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-medium transition flex items-center gap-1">
+            <i class="fa-solid fa-wand-magic-sparkles text-xs"></i>
+            <span>Revisar propuesta</span>
+          </button>
+        </template>
+      </div>
+
+      <!-- ============ AI SCHEMA MODAL (fase 4 v1) ============ -->
+      <div x-show="aiModalOpen" x-transition.opacity class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4" x-cloak @keydown.escape.window="closeAiModal()">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
+          <div class="flex items-center justify-between border-b border-slate-800 px-6 py-4 flex-shrink-0">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 via-indigo-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-600/20">
+                <i class="fa-solid fa-wand-magic-sparkles text-white text-sm"></i>
+              </div>
+              <div>
+                <h3 class="font-bold text-base text-slate-100">Propuesta de la IA</h3>
+                <p class="text-xs text-slate-400">Revisá y editá las tablas sugeridas antes de aplicarlas. La IA se equivoca; esta es tu última oportunidad de corregir.</p>
+              </div>
+            </div>
+            <button @click="closeAiModal()" class="text-slate-500 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+          </div>
+
+          <div class="flex-1 overflow-y-auto p-6 space-y-6">
+            <template x-for="(t, ti) in aiModalEdited" :key="ti">
+              <div class="rounded-2xl bg-slate-950/60 border border-slate-800 p-4 space-y-4">
+                <div class="flex items-center justify-between">
+                  <span class="text-[10px] uppercase tracking-wider font-bold text-purple-400">Tabla <span x-text="ti + 1"></span></span>
+                  <button @click="aiModalEdited.splice(ti, 1)" class="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1">
+                    <i class="fa-solid fa-trash-can"></i> Quitar tabla
+                  </button>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label class="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">Slug</label>
+                    <input type="text" x-model="t.slug"
+                           :class="!isValidSlug(t.slug) ? 'border-rose-500/60' : 'border-slate-800'"
+                           class="w-full bg-slate-950 border rounded-lg px-3 py-1.5 text-sm font-mono focus:outline-none focus:border-indigo-500">
+                    <p x-show="!isValidSlug(t.slug)" class="text-[10px] text-rose-400 mt-1">Slug inválido. minúsculas, _ permitidos, empieza con letra.</p>
+                  </div>
+                  <div>
+                    <label class="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">Nombre</label>
+                    <input type="text" x-model="t.name"
+                           class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500">
+                  </div>
+                </div>
+
+                <div>
+                  <label class="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">Descripción</label>
+                  <textarea x-model="t.description" rows="2"
+                            class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500"></textarea>
+                </div>
+
+                <div>
+                  <div class="flex items-center justify-between mb-2">
+                    <label class="text-[10px] uppercase tracking-wider font-bold text-slate-400">Columnas</label>
+                    <span class="text-[10px] text-slate-500" x-text="(t.columns || []).length + ' columna(s)'"></span>
+                  </div>
+                  <div class="space-y-1.5">
+                    <template x-for="(c, ci) in t.columns" :key="ci">
+                      <div class="flex items-center gap-2">
+                        <input type="text" x-model="c.name" placeholder="nombre_columna"
+                               class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs font-mono focus:outline-none focus:border-indigo-500">
+                        <select x-model="c.type" class="bg-slate-950 border border-slate-800 rounded-lg px-2 py-1 text-xs">
+                          <option value="string">string</option>
+                          <option value="number">number</option>
+                          <option value="boolean">boolean</option>
+                          <option value="date">date</option>
+                        </select>
+                        <button @click="t.columns.splice(ci, 1)" class="text-rose-400 hover:text-rose-300 text-xs px-2 py-1" title="Quitar columna">
+                          <i class="fa-solid fa-times"></i>
+                        </button>
+                      </div>
+                    </template>
+                    <button @click="t.columns.push({ name: '', type: 'string' })"
+                            class="text-xs text-indigo-400 hover:text-indigo-300 mt-1 flex items-center gap-1">
+                      <i class="fa-solid fa-plus"></i> Agregar columna
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <div class="flex items-center justify-between mb-2">
+                    <label class="text-[10px] uppercase tracking-wider font-bold text-slate-400">Filas de muestra</label>
+                    <span class="text-[10px] text-slate-500" x-text="(t.sample_rows || []).length + ' fila(s)'"></span>
+                  </div>
+                  <template x-if="t.sample_rows && t.sample_rows.length > 0 && t.columns && t.columns.length > 0">
+                    <div class="overflow-x-auto rounded-lg border border-slate-800">
+                      <table class="w-full text-[11px]">
+                        <thead class="bg-slate-900">
+                          <tr>
+                            <template x-for="c in t.columns" :key="c.name">
+                              <th class="p-1.5 text-left font-medium text-slate-400 whitespace-nowrap" x-text="c.name || '—'"></th>
+                            </template>
+                            <th class="p-1.5 w-8"></th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-800/60">
+                          <template x-for="(row, ri) in t.sample_rows" :key="ri">
+                            <tr>
+                              <template x-for="c in t.columns" :key="c.name">
+                                <td class="p-1">
+                                  <input type="text"
+                                         x-model="t.sample_rows[ri][c.name]"
+                                         class="w-full bg-slate-950 border border-slate-800/50 rounded px-1.5 py-0.5 text-[11px] focus:outline-none focus:border-indigo-500">
+                                </td>
+                              </template>
+                              <td class="p-1">
+                                <button @click="t.sample_rows.splice(ri, 1)" class="text-rose-400 hover:text-rose-300 px-1" title="Quitar fila">
+                                  <i class="fa-solid fa-trash-can text-[10px]"></i>
+                                </button>
+                              </td>
+                            </tr>
+                          </template>
+                        </tbody>
+                      </table>
+                    </div>
+                  </template>
+                  <template x-if="!t.sample_rows || t.sample_rows.length === 0">
+                    <p class="text-[11px] text-slate-500 italic">Sin filas de muestra.</p>
+                  </template>
+                  <button @click="addSampleRow(t)" class="text-xs text-indigo-400 hover:text-indigo-300 mt-2 flex items-center gap-1">
+                    <i class="fa-solid fa-plus"></i> Agregar fila
+                  </button>
+                </div>
+
+                <div>
+                  <label class="text-[10px] uppercase tracking-wider font-bold text-slate-400 block mb-1">Ejemplo SDK</label>
+                  <div class="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5">
+                    <code class="flex-1 text-[11px] font-mono text-indigo-300 truncate" x-text="t.sdk_example"></code>
+                    <button @click="copyToClipboard(t.sdk_example)" class="text-slate-400 hover:text-white text-xs flex items-center gap-1 px-2 py-0.5 rounded hover:bg-slate-800 transition">
+                      <i class="fa-solid fa-copy"></i> Copiar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </template>
+
+            <template x-if="!aiModalEdited || aiModalEdited.length === 0">
+              <div class="text-center py-10 text-slate-500 text-sm">
+                <i class="fa-solid fa-circle-info text-2xl mb-2 block text-slate-600"></i>
+                No hay tablas para aplicar. Agregá al menos una o cancelá.
+              </div>
+            </template>
+          </div>
+
+          <div class="flex items-center justify-between border-t border-slate-800 px-6 py-4 flex-shrink-0 bg-slate-900 gap-3 flex-wrap">
+            <div class="text-xs text-slate-400 flex items-center gap-3 flex-wrap">
+              <span>
+                <span class="text-slate-100 font-semibold" x-text="aiModalEdited?.length || 0"></span> tabla(s) lista(s)
+              </span>
+              <span x-show="aiSchema?.model">
+                modelo: <code class="text-indigo-300" x-text="aiSchema?.model"></code>
+              </span>
+              <span x-show="aiSchema?.tokensUsed != null" class="text-slate-500">
+                <i class="fa-solid fa-coins text-amber-400"></i> <span x-text="aiSchema?.tokensUsed"></span> tokens
+              </span>
+            </div>
+            <div class="flex gap-2">
+              <button @click="closeAiModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium transition flex items-center gap-1.5">
+                <i class="fa-solid fa-xmark"></i> Cancelar
+              </button>
+              <button @click="aiApply()" :disabled="aiApplying || !validEditedTables()"
+                      class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white rounded-xl text-xs font-medium transition flex items-center gap-1.5 shadow-lg shadow-emerald-600/20">
+                <template x-if="aiApplying"><i class="fa-solid fa-spinner animate-spin"></i></template>
+                <template x-if="!aiApplying"><i class="fa-solid fa-check"></i></template>
+                <span x-text="aiApplying ? 'Aplicando…' : 'Aplicar ' + (aiModalEdited?.length || 0) + ' tabla(s)'"></span>
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </template>
@@ -738,6 +926,8 @@
     // ============ App Alpine ============
 
     function portalApp() {
+      const CONTROL_PLANE = 'https://controlplane.htmlbox.dev'
+      const RUNTIME = 'https://htmlbox.dev'
       return {
         // sesión
         user: null,
@@ -776,6 +966,17 @@
 
         // share
         shareUrl: '',
+
+        // AI (fase 4 v1)
+        aiAnalyzing: false,
+        aiAutoAnalyzePending: false,
+        aiSchema: null,
+        aiModalOpen: false,
+        aiModalEdited: null,
+        updatingAutoAnalyze: false,
+        aiHistory: [],
+        aiApplying: false,
+        aiPendingReview: false,
 
         async init() {
           await this.loadMe()
@@ -1041,6 +1242,12 @@
             if (fresh) await this.selectBox(fresh)
             this.activeTab = 'preview'
             this.showToast(`Guardado como v${confData.version}.`)
+            if (this.currentBox.auto_analyze_on_save) {
+              this.aiAutoAnalyzePending = true
+              this.aiAnalyze({ silent: true }).then(() => {
+                this.aiAutoAnalyzePending = false
+              })
+            }
           } catch (err) {
             console.error(err)
             this.showToast('Error: ' + err.message)
@@ -1184,10 +1391,176 @@
           this.showToast('HTML re-indentado.')
         },
 
-        showToast(msg) {
+        showToast(msg, duration = 3000) {
           this.toast = msg
           clearTimeout(this.toastTimer)
-          this.toastTimer = setTimeout(() => { this.toast = null }, 3000)
+          this.toastTimer = setTimeout(() => { this.toast = null }, duration)
+        },
+
+        // --------- AI (fase 4 v1) ---------
+
+        async aiAnalyze({ silent = false } = {}) {
+          if (!this.currentBox || !this.editorHtml.trim()) return
+          this.aiAnalyzing = true
+          if (silent) this.aiAutoAnalyzePending = true
+          try {
+            const r = await fetch(`${CONTROL_PLANE}/api/ai/analyze-html`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ boxId: this.currentBox.id, html: this.editorHtml })
+            })
+            if (!r.ok) {
+              const err = await r.json().catch(() => ({}))
+              this.showToast('IA: ' + (err.error || `HTTP ${r.status}`))
+              return
+            }
+            const data = await r.json()
+            if (!data.tables || data.tables.length === 0) {
+              this.showToast('La IA no propuso tablas para este HTML.')
+              return
+            }
+            this.aiSchema = data
+            this.aiModalEdited = JSON.parse(JSON.stringify(data.tables))
+            if (silent) {
+              this.aiPendingReview = true
+              this.showToast(`IA propuso ${data.tables.length} tabla(s).`, 15000)
+            } else {
+              this.aiModalOpen = true
+              this.aiPendingReview = false
+            }
+          } catch (err) {
+            this.showToast('IA: ' + err.message)
+          } finally {
+            this.aiAnalyzing = false
+            this.aiAutoAnalyzePending = false
+          }
+        },
+
+        async aiApply() {
+          if (!this.aiModalEdited || !this.aiModalEdited.length) return
+          if (!this.validEditedTables()) {
+            this.showToast('Revisá los slugs. Deben ser minúsculas y empezar con letra.')
+            return
+          }
+          this.aiApplying = true
+          try {
+            if (this.aiSchema && this.aiSchema.analysisId) {
+              await fetch(`${CONTROL_PLANE}/api/ai/analyses/${this.aiSchema.analysisId}/apply`, {
+                method: 'POST',
+                credentials: 'include'
+              })
+            }
+            const r = await fetch(`${RUNTIME}/api/data/${this.currentBox.id}/tables/bulk-create`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ tables: this.aiModalEdited })
+            })
+            if (!r.ok) {
+              const err = await r.json().catch(() => ({}))
+              this.showToast('Aplicar: ' + (err.error || `HTTP ${r.status}`))
+              return
+            }
+            const result = await r.json()
+            const created = result.created?.length || 0
+            const errors = result.errors?.length || 0
+            this.showToast(`Creadas ${created} tabla(s)${errors ? `, ${errors} error(es)` : ''}.`)
+            this.closeAiModal()
+            if (this.activeTab === 'data' && this.$refs.dataTabRef && typeof this.$refs.dataTabRef.loadTables === 'function') {
+              await this.$refs.dataTabRef.loadTables()
+            }
+          } catch (err) {
+            this.showToast('Aplicar: ' + err.message)
+          } finally {
+            this.aiApplying = false
+          }
+        },
+
+        async toggleAutoAnalyze() {
+          if (!this.currentBox) return
+          this.updatingAutoAnalyze = true
+          try {
+            const r = await fetch(`${CONTROL_PLANE}/api/boxes/${this.currentBox.id}`, {
+              method: 'PATCH',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ auto_analyze_on_save: !!this.currentBox.auto_analyze_on_save })
+            })
+            if (!r.ok) {
+              const err = await r.json().catch(() => ({}))
+              this.showToast('Auto-IA: ' + (err.error || `HTTP ${r.status}`))
+            }
+          } catch (err) {
+            this.showToast('Auto-IA: ' + err.message)
+          } finally {
+            this.updatingAutoAnalyze = false
+          }
+        },
+
+        async aiLoadHistory() {
+          if (!this.currentBox) return
+          try {
+            const r = await fetch(`${CONTROL_PLANE}/api/ai/analyses?boxId=${this.currentBox.id}`, {
+              credentials: 'include'
+            })
+            if (r.ok) {
+              const data = await r.json()
+              this.aiHistory = data.analyses || []
+            }
+          } catch (err) {
+            console.error('aiLoadHistory:', err)
+          }
+        },
+
+        aiReviewPending() {
+          this.aiPendingReview = false
+          if (this.aiSchema && this.aiModalEdited) {
+            this.aiModalOpen = true
+          }
+        },
+
+        closeAiModal() {
+          this.aiModalOpen = false
+          this.aiSchema = null
+          this.aiModalEdited = null
+          this.aiPendingReview = false
+        },
+
+        isValidSlug(slug) {
+          return /^[a-z][a-z0-9_]{0,40}$/.test(slug || '')
+        },
+
+        validEditedTables() {
+          if (!this.aiModalEdited || this.aiModalEdited.length === 0) return false
+          return this.aiModalEdited.every((t) => this.isValidSlug(t.slug))
+        },
+
+        addSampleRow(t) {
+          if (!t) return
+          if (!Array.isArray(t.sample_rows)) t.sample_rows = []
+          if (!Array.isArray(t.columns)) t.columns = []
+          const row = {}
+          for (const c of t.columns) row[c.name || ''] = ''
+          t.sample_rows.push(row)
+        },
+
+        async copyToClipboard(s) {
+          const text = String(s || '')
+          try {
+            await navigator.clipboard.writeText(text)
+            this.showToast('Copiado al portapapeles.')
+          } catch {
+            const ta = document.createElement('textarea')
+            ta.value = text
+            ta.style.position = 'fixed'
+            ta.style.opacity = '0'
+            document.body.appendChild(ta)
+            ta.select()
+            document.execCommand('copy')
+            document.body.removeChild(ta)
+            this.showToast('Copiado.')
+          }
         },
       }
     }

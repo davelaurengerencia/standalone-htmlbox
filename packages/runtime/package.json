@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "wrangler dev --port 8783 --local",
     "deploy": "wrangler deploy",
-    "test": "node --test __tests__/*.test.js"
+    "test": "node --experimental-test-module-mocks --test __tests__/*.test.js"
   },
   "dependencies": {
     "@htmlbox/shared": "*",

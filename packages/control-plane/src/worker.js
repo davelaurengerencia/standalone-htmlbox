@@ -19,6 +19,7 @@ import { handleTenants } from './routes/tenants.js'
 import { handleBoxes } from './routes/boxes.js'
 import { handleUploads } from './routes/uploads.js'
 import { handleInternal } from './routes/internal.js'
+import { handleAi } from './routes/ai.js'
 
 export { ControlPlaneDO } from './lib/do.js'  // placeholder para fase 4 (DO de estado)
 
@@ -138,6 +139,12 @@ export default {
       // Endpoints internos (runtime → control-plane)
       if (path.startsWith('/api/internal/')) {
         const res = await handleInternal(request, env, ctx, path, method)
+        return withCors(res, request)
+      }
+
+      // AI assistido (Fase 4) — analyze-html, analyses, apply
+      if (path.startsWith('/api/ai/')) {
+        const res = await handleAi(request, env, ctx, path, method)
         return withCors(res, request)
       }
 

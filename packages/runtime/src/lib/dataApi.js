@@ -6,6 +6,7 @@
 //   GET    /api/data/{boxId}/tables/{slug}/columns       → esquema
 //   POST   /api/data/{boxId}/tables/{slug}/upsert        → escribe filas (auth editor+)
 //   POST   /api/data/{boxId}/tables/{slug}/upload        → recibe CSV/JSON, ejecuta strategy
+//   POST   /api/data/{boxId}/tables/bulk-create          → crea N tablas con sample_rows (auth editor+)
 //
 // Auth:
 //   - Público (visibility=public): GET funciona con sesión válida del tenant.
@@ -82,6 +83,13 @@ async function requireBox(env, boxId, request) {
 
 // Router principal. Devuelve Response o null si la URL no matchea.
 export async function handleDataApi(request, env, url) {
+  // bulk-create: ruta plana (sin slug) — la validamos antes del router general.
+  const bulkM = url.pathname.match(/^\/api\/data\/([a-z0-9]{16})\/tables\/bulk-create$/)
+  if (bulkM) {
+    if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405)
+    return await postBulkCreate(request, env, bulkM[1])
+  }
+
   const m = url.pathname.match(/^\/api\/data\/([a-z0-9]{16})\/tables(?:\/([a-z][a-z0-9_]{0,40}))?(?:\/(rows|columns|upsert|upload))?$/)
   if (!m) return null
 
@@ -253,6 +261,68 @@ async function postUpload(request, env, boxId, slug) {
   }
 
   return json({ ok: true, inserted, strategy, filename })
+}
+
+async function postBulkCreate(request, env, boxId) {
+  const box = await requireBox(env, boxId, request)
+  if (box.error) return json({ error: box.error }, box.status)
+  if (!['owner', 'editor'].includes(box.auth.role)) return json({ error: 'forbidden_role' }, 403)
+
+  let body
+  try { body = await request.json() } catch { return json({ error: 'invalid_body' }, 400) }
+  const tables = Array.isArray(body?.tables) ? body.tables : null
+  if (!tables) return json({ error: 'missing_tables' }, 400)
+  if (tables.length === 0) return json({ ok: true, created: [], errors: [] })
+  if (tables.length > 20) return json({ error: 'too_many_tables' }, 400)
+
+  for (const t of tables) {
+    if (!t || typeof t.slug !== 'string' || !/^[a-z][a-z0-9_]{0,40}$/.test(t.slug)) {
+      return json({ error: 'invalid_slug', slug: t?.slug }, 400)
+    }
+    if (!Array.isArray(t.columns) || t.columns.length > 50) {
+      return json({ error: 'invalid_columns', slug: t.slug }, 400)
+    }
+    if (!Array.isArray(t.sample_rows) || t.sample_rows.length > 1000) {
+      return json({ error: 'invalid_sample_rows', slug: t.slug }, 400)
+    }
+  }
+
+  const client = await getBoxClient(env, box.info)
+  const created = []
+  const errors = []
+
+  for (const t of tables) {
+    try {
+      await ensureTable(client, t.slug, t.columns.map(c => c.name))
+
+      const tableName = `htmlbox_${t.slug}`
+      let inserted = 0
+      for (const r of t.sample_rows) {
+        if (typeof r !== 'object' || r === null) continue
+        await client.execute({
+          sql: `INSERT INTO ${tableName} (data_json) VALUES (?)`,
+          args: [JSON.stringify(r)],
+        })
+        inserted++
+      }
+
+      try {
+        const fileId = cryptoRandom()
+        await client.execute({
+          sql: 'INSERT INTO htmlbox_files (id, table_slug, filename, kind, rows, strategy, r2_key, uploaded_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          args: [fileId, t.slug, 'bulk-create', 'json', inserted, 'replace', `bulk://${fileId}`, box.auth.userId || 'unknown'],
+        })
+      } catch (err) {
+        console.error('[dataApi] htmlbox_files insert failed:', err)
+      }
+
+      created.push({ slug: t.slug, inserted, columns: t.columns.length })
+    } catch (err) {
+      errors.push({ slug: t.slug, error: err?.message || 'unknown' })
+    }
+  }
+
+  return json({ ok: errors.length === 0, created, errors }, errors.length === 0 ? 200 : 207)
 }
 
 // ---- helpers --------------------------------------------------------------
