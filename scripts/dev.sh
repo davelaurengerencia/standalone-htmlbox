@@ -108,14 +108,16 @@ launch_worker() {
   printf '%s' "$!" > "$LOG_DIR/$name.pid"
 }
 
-# control-plane y runtime usan --remote (bindings D1/R2/KV reales).
-# Portal usa --local: NO tiene bindings (solo ASSETS local + env vars) y DEBE
-# correr local para poder hacer fetch() a controlplane vía localhost (si
-# corriera en --remote, su worker estaría en el edge de Cloudflare y no podría
-# resolver controlplane.localhost).
+# control-plane usa --remote (bindings D1 reales).
+# Portal y runtime usan --local: DEBEN correr local para poder hacer fetch()
+# a controlplane vía localhost (si corrieran en --remote, su worker estaría
+# en el edge de Cloudflare y no podría resolver controlplane.localhost).
+# Para runtime: las bindings R2/KV funcionan en local via --persist-to
+# (miniflare las persiste en packages/runtime/.wrangler/). D1 no se usa
+# en runtime (D1 solo en control-plane).
 launch_worker control-plane "control-plane" "--remote"
 launch_worker portal        "portal"       "--local"
-launch_worker runtime       "runtime"      "--remote"
+launch_worker runtime       "runtime"      "--local"
 
 # 7) Espera Ready en los 3 logs (timeout 90s c/u).
 echo "→ esperando Ready on los 3 workers (timeout 90s)…"
