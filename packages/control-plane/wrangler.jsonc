@@ -1,0 +1,48 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "htmlbox-control-plane",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "vars": {
+    "HTMLBOX_ENV": "production",
+    "HTMLBOX_TURSO_MODE": "cloud",
+    "HTMLBOX_SESSION_DOMAIN": ".htmlbox.dev",
+    "HTMLBOX_RUNTIME_ORIGIN": "https://htmlbox.dev",
+    "HTMLBOX_PUBLIC_ORIGIN": "https://controlplane.htmlbox.dev",
+    "HTMLBOX_EMAIL_MODE": "prod",
+    "HTMLBOX_EMAIL_FROM_ADDRESS": "no-reply@htmlbox.dev",
+    "HTMLBOX_EMAIL_FROM_NAME": "HTMLBox"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "htmlbox-control-plane",
+      "database_id": "7ac72bf3-63ae-4789-9679-ab869419fa2a",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "r2_buckets": [
+    { "binding": "BUCKET", "bucket_name": "htmlbox-content" }
+  ],
+
+  "kv_namespaces": [
+    { "binding": "CACHE", "id": "0388238bb30747819a845f94e1373390" }
+  ],
+
+  "send_email": [
+    { "name": "MAIL" }
+  ],
+
+  "assets": {
+    "directory": "./src/ui",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+
+  "observability": { "enabled": true }
+}

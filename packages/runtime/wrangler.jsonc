@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "htmlbox-runtime",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "vars": {
+    "HTMLBOX_ENV": "production",
+    "HTMLBOX_CONTROL_PLANE_ORIGIN": "https://controlplane.htmlbox.dev"
+  },
+
+  "routes": [
+    { "pattern": "htmlbox.dev", "zone_name": "htmlbox.dev", "custom_domain": true },
+    { "pattern": "*.htmlbox.dev", "zone_name": "htmlbox.dev" }
+  ],
+
+  "r2_buckets": [
+    { "binding": "BUCKET", "bucket_name": "htmlbox-content" }
+  ],
+
+  "kv_namespaces": [
+    { "binding": "CACHE", "id": "0388238bb30747819a845f94e1373390" }
+  ],
+
+  "observability": { "enabled": true }
+}

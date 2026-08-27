@@ -1,0 +1,1076 @@
+<!doctype html>
+<html lang="es" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HTMLBox — Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js" defer></script>
+
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    [x-cloak] { display: none !important; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    .glass-panel {
+      background: rgba(30, 41, 59, 0.7);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .code-editor { tab-size: 2; }
+    @media (pointer: coarse) {
+      button.btn-touch, input, select, textarea { min-height: 44px; }
+    }
+    /* Drag-over visual feedback */
+    .drag-active {
+      background: rgba(99, 102, 241, 0.08) !important;
+      border-color: rgb(99, 102, 241) !important;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col overflow-hidden" x-data="portalApp()" x-init="init()" x-cloak>
+
+  <!-- ============ HEADER ============ -->
+  <header class="h-16 border-b border-slate-800 bg-slate-900/80 backdrop-blur-md px-4 lg:px-6 flex items-center justify-between z-30 flex-shrink-0">
+    <div class="flex items-center gap-3">
+      <button @click="sidebarOpen = !sidebarOpen" class="lg:hidden p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition">
+        <i class="fa-solid fa-bars text-lg"></i>
+      </button>
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center font-black text-white text-lg shadow-lg shadow-indigo-500/20">
+          <i class="fa-solid fa-box-open"></i>
+        </div>
+        <div>
+          <span class="font-bold text-lg bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">HTMLBox</span>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 ml-2 font-medium">Runtime v1.2</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <!-- Sync indicator (visible cuando hay sesión y al menos un box) -->
+      <div x-show="user && boxes.length > 0" class="hidden sm:flex items-center gap-2 text-xs px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+        <span class="relative flex h-2 w-2">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+        </span>
+        <span x-text="syncStatusText"></span>
+      </div>
+
+      <!-- Subir HTML directamente -->
+      <label class="hidden md:flex px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium text-sm rounded-xl cursor-pointer transition items-center gap-2 active:scale-95">
+        <i class="fa-solid fa-cloud-arrow-up text-indigo-400"></i>
+        <span>Subir .HTML de IA</span>
+        <input type="file" accept=".html,.htm" class="hidden" @change="handleFileUpload($event)">
+      </label>
+
+      <!-- Nuevo Box -->
+      <button @click="openNewBoxModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm rounded-xl shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition active:scale-95">
+        <i class="fa-solid fa-plus"></i>
+        <span class="hidden sm:inline">Nuevo HTML Box</span>
+      </button>
+
+      <!-- User dropdown -->
+      <div x-show="user" class="relative" @click.outside="userMenuOpen = false">
+        <button @click="userMenuOpen = !userMenuOpen" class="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-slate-800 transition">
+          <div class="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-xs uppercase" x-text="userInitial"></div>
+          <span class="hidden md:inline text-xs text-slate-300" x-text="user?.email?.split('@')[0]"></span>
+        </button>
+        <div x-show="userMenuOpen" x-transition class="absolute right-0 top-full mt-2 w-56 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl p-2 space-y-1 z-50">
+          <div class="px-3 py-2 border-b border-slate-800">
+            <div class="text-xs text-slate-500 truncate" x-text="user?.email"></div>
+            <div class="text-[10px] mt-1">
+              <span x-show="user?.is_platform_owner" class="px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-medium">Platform Owner</span>
+              <span x-show="!user?.is_platform_owner" class="px-2 py-0.5 rounded-full bg-slate-500/10 text-slate-400 border border-slate-700">Member</span>
+            </div>
+          </div>
+          <button @click="logout(); userMenuOpen = false" class="w-full text-left px-3 py-2 rounded-lg text-xs text-slate-300 hover:bg-slate-800 flex items-center gap-2">
+            <i class="fa-solid fa-right-from-bracket text-rose-400"></i> Cerrar sesión
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============ LOGIN ============ -->
+  <template x-if="!user">
+    <main class="flex-1 flex items-center justify-center p-4 overflow-y-auto">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl p-6 space-y-4">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center font-black text-white text-lg shadow-lg shadow-indigo-500/20">
+            <i class="fa-solid fa-box-open"></i>
+          </div>
+          <div>
+            <h1 class="font-bold text-lg bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">HTMLBox Portal</h1>
+            <p class="text-xs text-slate-400">Crea tu dashboard con IA. Súbelo. Comparte.</p>
+          </div>
+        </div>
+
+        <form @submit.prevent="requestMagicLink()" class="space-y-3">
+          <div>
+            <label class="text-xs font-medium text-slate-300 block mb-1">Email</label>
+            <input type="email" x-model="email" required placeholder="tu@email.com"
+                   class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500">
+          </div>
+          <button type="submit" :disabled="busy" class="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 rounded-xl font-medium text-sm transition flex items-center justify-center gap-2">
+            <template x-if="busy"><i class="fa-solid fa-spinner animate-spin"></i></template>
+            <span x-text="busy ? 'Enviando…' : 'Enviar magic link'"></span>
+          </button>
+        </form>
+
+        <template x-if="lastMessage">
+          <p class="text-xs text-slate-400" x-text="lastMessage"></p>
+        </template>
+
+        <div class="pt-2 border-t border-slate-800">
+          <p class="text-[10px] text-slate-500 leading-relaxed">
+            <i class="fa-solid fa-info-circle text-indigo-400"></i>
+            Modo dev: el email no se envía. El link aparece en el panel de la derecha para que entres sin abrir la terminal.
+          </p>
+        </div>
+      </div>
+    </main>
+  </template>
+
+  <!-- ============ APP (con sesión) ============ -->
+  <template x-if="user">
+    <div class="flex-1 flex overflow-hidden relative">
+
+      <!-- Sidebar backdrop mobile -->
+      <div x-show="sidebarOpen" @click="sidebarOpen = false"
+           class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-30 lg:hidden"></div>
+
+      <!-- ============ SIDEBAR ============ -->
+      <aside :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'"
+             class="fixed lg:static inset-y-0 left-0 top-16 lg:top-0 w-72 bg-slate-900 border-r border-slate-800 flex flex-col z-40 transform transition-transform duration-300">
+
+        <!-- Tenant + Workspace -->
+        <div class="p-4 border-b border-slate-800 space-y-3">
+          <div>
+            <label class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">Tenant</label>
+            <select x-model="currentTenantId" @change="onTenantChange()" :disabled="tenants.length === 0"
+                    class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50">
+              <template x-for="t in tenants" :key="t.id">
+                <option :value="t.id" x-text="t.name"></option>
+              </template>
+              <template x-if="tenants.length === 0">
+                <option value="" disabled selected>Sin tenants</option>
+              </template>
+            </select>
+          </div>
+          <div>
+            <label class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">Workspace</label>
+            <select x-model="currentWorkspaceId" @change="loadBoxes()" :disabled="workspaces.length === 0"
+                    class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50">
+              <template x-for="w in workspaces" :key="w.id">
+                <option :value="w.id" x-text="w.name"></option>
+              </template>
+              <template x-if="workspaces.length === 0">
+                <option value="" disabled selected>Sin workspaces</option>
+              </template>
+            </select>
+          </div>
+        </div>
+
+        <!-- Lista de boxes -->
+        <div class="flex-1 overflow-y-auto p-3">
+          <div class="flex items-center justify-between mb-2 px-2">
+            <div class="px-1 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Mis HTML Boxes</div>
+            <span class="text-[10px] text-slate-500 font-mono" x-text="boxes.length"></span>
+          </div>
+          <div class="space-y-1">
+            <template x-for="b in boxes" :key="b.id">
+              <button @click="selectBox(b)"
+                      :class="b.id === currentBox?.id
+                        ? 'bg-indigo-600/20 border-indigo-500/50 text-white'
+                        : 'hover:bg-slate-800 text-slate-300 border-transparent'"
+                      class="w-full text-left p-2.5 rounded-xl border flex items-start gap-2.5 transition group">
+                <i class="fa-solid fa-cube text-indigo-400 text-sm mt-0.5"></i>
+                <div class="flex-1 min-w-0">
+                  <div class="font-medium text-sm truncate" x-text="b.name"></div>
+                  <div class="flex items-center gap-2 mt-0.5">
+                    <span class="text-[10px] text-slate-500 font-mono" x-text="b.slug"></span>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded-full font-mono"
+                          :class="b.turso_status === 'ready' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'"
+                          x-text="b.turso_status"></span>
+                  </div>
+                </div>
+                <span class="text-[9px] uppercase font-semibold flex-shrink-0 mt-0.5"
+                      :class="b.visibility === 'public' ? 'text-emerald-400' : 'text-slate-500'"
+                      x-text="b.visibility"></span>
+              </button>
+            </template>
+            <template x-if="boxes.length === 0">
+              <div class="px-3 py-6 text-center text-[11px] text-slate-500 space-y-2">
+                <i class="fa-solid fa-cube text-2xl text-slate-700 block"></i>
+                <p>No hay boxes todavía.</p>
+                <button @click="openNewBoxModal()" class="text-indigo-400 hover:underline">Crear el primero →</button>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Footer: storage footprint + MCP -->
+        <div class="p-4 border-t border-slate-800 space-y-3 bg-slate-900/50">
+          <div x-show="storageBytes > 0">
+            <div class="flex justify-between text-[10px] mb-1">
+              <span class="text-slate-400">HTML versionado</span>
+              <span class="text-slate-300 font-mono" x-text="formatBytes(storageBytes)"></span>
+            </div>
+            <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div class="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all"
+                   :style="`width: ${Math.min(100, (storageBytes / (10 * 1024 * 1024)) * 100)}%`"></div>
+            </div>
+          </div>
+
+          <button @click="switchTab('mcp')" class="w-full text-left px-3 py-2 rounded-lg text-[11px] font-medium text-slate-400 hover:text-white hover:bg-slate-800 flex items-center gap-2 transition">
+            <i class="fa-solid fa-microchip text-indigo-400"></i>
+            <span>Protocolo Agentes MCP</span>
+            <i class="fa-solid fa-arrow-up-right-from-square ml-auto text-[9px] text-slate-600"></i>
+          </button>
+        </div>
+      </aside>
+
+      <!-- ============ MAIN ============ -->
+      <main class="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-950">
+
+        <!-- Toolbar -->
+        <div x-show="currentBox" class="h-14 border-b border-slate-800 bg-slate-900/40 px-4 flex items-center justify-between flex-shrink-0 gap-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <h1 class="font-bold text-base text-slate-100 truncate" x-text="currentBox?.name || ''"></h1>
+            <span x-show="currentBox" class="text-[10px] px-2 py-0.5 rounded-full border uppercase font-semibold flex-shrink-0"
+                  :class="currentBox?.visibility === 'public' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'"
+                  x-text="currentBox?.visibility"></span>
+            <span x-show="currentBox?.turso_status === 'ready'"
+                  class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 flex-shrink-0">
+              <span class="w-1 h-1 rounded-full bg-emerald-400"></span> DB lista
+            </span>
+          </div>
+
+          <div x-show="currentBox" class="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 flex-shrink-0">
+            <button @click="switchTab('preview')"
+                    :class="activeTab === 'preview' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'"
+                    class="px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-2">
+              <i class="fa-solid fa-play text-xs"></i><span class="hidden sm:inline">Vista Previa</span>
+            </button>
+            <button @click="switchTab('editor')"
+                    :class="activeTab === 'editor' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'"
+                    class="px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-2">
+              <i class="fa-solid fa-code text-xs"></i><span class="hidden sm:inline">Editor HTML</span>
+            </button>
+            <button @click="switchTab('data')"
+                    :class="activeTab === 'data' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'"
+                    class="px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-2">
+              <i class="fa-solid fa-database text-xs"></i><span class="hidden sm:inline">Archivos &amp; Datos</span>
+            </button>
+            <button @click="switchTab('mcp')"
+                    :class="activeTab === 'mcp' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'"
+                    class="px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-2">
+              <i class="fa-solid fa-robot text-xs text-purple-400"></i><span class="hidden md:inline">Agentes (MCP)</span>
+            </button>
+          </div>
+
+          <div x-show="currentBox" class="flex items-center gap-2 flex-shrink-0">
+            <button @click="openShareModal()" class="px-3 py-1.5 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800 text-xs font-medium flex items-center gap-1.5 transition">
+              <i class="fa-solid fa-up-right-from-square text-indigo-400"></i>
+              <span class="hidden sm:inline">Probar Enlace</span>
+            </button>
+            <button @click="copyShareLink()" class="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800 transition" title="Copiar enlace público">
+              <i class="fa-solid fa-share-nodes"></i>
+            </button>
+            <button @click="saveCurrentBox()" :disabled="saving"
+                    class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white font-medium text-xs rounded-xl shadow-lg shadow-emerald-600/20 flex items-center gap-1.5 transition">
+              <template x-if="saving"><i class="fa-solid fa-spinner animate-spin"></i></template>
+              <template x-if="!saving"><i class="fa-solid fa-floppy-disk"></i></template>
+              <span x-text="saving ? 'Guardando…' : 'Guardar'"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tab content -->
+        <div class="flex-1 overflow-hidden relative">
+
+          <!-- Preview -->
+          <div x-show="activeTab === 'preview'" class="absolute inset-0 flex flex-col bg-slate-900">
+            <iframe x-show="currentBox" :srcdoc="previewSrcdoc" sandbox="allow-scripts allow-modals allow-forms allow-same-origin" class="w-full h-full border-0 bg-white"></iframe>
+            <div x-show="!currentBox" class="flex items-center justify-center h-full text-slate-500 text-sm">
+              Seleccioná o creá un box para previsualizarlo.
+            </div>
+          </div>
+
+          <!-- Editor -->
+          <div x-show="activeTab === 'editor'" class="absolute inset-0 flex flex-col bg-slate-950">
+            <div class="bg-slate-900 border-b border-slate-800 px-4 py-2 flex justify-between items-center text-xs text-slate-400 font-mono">
+              <div class="flex items-center gap-3">
+                <span class="flex items-center gap-1.5">
+                  <i class="fa-brands fa-html5 text-orange-400"></i> index.html
+                </span>
+                <span x-show="currentBox" class="text-slate-500">
+                  versión <span class="text-indigo-400" x-text="currentBox?.htmlbox_version ?? 0"></span>
+                </span>
+              </div>
+              <div class="flex gap-3 items-center">
+                <button @click="formatHTML()" class="hover:text-white transition" title="Re-formatear indentación">
+                  <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Formatear
+                </button>
+                <span class="text-slate-700">|</span>
+                <span><span x-text="editorHtml.length"></span> caracteres</span>
+              </div>
+            </div>
+            <textarea x-model="editorHtml" spellcheck="false"
+                      placeholder="<!-- Escribe o pega tu HTML aquí -->"
+                      class="flex-1 w-full bg-slate-950 text-slate-200 font-mono p-4 text-xs lg:text-sm focus:outline-none resize-none code-editor"></textarea>
+          </div>
+
+          <!-- Data placeholder (fase 3) -->
+          <div x-show="activeTab === 'data'" class="absolute inset-0 p-6 overflow-y-auto bg-slate-950">
+            <div class="max-w-2xl mx-auto space-y-4">
+              <div class="p-6 rounded-2xl bg-slate-900 border border-slate-800 text-center space-y-3">
+                <i class="fa-solid fa-database text-3xl text-indigo-400"></i>
+                <h2 class="font-bold text-base">Tabla &amp; Ingesta de Datos</h2>
+                <p class="text-xs text-slate-400">Subida de CSV/XLSX/JSON y tablas consultables llega en la fase 3. Mientras tanto, el box está vivo y el SDK <code class="text-indigo-300">window.HTMLBox.table()</code> está documentado (stub).</p>
+              </div>
+              <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Archivos subidos (mockup)</h3>
+                <table class="w-full text-left text-xs">
+                  <thead class="text-slate-500 border-b border-slate-800">
+                    <tr><th class="p-2">Archivo</th><th class="p-2">Tipo</th><th class="p-2">Tamaño</th><th class="p-2">R2</th></tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-800/60">
+                    <tr><td class="p-2 text-slate-500 italic" colspan="4">Sin archivos. La fase 3 habilita upload CSV/XLSX/JSON con auto-parse.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- MCP placeholder (fase 6) -->
+          <div x-show="activeTab === 'mcp'" class="absolute inset-0 p-6 overflow-y-auto bg-slate-950">
+            <div class="max-w-4xl mx-auto space-y-4">
+              <div class="flex items-center justify-between">
+                <div>
+                  <h2 class="text-lg font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-microchip text-purple-400"></i>
+                    Integración MCP
+                  </h2>
+                  <p class="text-xs text-slate-400">Exponé este HTML Box como herramienta estándar para ChatGPT, Claude, Gemini o tu agente corporativo.</p>
+                </div>
+                <button class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-xl border border-slate-700 flex items-center gap-2 transition">
+                  <i class="fa-solid fa-copy"></i>
+                  <span>Copiar JSON Servidor MCP</span>
+                </button>
+              </div>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+                  <div class="flex justify-between items-center">
+                    <span class="font-mono text-xs text-purple-400 font-bold">query_kpi_metrics()</span>
+                    <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Lectura</span>
+                  </div>
+                  <p class="text-xs text-slate-300">Obtiene los KPIs actualizados expuestos en el HTML del box.</p>
+                  <div class="text-[11px] font-mono bg-slate-950 p-2 rounded text-slate-400">GET /api/v1/mcp/app-1/kpi</div>
+                </div>
+                <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+                  <div class="flex justify-between items-center">
+                    <span class="font-mono text-xs text-purple-400 font-bold">generate_spot_check()</span>
+                    <span class="text-[10px] px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">Ejecución</span>
+                  </div>
+                  <p class="text-xs text-slate-300">Ejecuta análisis automático y devuelve reporte consolidado.</p>
+                  <div class="text-[11px] font-mono bg-slate-950 p-2 rounded text-slate-400">POST /api/v1/mcp/app-1/spotcheck</div>
+                </div>
+              </div>
+              <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
+                <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">MCP Manifest (preview)</span>
+                <pre class="bg-slate-950 p-4 rounded-xl text-xs font-mono text-indigo-300 overflow-x-auto"><code>{
+  "name": "htmlbox_server",
+  "version": "1.0.0",
+  "capabilities": {
+    "tools": ["query_kpi_metrics", "generate_spot_check"],
+    "resources": ["r2://cartera_vencida.csv"]
+  },
+  "authentication": "Bearer hbx_live_839201948201"
+}</code></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- ============ NEW BOX MODAL ============ -->
+      <div x-show="newBoxModalOpen" x-transition.opacity class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" x-cloak>
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl space-y-4 p-6">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h3 class="font-bold text-base text-slate-100 flex items-center gap-2">
+              <i class="fa-solid fa-box-open text-indigo-400"></i> Crear HTML Box
+            </h3>
+            <button @click="closeNewBoxModal()" class="text-slate-500 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+          </div>
+          <form @submit.prevent="createBox()" class="space-y-3">
+            <!-- Upload directo -->
+            <div class="p-4 rounded-xl bg-indigo-950/40 border border-indigo-800/60 text-center space-y-2">
+              <i class="fa-solid fa-file-code text-2xl text-indigo-400"></i>
+              <h4 class="text-[10px] font-bold text-slate-200 uppercase tracking-wider">Opción Recomendada</h4>
+              <p class="text-xs text-slate-300">Subir un archivo <code>.html</code> generado previamente en ChatGPT, Claude o Gemini.</p>
+              <label class="inline-flex px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs rounded-xl cursor-pointer transition shadow-lg shadow-indigo-600/30">
+                <i class="fa-solid fa-upload mr-2"></i> Seleccionar archivo .HTML
+                <input type="file" accept=".html,.htm" class="hidden" @change="handleNewBoxFile($event)">
+              </label>
+              <template x-if="newBox.htmlContent">
+                <p class="text-[10px] text-emerald-400 mt-1"><i class="fa-solid fa-check"></i> Archivo cargado: <span x-text="newBox.htmlContent.length + ' bytes'"></span></p>
+              </template>
+            </div>
+
+            <div class="relative flex py-1 items-center">
+              <div class="flex-grow border-t border-slate-800"></div>
+              <span class="flex-shrink mx-4 text-[10px] font-mono text-slate-500 uppercase">O crea desde plantilla</span>
+              <div class="flex-grow border-t border-slate-800"></div>
+            </div>
+
+            <div>
+              <label class="text-xs font-medium text-slate-300 block mb-1">Nombre de la aplicación</label>
+              <input type="text" x-model="newBox.name" required placeholder="Ej: Dashboard de Cartera 2026"
+                     class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500">
+            </div>
+            <div>
+              <label class="text-xs font-medium text-slate-300 block mb-1">Plantilla inicial</label>
+              <select x-model="newBox.template" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500">
+                <option value="empty">HTML en blanco</option>
+                <option value="dashboard">Dashboard de Cartera (Tailwind)</option>
+                <option value="crm">Mini CRM &amp; Gestión</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs font-medium text-slate-300 block mb-1">Visibilidad</label>
+              <select x-model="newBox.visibility" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500">
+                <option value="private">Privado (requiere sesión)</option>
+                <option value="public">Público (link compartible)</option>
+              </select>
+            </div>
+            <div class="flex justify-end gap-2 pt-2">
+              <button type="button" @click="closeNewBoxModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium transition">Cancelar</button>
+              <button type="submit" :disabled="creating" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 rounded-xl text-xs font-medium transition shadow-lg shadow-indigo-600/30 flex items-center gap-2">
+                <template x-if="creating"><i class="fa-solid fa-spinner animate-spin"></i></template>
+                <span x-text="creating ? 'Creando…' : 'Crear'"></span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- ============ SHARE MODAL ============ -->
+      <div x-show="shareModalOpen" x-transition.opacity class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4" x-cloak>
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl space-y-4 p-6">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
+              <h3 class="font-bold text-base text-slate-100">Box publicado</h3>
+            </div>
+            <button @click="closeShareModal()" class="text-slate-500 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+          </div>
+          <p class="text-xs text-slate-300">
+            Sin servidores ni despliegues técnicos. Tu HTML Box está activo y accesible a través de la infraestructura aislada de HTMLBox.
+          </p>
+
+          <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between gap-3 font-mono text-xs">
+            <span class="text-indigo-400 truncate" x-text="shareUrl || '—'"></span>
+            <button @click="copyShareLink()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition font-sans flex items-center gap-1.5 flex-shrink-0">
+              <i class="fa-solid fa-copy"></i><span>Copiar Enlace</span>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-3 gap-3 pt-2 text-center text-xs">
+            <div class="p-3 bg-slate-950/50 rounded-xl border border-slate-800">
+              <i class="fa-solid fa-shield-halved text-emerald-400 text-base mb-1"></i>
+              <p class="font-semibold text-slate-200">Aislamiento Sandbox</p>
+              <p class="text-[10px] text-slate-400">Ejecución segura de scripts</p>
+            </div>
+            <div class="p-3 bg-slate-950/50 rounded-xl border border-slate-800">
+              <i class="fa-solid fa-bolt text-amber-400 text-base mb-1"></i>
+              <p class="font-semibold text-slate-200">Versión actual</p>
+              <p class="text-[10px] text-slate-400" x-text="`v${currentBox?.htmlbox_version ?? 0}`"></p>
+            </div>
+            <div class="p-3 bg-slate-950/50 rounded-xl border border-slate-800">
+              <i class="fa-solid fa-database text-indigo-400 text-base mb-1"></i>
+              <p class="font-semibold text-slate-200">DB del box</p>
+              <p class="text-[10px] text-slate-400" x-text="currentBox?.turso_status || 'pending'"></p>
+            </div>
+          </div>
+
+          <div class="flex justify-between items-center pt-2">
+            <span class="text-[10px] text-slate-500" x-text="`Última actualización: ${currentBox?.updated_at || '—'}`"></span>
+            <button @click="closeShareModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium transition">Cerrar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Toast -->
+      <div x-show="toast" x-transition class="fixed bottom-6 right-6 z-50 transform bg-slate-900 border border-slate-700 text-slate-100 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3" x-cloak>
+        <i class="fa-solid fa-circle-check text-emerald-400"></i>
+        <span class="text-xs font-medium" x-text="toast"></span>
+      </div>
+    </div>
+  </template>
+
+  <!-- ============ DEV PREVIEW OVERLAY (flotante, visible con o sin sesión) ============ -->
+  <div x-show="showDevPreview" x-transition.opacity class="fixed bottom-4 right-4 z-50 max-w-sm bg-slate-900 border border-emerald-500/40 rounded-2xl shadow-2xl shadow-emerald-500/10 p-4 space-y-3" x-cloak>
+    <div class="flex items-center justify-between gap-2">
+      <p class="font-bold text-emerald-400 text-sm flex items-center gap-2">
+        <i class="fa-solid fa-wand-magic-sparkles"></i>
+        Magic link generado
+      </p>
+      <button @click="dismissDevPreview()" class="text-slate-500 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <p class="text-xs text-slate-400">
+      Modo dev: el email no se envía. Tocá <strong class="text-emerald-300">Entrar</strong> para autenticarte sin abrir la terminal.
+    </p>
+    <div class="break-all text-emerald-200 bg-slate-950/70 p-2.5 rounded-lg font-mono text-[11px] leading-relaxed border border-emerald-500/20" x-text="previewLink"></div>
+    <div class="flex gap-2">
+      <button @click="copyPreviewLink()" class="flex-1 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition">
+        <i class="fa-solid fa-copy"></i>
+        <span x-text="copyButtonLabel"></span>
+      </button>
+      <button @click="enterViaPreview()" class="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition">
+        <i class="fa-solid fa-arrow-right"></i> Entrar
+      </button>
+    </div>
+  </div>
+
+  <script>
+    // ============ Constantes de seed ============
+
+    const SEED_DASHBOARD = `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard de Cartera</title>
+<script src="https://cdn.tailwindcss.com"><\/script>
+</head>
+<body class="bg-slate-900 text-slate-100 p-6">
+  <div class="max-w-5xl mx-auto space-y-6">
+    <header class="flex justify-between items-center bg-slate-800 p-4 rounded-2xl border border-slate-700">
+      <div>
+        <h1 class="text-xl font-bold text-indigo-400">Resumen de Cartera y Cobranzas</h1>
+        <p class="text-xs text-slate-400">Box versionado en HTMLBox · v1</p>
+      </div>
+      <button class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-xl shadow">
+        <i class="fa-solid fa-file-pdf mr-1"></i> Spot Check
+      </button>
+    </header>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+        <div class="text-xs text-slate-400">Total en Cartera</div>
+        <div class="text-2xl font-bold text-white mt-1">$ 148,450,000</div>
+        <div class="text-xs text-emerald-400 mt-2"><i class="fa-solid fa-arrow-up"></i> +4.2% este mes</div>
+      </div>
+      <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+        <div class="text-xs text-slate-400">Cartera Vencida (> 60 días)</div>
+        <div class="text-2xl font-bold text-rose-400 mt-1">$ 32,100,000</div>
+        <div class="text-xs text-rose-400 mt-2"><i class="fa-solid fa-triangle-exclamation"></i> 8 Clientes Críticos</div>
+      </div>
+      <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+        <div class="text-xs text-slate-400">Recaudado Hoy</div>
+        <div class="text-2xl font-bold text-emerald-400 mt-1">$ 9,800,000</div>
+        <div class="text-xs text-slate-400 mt-2">12 Transacciones</div>
+      </div>
+    </div>
+    <p class="text-xs text-slate-500 text-center">Editá este HTML y guardá — la siguiente versión aparece en este mismo link.</p>
+  </div>
+</body>
+</html>`
+
+    const SEED_CRM = `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<script src="https://cdn.tailwindcss.com"><\/script>
+</head>
+<body class="bg-slate-950 text-slate-100 p-8">
+  <div class="max-w-xl mx-auto space-y-4">
+    <h1 class="text-xl font-bold text-purple-400">Mini CRM Local - Sync Active</h1>
+    <p class="text-xs text-slate-400">Guarda observaciones que se sincronizan con la base de datos de HTMLBox.</p>
+    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
+      <input type="text" placeholder="Nombre del cliente" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs">
+      <textarea placeholder="Observación de la llamada..." class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs h-20"></textarea>
+      <button class="w-full bg-indigo-600 text-white py-2 rounded text-xs font-bold">Registrar Gestión</button>
+    </div>
+  </div>
+</body>
+</html>`
+
+    const SEED_EMPTY = `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<script src="https://cdn.tailwindcss.com"><\/script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center">
+  <h1 class="text-3xl font-bold">Mi nuevo HTML Box</h1>
+</body>
+</html>`
+
+    // ============ App Alpine ============
+
+    function portalApp() {
+      return {
+        // sesión
+        user: null,
+        userMenuOpen: false,
+        email: '',
+        busy: false,
+        lastMessage: '',
+        previewLink: null,
+        showDevPreview: false,
+        copyButtonLabel: 'Copiar',
+        syncStatusText: 'R2 + D1 + Turso Sync',
+
+        // tenants / workspaces / boxes
+        tenants: [],
+        currentTenantId: null,
+        workspaces: [],
+        currentWorkspaceId: null,
+        boxes: [],
+        currentBox: null,
+
+        // UI
+        sidebarOpen: false,
+        activeTab: 'preview',
+        toast: null,
+        toastTimer: null,
+
+        // editor
+        editorHtml: '',
+
+        // modales
+        newBoxModalOpen: false,
+        shareModalOpen: false,
+        creating: false,
+        saving: false,
+        newBox: { name: '', template: 'empty', visibility: 'private', htmlContent: '' },
+
+        // share
+        shareUrl: '',
+
+        async init() {
+          await this.loadMe()
+        },
+
+        get userInitial() {
+          return (this.user?.email || '?').charAt(0).toUpperCase()
+        },
+
+        // --------- Sesión ---------
+
+        async loadMe() {
+          try {
+            const res = await this.api('/api/auth/me')
+            const data = await res.json()
+            this.user = data.user
+            if (this.user) {
+              this.showDevPreview = false
+              await this.loadTenants()
+            }
+          } catch (err) {
+            console.error('loadMe:', err)
+          }
+        },
+
+        async requestMagicLink() {
+          this.busy = true
+          this.lastMessage = ''
+          this.previewLink = null
+          this.showDevPreview = false
+          try {
+            const res = await this.api('/api/auth/request', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: this.email }),
+            })
+            const data = await res.json()
+            this.lastMessage = data.message || 'Listo. Revisá tu email.'
+            if (data._dev_preview) {
+              this.previewLink = data._dev_preview
+              this.showDevPreview = true
+              this.showToast('Link generado. Tocá Entrar para autenticarte.')
+            }
+          } catch (err) {
+            this.lastMessage = 'Error: ' + err.message
+          } finally {
+            this.busy = false
+          }
+        },
+
+        async logout() {
+          await this.api('/api/auth/logout', { method: 'POST' })
+          this.user = null
+          this.tenants = []
+          this.workspaces = []
+          this.boxes = []
+          this.currentBox = null
+          this.editorHtml = ''
+          this.previewLink = null
+          this.showDevPreview = false
+          this.userMenuOpen = false
+        },
+
+        dismissDevPreview() {
+          this.showDevPreview = false
+        },
+
+        async copyPreviewLink() {
+          if (!this.previewLink) return
+          try {
+            await navigator.clipboard.writeText(this.previewLink)
+            this.copyButtonLabel = '¡Copiado!'
+            setTimeout(() => { this.copyButtonLabel = 'Copiar' }, 2000)
+          } catch {
+            const ta = document.createElement('textarea')
+            ta.value = this.previewLink
+            ta.style.position = 'fixed'
+            ta.style.opacity = '0'
+            document.body.appendChild(ta)
+            ta.select()
+            document.execCommand('copy')
+            document.body.removeChild(ta)
+            this.copyButtonLabel = '¡Copiado!'
+            setTimeout(() => { this.copyButtonLabel = 'Copiar' }, 2000)
+          }
+        },
+
+        async enterViaPreview() {
+          if (!this.previewLink) return
+          let token = null
+          try {
+            token = new URL(this.previewLink).searchParams.get('token')
+          } catch {
+            window.location.href = this.previewLink
+            return
+          }
+          if (!token) {
+            window.location.href = this.previewLink
+            return
+          }
+          this.busy = true
+          try {
+            const res = await this.api('/api/auth/consume', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token }),
+            })
+            const data = await res.json()
+            if (res.ok && data.ok) {
+              this.showDevPreview = false
+              this.previewLink = null
+              await this.loadMe()
+              this.showToast(`Bienvenido, ${data.user.email}`)
+            } else {
+              this.showToast('Error consumiendo link: ' + (data.error || res.status))
+            }
+          } catch (err) {
+            this.showToast('Error: ' + err.message)
+          } finally {
+            this.busy = false
+          }
+        },
+
+        // --------- Tenants / Workspaces / Boxes ---------
+
+        async loadTenants() {
+          const res = await this.api('/api/me/tenants')
+          const data = await res.json()
+          this.tenants = data.tenants ?? []
+          if (this.tenants.length > 0 && !this.currentTenantId) {
+            this.currentTenantId = this.tenants[0].id
+            await this.onTenantChange()
+          }
+        },
+
+        async onTenantChange() {
+          if (!this.currentTenantId) return
+          const res = await this.api(`/api/tenants/${this.currentTenantId}/workspaces`)
+          const data = await res.json()
+          this.workspaces = data.workspaces ?? []
+          if (this.workspaces.length > 0) {
+            this.currentWorkspaceId = this.workspaces[0].id
+            await this.loadBoxes()
+          } else {
+            this.boxes = []
+            this.currentBox = null
+            this.editorHtml = ''
+          }
+        },
+
+        async loadBoxes() {
+          if (!this.currentWorkspaceId) return
+          const res = await this.api(`/api/boxes?workspace=${this.currentWorkspaceId}`)
+          const data = await res.json()
+          this.boxes = data.boxes ?? []
+          if (this.boxes.length > 0) await this.selectBox(this.boxes[0])
+          else { this.currentBox = null; this.editorHtml = ''; this.activeTab = 'preview' }
+        },
+
+        async selectBox(b) {
+          this.currentBox = b
+          this.activeTab = 'preview'
+          await this.loadActiveHtml()
+          if (window.innerWidth < 1024) this.sidebarOpen = false
+        },
+
+        async loadActiveHtml() {
+          if (!this.currentBox) return
+          const res = await this.api(`/api/boxes/${this.currentBox.id}/active-html`)
+          if (res.ok) {
+            const data = await res.json()
+            this.editorHtml = data.html
+          } else {
+            this.editorHtml = this.seedFor(this.currentBox.template)
+          }
+        },
+
+        seedFor(template) {
+          if (template === 'dashboard') return SEED_DASHBOARD
+          if (template === 'crm') return SEED_CRM
+          return SEED_EMPTY
+        },
+
+        // --------- Tab ---------
+
+        switchTab(tab) {
+          this.activeTab = tab
+          if (tab === 'editor' && this.currentBox && !this.editorHtml) this.loadActiveHtml()
+        },
+
+        // --------- Upload ---------
+
+        async handleFileUpload(ev) {
+          const file = ev.target.files[0]
+          if (!file) return
+          const reader = new FileReader()
+          reader.onload = async (e) => {
+            const content = e.target.result
+            if (!this.currentBox) {
+              this.showToast('Seleccioná o creá un box antes de subir.')
+              ev.target.value = ''
+              return
+            }
+            this.editorHtml = content
+            this.activeTab = 'editor'
+            this.showToast(`HTML cargado (${content.length} bytes). Tocá Guardar para crear v${(this.currentBox?.htmlbox_version ?? 0) + 1}.`)
+          }
+          reader.readAsText(file)
+          ev.target.value = ''
+        },
+
+        async handleNewBoxFile(ev) {
+          const file = ev.target.files[0]
+          if (!file) return
+          const reader = new FileReader()
+          reader.onload = (e) => {
+            this.newBox.htmlContent = e.target.result
+            this.showToast(`HTML cargado (${this.newBox.htmlContent.length} bytes).`)
+          }
+          reader.readAsText(file)
+          ev.target.value = ''
+        },
+
+        async saveCurrentBox() {
+          if (!this.currentBox) return
+          if (!this.editorHtml.trim()) {
+            this.showToast('El HTML está vacío.')
+            return
+          }
+          this.saving = true
+          try {
+            const size = new Blob([this.editorHtml]).size
+            const urlRes = await this.api(`/api/boxes/${this.currentBox.id}/upload-url`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ size, contentType: 'text/html' }),
+            })
+            const urlData = await urlRes.json()
+            if (!urlRes.ok) throw new Error(urlData.error || 'no se pudo firmar upload')
+
+            const putRes = await fetch(urlData.uploadUrl, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'text/html' },
+              body: this.editorHtml,
+            })
+            if (!putRes.ok) throw new Error(`PUT R2 falló: ${putRes.status}`)
+
+            const summary = prompt('Resumen corto de la versión (obligatorio):', 'Cambios manuales')
+            if (!summary) {
+              this.showToast('Versión cancelada.')
+              return
+            }
+            const confRes = await this.api(`/api/boxes/${this.currentBox.id}/html`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ r2Key: urlData.key, summary, source: 'portal' }),
+            })
+            const confData = await confRes.json()
+            if (!confRes.ok) throw new Error(confData.error || 'confirmar versión falló')
+
+            await this.loadBoxes()
+            const fresh = this.boxes.find((b) => b.id === this.currentBox.id)
+            if (fresh) await this.selectBox(fresh)
+            this.activeTab = 'preview'
+            this.showToast(`Guardado como v${confData.version}.`)
+          } catch (err) {
+            console.error(err)
+            this.showToast('Error: ' + err.message)
+          } finally {
+            this.saving = false
+          }
+        },
+
+        // --------- Modales ---------
+
+        openNewBoxModal() {
+          if (!this.currentWorkspaceId) {
+            this.showToast('Seleccioná un workspace primero.')
+            return
+          }
+          this.newBox = { name: '', template: 'empty', visibility: 'private', htmlContent: '' }
+          this.newBoxModalOpen = true
+        },
+        closeNewBoxModal() { this.newBoxModalOpen = false },
+
+        async createBox() {
+          if (!this.currentWorkspaceId) {
+            this.showToast('Seleccioná un workspace primero.')
+            return
+          }
+          if (!this.newBox.name.trim()) {
+            this.showToast('Poné un nombre.')
+            return
+          }
+          this.creating = true
+          try {
+            const res = await this.api('/api/boxes', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: this.newBox.name,
+                template: this.newBox.template,
+                visibility: this.newBox.visibility,
+                workspace_id: this.currentWorkspaceId,
+              }),
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || 'falló')
+            await this.loadBoxes()
+            const fresh = this.boxes.find((b) => b.id === data.box.id)
+            if (fresh) {
+              await this.selectBox(fresh)
+              // Si subió archivo, sembramos el editor con eso y guardamos como v1.
+              if (this.newBox.htmlContent) {
+                this.editorHtml = this.newBox.htmlContent
+                this.activeTab = 'editor'
+                await this.saveCurrentBox()
+              } else {
+                this.editorHtml = this.seedFor(this.newBox.template)
+                this.activeTab = 'editor'
+              }
+            }
+            this.closeNewBoxModal()
+            this.showToast(`Box "${data.box.name}" creado (v${data.box.htmlbox_version}).`)
+          } catch (err) {
+            this.showToast('Error: ' + err.message)
+          } finally {
+            this.creating = false
+          }
+        },
+
+        openShareModal() {
+          if (!this.currentBox) return
+          const slug = this.currentBox.slug
+          const share = this.currentBox.share_id
+          const tenantSlug = (this.tenants.find((t) => t.id === this.currentTenantId) || {}).slug || 'tenant'
+          this.shareUrl = `https://htmlbox.app/s/${share}    https://${tenantSlug}.htmlbox.app/${slug}`
+          this.shareModalOpen = true
+        },
+        closeShareModal() { this.shareModalOpen = false },
+
+        async copyShareLink() {
+          if (!this.shareUrl) return
+          try {
+            await navigator.clipboard.writeText(this.shareUrl.split(/\s{2,}/)[0])
+            this.showToast('Enlace copiado al portapapeles.')
+          } catch {
+            const ta = document.createElement('textarea')
+            ta.value = this.shareUrl
+            ta.style.position = 'fixed'
+            ta.style.opacity = '0'
+            document.body.appendChild(ta)
+            ta.select()
+            document.execCommand('copy')
+            document.body.removeChild(ta)
+            this.showToast('Enlace copiado.')
+          }
+        },
+
+        // --------- Helpers ---------
+
+        async api(path, init = {}) {
+          return await fetch(path, { credentials: 'include', ...init })
+        },
+
+        formatBytes(n) {
+          if (!n) return '0 B'
+          const units = ['B', 'KB', 'MB', 'GB']
+          let i = 0
+          while (n >= 1024 && i < units.length - 1) { n /= 1024; i++ }
+          return `${n.toFixed(1)} ${units[i]}`
+        },
+
+        get storageBytes() {
+          return (this.editorHtml || '').length
+        },
+
+        get previewSrcdoc() {
+          const html = this.editorHtml || ''
+          if (!html) return ''
+          const sdkTag = '<script src="/_sdk/htmlbox.js?boxId=preview&v=public"><\/script>'
+          if (/<\/body\s*>/i.test(html)) {
+            return html.replace(/<\/body\s*>/i, `${sdkTag}</body>`)
+          }
+          return html + '\n' + sdkTag
+        },
+
+        formatHTML() {
+          // Re-indenta simple (no es un beautifier completo, pero ayuda).
+          let level = 0
+          const out = []
+          const tokens = this.editorHtml
+            .replace(/></g, '>\n<')
+            .replace(/>\s+</g, '>\n<')
+            .split('\n')
+          for (const t of tokens) {
+            const trimmed = t.trim()
+            if (!trimmed) continue
+            if (/^<\/.+>/.test(trimmed)) level = Math.max(0, level - 1)
+            out.push('  '.repeat(level) + trimmed)
+            if (/^<[^!?\/][^>]*[^/]>$/.test(trimmed) && !/^<(br|hr|img|input|meta|link)/.test(trimmed)) {
+              level++
+            }
+          }
+          this.editorHtml = out.join('\n')
+          this.showToast('HTML re-indentado.')
+        },
+
+        showToast(msg) {
+          this.toast = msg
+          clearTimeout(this.toastTimer)
+          this.toastTimer = setTimeout(() => { this.toast = null }, 3000)
+        },
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "@htmlbox/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./namespacedKey": "./src/namespacedKey.js",
+    "./boxSchema": "./src/boxSchema.js",
+    "./id": "./src/id.js",
+    "./versioning": "./src/versioning.js",
+    "./constants": "./src/constants.js"
+  },
+  "scripts": {
+    "test": "node --test src/__tests__/*.test.js"
+  },
+  "dependencies": {
+    "nanoid": "^5.0.7"
+  }
+}

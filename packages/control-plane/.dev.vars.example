@@ -1,0 +1,18 @@
+# Secrets para wrangler dev / producción. NO commitear el .dev.vars real.
+# Copia este archivo a .dev.vars y rellena los valores.
+
+HTMLBOX_ENV=dev
+
+# Auth: clave HMAC para firmar/verificar cookies de sesión sid
+HTMLBOX_SESSION_SECRET=dev-secret-change-me-please-32chars-min
+
+# Turso Platform API (https://api.turso.io/v1) — solo se usa en HTMLBOX_TURSO_MODE=cloud.
+# En local (dev), wrangler no necesita este secret: connectamos a sqld vía HTMLBOX_TURSO_DEV_URL.
+HTMLBOX_TURSO_PLATFORM_TOKEN=
+HTMLBOX_TURSO_ORG=
+
+# R2 access keys para presigned URLs (S3-compatible).
+# En dev, wrangler emite las suyas propias vía el binding BUCKET; este par solo se
+# usa si necesitamos firmar URLs fuera del Worker.
+HTMLBOX_R2_ACCESS_KEY_ID=
+HTMLBOX_R2_SECRET_ACCESS_KEY=

@@ -1,0 +1,22 @@
+{
+  "name": "htmlbox",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "HTMLBox — runtime + publicador de dashboards/apps HTML generados con IA sobre Cloudflare (Workers + D1 + R2 + Turso).",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bash scripts/dev.sh",
+    "dev:control": "npm run dev -w @htmlbox/control-plane",
+    "dev:portal": "npm run dev -w @htmlbox/portal",
+    "dev:runtime": "npm run dev -w @htmlbox/runtime",
+    "migrate:local": "bash scripts/migrate-local.sh",
+    "migrate:remote": "bash scripts/migrate-remote.sh",
+    "test": "npm test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full bg-slate-950 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTMLBox - Platform & Runtime MVP</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .code-editor {
+            tab-size: 2;
+        }
+        @media (pointer: coarse) {
+            button.btn-touch, input, select, textarea {
+                min-height: 44px;
+            }
+        }
+    </style>
+</head>
+<body class="h-full flex flex-col overflow-hidden bg-slate-950 text-slate-100">
+
+    <!-- Top Navigation Header -->
+    <header class="h-16 border-b border-slate-800 bg-slate-900/80 backdrop-blur-md px-4 lg:px-6 flex items-center justify-between z-30 flex-shrink-0">
+        <div class="flex items-center gap-3">
+            <button id="sidebarToggle" class="lg:hidden p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition">
+                <i class="fa-solid fa-bars text-lg"></i>
+            </button>
+            <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center font-black text-white text-lg shadow-lg shadow-indigo-500/20">
+                    <i class="fa-solid fa-box-open"></i>
+                </div>
+                <div>
+                    <span class="font-bold text-lg tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">HTMLBox</span>
+                    <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 ml-2 font-medium">Runtime v1.2</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Workspace & Cloud Status Controls -->
+        <div class="flex items-center gap-3">
+            <!-- Sync Indicator -->
+            <div id="syncBadge" class="hidden sm:flex items-center gap-2 text-xs px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                <span class="relative flex h-2 w-2">
+                  <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span id="syncStatusText">LocalStorage + R2 Sync</span>
+            </div>
+
+            <!-- Upload HTML AI File Direct Button -->
+            <label class="hidden md:flex px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium text-sm rounded-xl cursor-pointer transition items-center gap-2 active:scale-95">
+                <i class="fa-solid fa-cloud-arrow-up text-indigo-400"></i>
+                <span>Subir .HTML de IA</span>
+                <input type="file" id="directHtmlUpload" accept=".html,.htm" class="hidden" onchange="handleDirectHtmlUpload(event)">
+            </label>
+
+            <!-- New App Button -->
+            <button onclick="openNewAppModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm rounded-xl shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition active:scale-95">
+                <i class="fa-solid fa-plus"></i>
+                <span class="hidden sm:inline">Nuevo HTML Box</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Workspace Layout -->
+    <div class="flex-1 flex overflow-hidden relative" id="dropZoneContainer" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleGlobalDrop(event)">
+        
+        <!-- Global Drag & Drop Overlay Indicator -->
+        <div id="dragOverlay" class="absolute inset-0 bg-indigo-950/90 backdrop-blur-md z-50 flex flex-col items-center justify-center border-4 border-dashed border-indigo-500 hidden transition-all">
+            <div class="w-20 h-20 rounded-3xl bg-indigo-600/30 text-indigo-400 flex items-center justify-center text-4xl mb-4 animate-bounce">
+                <i class="fa-solid fa-file-arrow-up"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-white mb-1">Suelta tu archivo aquí</h2>
+            <p class="text-slate-300 text-sm">Archivos <b>.html</b> crearán un nuevo HTML Box | Archivos <b>.csv / .json</b> se vincularán como datos R2</p>
+        </div>
+
+        <!-- Sidebar Backdrop for Mobile -->
+        <div id="sidebarBackdrop" onclick="closeSidebar()" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-40 hidden lg:hidden"></div>
+
+        <!-- Sidebar Navigation -->
+        <aside id="sidebar" class="fixed lg:static inset-y-0 left-0 w-72 bg-slate-900/90 lg:bg-slate-900 border-r border-slate-800 flex flex-col z-50 transform -translate-x-full lg:translate-x-0 transition-transform duration-300 ease-in-out">
+            <div class="p-4 border-b border-slate-800">
+                <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-2">Workspace</label>
+                <div class="flex items-center justify-between p-2.5 rounded-xl bg-slate-800/60 border border-slate-700/50">
+                    <div class="flex items-center gap-2.5 truncate">
+                        <div class="w-7 h-7 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-xs">
+                            AC
+                        </div>
+                        <span class="font-medium text-sm text-slate-200 truncate">Empresa ABC Corp</span>
+                    </div>
+                    <i class="fa-solid fa-chevron-down text-slate-500 text-xs"></i>
+                </div>
+            </div>
+
+            <!-- Apps List Nav -->
+            <div class="flex-1 overflow-y-auto p-3 space-y-1">
+                <div class="px-3 py-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">Mis HTML Boxes</div>
+                <div id="appList" class="space-y-1">
+                    <!-- Apps dynamically inserted here -->
+                </div>
+            </div>
+
+            <!-- Bottom Settings / Storage Footprint -->
+            <div class="p-4 border-t border-slate-800 bg-slate-900/50 space-y-3">
+                <!-- Dropzone Quick Banner -->
+                <div class="p-3 rounded-xl border border-dashed border-slate-700 bg-slate-950/50 text-center cursor-pointer hover:border-indigo-500 transition group" onclick="document.getElementById('directHtmlUpload').click()">
+                    <i class="fa-solid fa-wand-magic-sparkles text-indigo-400 text-lg group-hover:scale-110 transition-transform"></i>
+                    <p class="text-xs font-semibold text-slate-200 mt-1">¿Generaste un HTML con IA?</p>
+                    <p class="text-[10px] text-slate-400">Haz clic o arrastra tu file .html aquí</p>
+                </div>
+
+                <div>
+                    <div class="flex justify-between text-xs mb-1">
+                        <span class="text-slate-400">Almacenamiento (R2 Mock)</span>
+                        <span id="storageUsedText" class="text-slate-300 font-mono">1.2 MB / 10 GB</span>
+                    </div>
+                    <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                        <div id="storageBar" class="h-full bg-indigo-500 rounded-full" style="width: 12%;"></div>
+                    </div>
+                </div>
+                <button onclick="switchView('mcp-settings')" class="w-full text-left px-3 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white hover:bg-slate-800 flex items-center gap-2 transition">
+                    <i class="fa-solid fa-microchip text-indigo-400"></i>
+                    <span>Protocolo Agentes MCP</span>
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content Column -->
+        <main class="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-950">
+            
+            <!-- App Toolbar Bar -->
+            <div id="appToolbar" class="h-14 border-b border-slate-800 bg-slate-900/40 px-4 flex items-center justify-between flex-shrink-0">
+                <div class="flex items-center gap-3 truncate">
+                    <h1 id="currentAppTitle" class="font-bold text-base text-slate-100 truncate">Cargando aplicación...</h1>
+                    <span id="currentAppVisibility" class="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">Privado</span>
+                </div>
+
+                <!-- Navigation Tabs (Preview, Code, Data R2, MCP) -->
+                <div class="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800">
+                    <button onclick="setActiveTab('preview')" id="tabBtn-preview" class="px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-2 bg-indigo-600 text-white shadow">
+                        <i class="fa-solid fa-play text-xs"></i>
+                        <span>Vista Previa</span>
+                    </button>
+                    <button onclick="setActiveTab('editor')" id="tabBtn-editor" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition flex items-center gap-2">
+                        <i class="fa-solid fa-code text-xs"></i>
+                        <span>Editor HTML</span>
+                    </button>
+                    <button onclick="setActiveTab('data')" id="tabBtn-data" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition flex items-center gap-2">
+                        <i class="fa-solid fa-database text-xs"></i>
+                        <span>Archivos & Datos</span>
+                    </button>
+                    <button onclick="setActiveTab('mcp')" id="tabBtn-mcp" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition flex items-center gap-2">
+                        <i class="fa-solid fa-robot text-xs text-purple-400"></i>
+                        <span class="hidden md:inline">Agentes (MCP)</span>
+                    </button>
+                </div>
+
+                <!-- Actions -->
+                <div class="flex items-center gap-2">
+                    <button onclick="openShareModal()" class="px-3 py-1.5 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800 text-xs font-medium flex items-center gap-1.5 transition" title="Ver Enlace Público Compartible">
+                        <i class="fa-solid fa-up-right-from-square text-indigo-400"></i>
+                        <span class="hidden sm:inline">Probar Enlace</span>
+                    </button>
+                    <button onclick="copyShareLink()" class="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800 transition" title="Copiar Enlace Público">
+                        <i class="fa-solid fa-share-nodes"></i>
+                    </button>
+                    <button onclick="saveCurrentApp()" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-xl shadow-lg shadow-emerald-600/20 flex items-center gap-1.5 transition">
+                        <i class="fa-solid fa-floppy-disk"></i>
+                        <span>Guardar</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tab Panes Container -->
+            <div class="flex-1 overflow-hidden relative">
+                
+                <!-- 1. PREVIEW TAB PANE -->
+                <div id="pane-preview" class="absolute inset-0 flex flex-col bg-slate-900">
+                    <iframe id="previewIframe" class="w-full h-full border-0 bg-white" sandbox="allow-scripts allow-modals allow-forms allow-same-origin"></iframe>
+                </div>
+
+                <!-- 2. CODE EDITOR TAB PANE -->
+                <div id="pane-editor" class="absolute inset-0 flex flex-col hidden bg-slate-950">
+                    <div class="bg-slate-900 border-b border-slate-800 px-4 py-2 flex justify-between items-center text-xs text-slate-400 font-mono">
+                        <span>index.html</span>
+                        <div class="flex gap-2">
+                            <button onclick="formatHTML()" class="hover:text-white"><i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Formatear</button>
+                            <span class="text-slate-700">|</span>
+                            <span id="charCount">0 caracteres</span>
+                        </div>
+                    </div>
+                    <textarea id="codeEditorInput" class="flex-1 w-full bg-slate-950 text-slate-200 font-mono p-4 text-xs lg:text-sm focus:outline-none resize-none code-editor" spellcheck="false" placeholder="<!-- Escribe o pega tu HTML aquí -->"></textarea>
+                </div>
+
+                <!-- 3. DATA & R2 FILES TAB PANE -->
+                <div id="pane-data" class="absolute inset-0 p-6 overflow-y-auto hidden bg-slate-950">
+                    <div class="max-w-4xl mx-auto space-y-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h2 class="text-lg font-bold text-slate-100">Archivos & Fuentes de Datos en la Nube</h2>
+                                <p class="text-xs text-slate-400">Los archivos CSV o JSON subidos aquí pueden ser leídos dinámicamente por este HTML Box a través del R2 Cloud Connector.</p>
+                            </div>
+                            <label class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded-xl cursor-pointer transition shadow-lg shadow-indigo-600/20 flex items-center gap-2">
+                                <i class="fa-solid fa-cloud-arrow-up"></i>
+                                <span>Subir CSV / Datos</span>
+                                <input type="file" id="dataFileUpload" class="hidden" accept=".csv,.json,.xlsx" onchange="handleFileUpload(event)">
+                            </label>
+                        </div>
+
+                        <!-- Files List Table -->
+                        <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                            <table class="w-full text-left text-xs">
+                                <thead class="bg-slate-800/60 text-slate-400 font-semibold uppercase tracking-wider border-b border-slate-800">
+                                    <tr>
+                                        <th class="p-4">Nombre del Archivo</th>
+                                        <th class="p-4">Tipo</th>
+                                        <th class="p-4">Tamaño</th>
+                                        <th class="p-4">Ruta Virtual R2</th>
+                                        <th class="p-4 text-right">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dataFilesTable" class="divide-y divide-slate-800/50 text-slate-300">
+                                    <!-- Dynamic Rows -->
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Cloud Auto-Sync Settings -->
+                        <div class="p-5 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-3">
+                            <h3 class="font-semibold text-sm text-slate-200 flex items-center gap-2">
+                                <i class="fa-solid fa-rotate text-indigo-400"></i>
+                                Conversion Transparente a Base de Datos (SQLite / D1 Ready)
+                            </h3>
+                            <p class="text-xs text-slate-400">
+                                Permite escribir cambios desde el HTML Box directo hacia el archivo de datos sin necesidad de configurar APIs externas.
+                            </p>
+                            <div class="flex items-center gap-3 pt-2">
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                  <input type="checkbox" id="enableDbSync" class="sr-only peer" checked>
+                                  <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                                </label>
+                                <span class="text-xs font-medium text-slate-300">Sincronización bidireccional activada</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. MCP AGENT TOOL EXPOSER TAB PANE -->
+                <div id="pane-mcp" class="absolute inset-0 p-6 overflow-y-auto hidden bg-slate-950">
+                    <div class="max-w-4xl mx-auto space-y-6">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h2 class="text-lg font-bold text-slate-100 flex items-center gap-2">
+                                    <i class="fa-solid fa-microchip text-purple-400"></i>
+                                    Integración MCP (Model Context Protocol)
+                                </h2>
+                                <p class="text-xs text-slate-400">Expón este HTML Box como una herramienta estándar para ChatGPT, Claude, Gemini o tu Agente de IA corporativo.</p>
+                            </div>
+                            <button onclick="copyMcpConfig()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium rounded-xl border border-slate-700 transition flex items-center gap-2">
+                                <i class="fa-solid fa-copy"></i>
+                                <span>Copiar JSON Servidor MCP</span>
+                            </button>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <!-- Tool 1 -->
+                            <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+                                <div class="flex justify-between items-center">
+                                    <span class="font-mono text-xs text-purple-400 font-bold">query_kpi_metrics()</span>
+                                    <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Lectura</span>
+                                </div>
+                                <p class="text-xs text-slate-300">Obtiene los KPIs actualizados de cartera y ventas expuestos en la interfaz.</p>
+                                <div class="text-[11px] font-mono bg-slate-950 p-2 rounded text-slate-400">GET /api/v1/mcp/app-1/kpi</div>
+                            </div>
+                            <!-- Tool 2 -->
+                            <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2">
+                                <div class="flex justify-between items-center">
+                                    <span class="font-mono text-xs text-purple-400 font-bold">generate_spot_check()</span>
+                                    <span class="text-[10px] px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">Ejecución</span>
+                                </div>
+                                <p class="text-xs text-slate-300">Ejecuta el análisis automático de anomalías y genera el reporte consolidado.</p>
+                                <div class="text-[11px] font-mono bg-slate-950 p-2 rounded text-slate-400">POST /api/v1/mcp/app-1/spotcheck</div>
+                            </div>
+                        </div>
+
+                        <!-- JSON Endpoint Manifest Preview -->
+                        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-2">
+                            <span class="text-xs font-semibold text-slate-400 block uppercase tracking-wider">MCP Manifest Schema</span>
+                            <pre class="bg-slate-950 p-4 rounded-xl text-xs font-mono text-indigo-300 overflow-x-auto">
+{
+  "name": "htmlbox_cartera_manager",
+  "version": "1.0.0",
+  "capabilities": {
+    "tools": ["query_kpi_metrics", "generate_spot_check"],
+    "resources": ["r2://cartera_vencida.csv"]
+  },
+  "authentication": "Bearer hbx_live_839201948201"
+}</pre>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- New App Modal -->
+    <div id="newAppModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl space-y-4 p-6">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h3 class="font-bold text-base text-slate-100 flex items-center gap-2">
+                    <i class="fa-solid fa-box-open text-indigo-400"></i>
+                    Crear o Subir HTML Box
+                </h3>
+                <button onclick="closeNewAppModal()" class="text-slate-500 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            
+            <div class="space-y-4">
+                <!-- Direct File Upload Option -->
+                <div class="p-4 rounded-xl bg-indigo-950/40 border border-indigo-800/60 text-center space-y-2">
+                    <i class="fa-solid fa-file-code text-2xl text-indigo-400"></i>
+                    <h4 class="text-xs font-bold text-slate-200 uppercase tracking-wider">Opción Recomendada</h4>
+                    <p class="text-xs text-slate-300">Subir un archivo <code>.html</code> generado previamente en ChatGPT, Claude o Gemini.</p>
+                    <label class="inline-flex px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs rounded-xl cursor-pointer transition shadow-lg shadow-indigo-600/30">
+                        <i class="fa-solid fa-upload mr-2"></i> Seleccionar archivo .HTML
+                        <input type="file" accept=".html,.htm" class="hidden" onchange="handleModalHtmlUpload(event)">
+                    </label>
+                </div>
+
+                <div class="relative flex py-1 items-center">
+                    <div class="flex-grow border-t border-slate-800"></div>
+                    <span class="flex-shrink mx-4 text-xs font-mono text-slate-500 uppercase">O crea desde plantilla</span>
+                    <div class="flex-grow border-t border-slate-800"></div>
+                </div>
+
+                <div>
+                    <label class="text-xs font-medium text-slate-300 block mb-1">Nombre de la Aplicación</label>
+                    <input type="text" id="newAppName" placeholder="Ej: Dashboard de Cartera 2026" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500">
+                </div>
+
+                <div>
+                    <label class="text-xs font-medium text-slate-300 block mb-1">Plantilla Inicial</label>
+                    <select id="newAppTemplate" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500">
+                        <option value="dashboard">Dashboard Empresarial KPI (Tailwind + Charts)</option>
+                        <option value="empty">HTML Blank Page</option>
+                        <option value="crm">Mini CRM & Gestión de Llamadas</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2">
+                <button onclick="closeNewAppModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium transition">Cancelar</button>
+                <button onclick="createNewApp()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-medium transition shadow-lg shadow-indigo-600/30">Crear desde plantilla</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Public Share Link Preview Modal -->
+    <div id="shareModal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center hidden p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl space-y-4 p-6">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div class="flex items-center gap-2">
+                    <div class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div>
+                    <h3 class="font-bold text-base text-slate-100">Aplicación Publicada & Lista para Compartir</h3>
+                </div>
+                <button onclick="closeShareModal()" class="text-slate-500 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+            </div>
+            
+            <p class="text-xs text-slate-300">
+                Sin servidores ni despliegues técnicos. Tu HTML Box está activo y accesible a través de la infraestructura aislada de HTMLBox.
+            </p>
+
+            <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex items-center justify-between gap-3 font-mono text-xs">
+                <span id="shareUrlDisplay" class="text-indigo-400 truncate">https://htmlbox.app/s/box-cartera</span>
+                <button onclick="copyShareLink()" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition font-sans flex items-center gap-1.5 flex-shrink-0">
+                    <i class="fa-solid fa-copy"></i>
+                    <span>Copiar Enlace</span>
+                </button>
+            </div>
+
+            <div class="grid grid-cols-3 gap-3 pt-2 text-center text-xs">
+                <div class="p-3 bg-slate-950/50 rounded-xl border border-slate-800">
+                    <i class="fa-solid fa-shield-halved text-emerald-400 text-base mb-1"></i>
+                    <p class="font-semibold text-slate-200">Aislamiento Sandbox</p>
+                    <p class="text-[10px] text-slate-400">Ejecución segura de scripts</p>
+                </div>
+                <div class="p-3 bg-slate-950/50 rounded-xl border border-slate-800">
+                    <i class="fa-solid fa-bolt text-amber-400 text-base mb-1"></i>
+                    <p class="font-semibold text-slate-200">Respuesta Inmediata</p>
+                    <p class="text-[10px] text-slate-400">CDN Cloud & Local Cache</p>
+                </div>
+                <div class="p-3 bg-slate-950/50 rounded-xl border border-slate-800">
+                    <i class="fa-solid fa-database text-indigo-400 text-base mb-1"></i>
+                    <p class="font-semibold text-slate-200">Datos R2 Conectados</p>
+                    <p class="text-[10px] text-slate-400">Archivos CSV auto-sincronizados</p>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-2">
+                <button onclick="closeShareModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium transition">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Overlay -->
+    <div id="toast" class="fixed bottom-6 right-6 z-50 transform translate-y-20 opacity-0 transition-all duration-300 bg-slate-900 border border-slate-700 text-slate-100 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3">
+        <div id="toastIcon" class="text-emerald-400"><i class="fa-solid fa-circle-check"></i></div>
+        <div id="toastMessage" class="text-xs font-medium">Operación realizada con éxito</div>
+    </div>
+
+    <script>
+        const STORAGE_KEY = 'htmlbox_apps_store_v1';
+
+        // Default Seed HTML Applications
+        const DEFAULT_APPS = [
+            {
+                id: 'box-cartera',
+                title: 'Dashboard de Cartera Vencida',
+                visibility: 'Público',
+                updatedAt: new Date().toISOString(),
+                files: [
+                    { name: 'cartera_agosto.csv', type: 'text/csv', size: '245 KB', virtualPath: 'r2://cartera_agosto.csv' }
+                ],
+                code: `<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Cartera</title>
+    <script src="https://cdn.tailwindcss.com"><\/script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-900 text-slate-100 p-6">
+    <div class="max-w-5xl mx-auto space-y-6">
+        <header class="flex justify-between items-center bg-slate-800 p-4 rounded-2xl border border-slate-700">
+            <div>
+                <h1 class="text-xl font-bold text-indigo-400">Resumen de Cartera y Cobranzas</h1>
+                <p class="text-xs text-slate-400">Datos cargados desde R2 Storage: <span class="text-emerald-400">cartera_agosto.csv</span></p>
+            </div>
+            <button onclick="alert('Descargando Spot Check en PDF...')" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-xl shadow">
+                <i class="fa-solid fa-file-pdf mr-1"></i> Spot Check
+            </button>
+        </header>
+
+        <!-- Metrics Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+                <div class="text-xs text-slate-400">Total en Cartera</div>
+                <div class="text-2xl font-bold text-white mt-1">$ 148,450,000</div>
+                <div class="text-xs text-emerald-400 mt-2"><i class="fa-solid fa-arrow-up"></i> +4.2% este mes</div>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+                <div class="text-xs text-slate-400">Cartera Vencida (> 60 días)</div>
+                <div class="text-2xl font-bold text-rose-400 mt-1">$ 32,100,000</div>
+                <div class="text-xs text-rose-400 mt-2"><i class="fa-solid fa-triangle-exclamation"></i> 8 Clientes Críticos</div>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+                <div class="text-xs text-slate-400">Recaudado Hoy</div>
+                <div class="text-2xl font-bold text-emerald-400 mt-1">$ 9,800,000</div>
+                <div class="text-xs text-slate-400 mt-2">12 Transacciones</div>
+            </div>
+        </div>
+
+        <!-- Table Data -->
+        <div class="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden">
+            <div class="p-4 font-semibold text-sm border-b border-slate-700">Gestión Reciente de Clientes</div>
+            <table class="w-full text-left text-xs">
+                <thead class="bg-slate-900/50 text-slate-400 border-b border-slate-700">
+                    <tr>
+                        <th class="p-3">Cliente</th>
+                        <th class="p-3">Saldo</th>
+                        <th class="p-3">Días Vencido</th>
+                        <th class="p-3">Estado</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-700/50">
+                    <tr>
+                        <td class="p-3 font-medium">Inversiones Alfa S.A.S</td>
+                        <td class="p-3">$ 12,500,000</td>
+                        <td class="p-3 text-rose-400">75 días</td>
+                        <td class="p-3"><span class="px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 text-[10px]">Acuerdo de Pago</span></td>
+                    </tr>
+                    <tr>
+                        <td class="p-3 font-medium">Distribuidora El Sol</td>
+                        <td class="p-3">$ 4,200,000</td>
+                        <td class="p-3 text-amber-400">32 días</td>
+                        <td class="p-3"><span class="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 text-[10px]">Llamar Hoy</span></td>
+                    </tr>
+                    <tr>
+                        <td class="p-3 font-medium">Tecnología Global Ltda</td>
+                        <td class="p-3">$ 18,900,000</td>
+                        <td class="p-3 text-emerald-400">0 días</td>
+                        <td class="p-3"><span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px]">Al Día</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>`
+            },
+            {
+                id: 'box-crm',
+                title: 'Mini CRM & Registro de Contactos',
+                visibility: 'Privado',
+                updatedAt: new Date().toISOString(),
+                files: [],
+                code: `<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <script src="https://cdn.tailwindcss.com"><\/script>
+</head>
+<body class="bg-slate-950 text-slate-100 p-8">
+    <div class="max-w-xl mx-auto space-y-4">
+        <h1 class="text-xl font-bold text-purple-400">Mini CRM Local - Sync Active</h1>
+        <p class="text-xs text-slate-400">Guarda observaciones que se sincronizan con la base de datos de HTMLBox.</p>
+        <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
+            <input type="text" placeholder="Nombre del cliente" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs">
+            <textarea placeholder="Observación de la llamada..." class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs h-20"></textarea>
+            <button class="w-full bg-indigo-600 text-white py-2 rounded text-xs font-bold">Registrar Gestión</button>
+        </div>
+    </div>
+</body>
+</html>`
+            }
+        ];
+
+        let state = {
+            apps: [],
+            currentAppId: null,
+            activeTab: 'preview'
+        };
+
+        // Initialize App
+        window.onload = function() {
+            loadState();
+            renderAppList();
+            if (state.apps.length > 0) {
+                selectApp(state.apps[0].id);
+            }
+            setupEventListeners();
+        };
+
+        function loadState() {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                try {
+                    state.apps = JSON.parse(saved);
+                } catch(e) {
+                    state.apps = DEFAULT_APPS;
+                }
+            } else {
+                state.apps = DEFAULT_APPS;
+                saveStateToLocalStorage();
+            }
+        }
+
+        function saveStateToLocalStorage() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state.apps));
+            showSyncBadge();
+        }
+
+        function showSyncBadge() {
+            const badge = document.getElementById('syncBadge');
+            badge.classList.remove('hidden');
+        }
+
+        function renderAppList() {
+            const container = document.getElementById('appList');
+            container.innerHTML = '';
+
+            state.apps.forEach(app => {
+                const isActive = app.id === state.currentAppId;
+                const btn = document.createElement('button');
+                btn.className = `w-full text-left px-3 py-2.5 rounded-xl text-xs font-medium flex items-center justify-between transition ${
+                    isActive 
+                        ? 'bg-indigo-600/20 text-indigo-300 border border-indigo-500/30' 
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
+                }`;
+                btn.onclick = () => selectApp(app.id);
+                btn.innerHTML = `
+                    <div class="flex items-center gap-2.5 truncate">
+                        <i class="fa-solid fa-code text-indigo-400"></i>
+                        <span class="truncate">${escapeHtml(app.title)}</span>
+                    </div>
+                    <span class="text-[10px] opacity-60">${app.visibility}</span>
+                `;
+                container.appendChild(btn);
+            });
+
+            updateStorageFootprint();
+        }
+
+        function selectApp(appId) {
+            state.currentAppId = appId;
+            const app = getCurrentApp();
+            if (!app) return;
+
+            document.getElementById('currentAppTitle').innerText = app.title;
+            document.getElementById('currentAppVisibility').innerText = app.visibility;
+            document.getElementById('codeEditorInput').value = app.code;
+            
+            renderDataFilesTable();
+            renderAppList();
+            updatePreview();
+            closeSidebar();
+        }
+
+        function getCurrentApp() {
+            return state.apps.find(a => a.id === state.currentAppId);
+        }
+
+        function updatePreview() {
+            const app = getCurrentApp();
+            if (!app) return;
+            const iframe = document.getElementById('previewIframe');
+            iframe.srcdoc = app.code;
+        }
+
+        function setActiveTab(tabName) {
+            state.activeTab = tabName;
+            const tabs = ['preview', 'editor', 'data', 'mcp'];
+
+            tabs.forEach(t => {
+                const btn = document.getElementById(`tabBtn-${t}`);
+                const pane = document.getElementById(`pane-${t}`);
+
+                if (t === tabName) {
+                    btn.className = 'px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-2 bg-indigo-600 text-white shadow';
+                    pane.classList.remove('hidden');
+                } else {
+                    btn.className = 'px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition flex items-center gap-2';
+                    pane.classList.add('hidden');
+                }
+            });
+
+            if (tabName === 'preview') {
+                updatePreview();
+            }
+        }
+
+        function switchView(view) {
+            if (view === 'mcp-settings' || view === 'mcp') {
+                setActiveTab('mcp');
+            } else if (['preview', 'editor', 'data'].includes(view)) {
+                setActiveTab(view);
+            }
+            closeSidebar();
+        }
+
+        function saveCurrentApp() {
+            const app = getCurrentApp();
+            if (!app) return;
+
+            app.code = document.getElementById('codeEditorInput').value;
+            app.updatedAt = new Date().toISOString();
+            
+            saveStateToLocalStorage();
+            updatePreview();
+            showToast('HTML Box guardado en LocalStorage & Cloud R2');
+        }
+
+        function renderDataFilesTable() {
+            const app = getCurrentApp();
+            const table = document.getElementById('dataFilesTable');
+            table.innerHTML = '';
+
+            if (!app || !app.files || app.files.length === 0) {
+                table.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="p-6 text-center text-slate-500">
+                            No hay archivos cargados para este HTML Box. Sube un CSV para conectarlo.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            app.files.forEach((file, index) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="p-4 font-medium flex items-center gap-2">
+                        <i class="fa-solid fa-file-csv text-emerald-400 text-sm"></i>
+                        <span>${escapeHtml(file.name)}</span>
+                    </td>
+                    <td class="p-4 text-slate-400">${file.type}</td>
+                    <td class="p-4 font-mono">${file.size}</td>
+                    <td class="p-4 font-mono text-indigo-400">${file.virtualPath}</td>
+                    <td class="p-4 text-right">
+                        <button onclick="deleteFile(${index})" class="text-rose-400 hover:text-rose-300 p-1">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </td>
+                `;
+                table.appendChild(tr);
+            });
+        }
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const app = getCurrentApp();
+            if (!app.files) app.files = [];
+
+            const fileSizeKB = (file.size / 1024).toFixed(1) + ' KB';
+            app.files.push({
+                name: file.name,
+                type: file.type || 'text/csv',
+                size: fileSizeKB,
+                virtualPath: `r2://${file.name}`
+            });
+
+            saveStateToLocalStorage();
+            renderDataFilesTable();
+            showToast(`Archivo ${file.name} subido a R2 Mock Storage`);
+        }
+
+        function deleteFile(index) {
+            const app = getCurrentApp();
+            if (!app || !app.files) return;
+
+            app.files.splice(index, 1);
+            saveStateToLocalStorage();
+            renderDataFilesTable();
+            showToast('Archivo eliminado');
+        }
+
+        function openNewAppModal() {
+            document.getElementById('newAppModal').classList.remove('hidden');
+        }
+
+        function closeNewAppModal() {
+            document.getElementById('newAppModal').classList.add('hidden');
+        }
+
+        function createNewApp() {
+            const name = document.getElementById('newAppName').value.trim() || 'Nuevo HTML Box';
+            const template = document.getElementById('newAppTemplate').value;
+
+            let code = `<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"><\/script></head><body class="bg-slate-900 text-slate-100 p-6"><h1>${name}</h1></body></html>`;
+            
+            if (template === 'dashboard') {
+                code = DEFAULT_APPS[0].code;
+            } else if (template === 'crm') {
+                code = DEFAULT_APPS[1].code;
+            }
+
+            const newApp = {
+                id: 'box-' + Date.now(),
+                title: name,
+                visibility: 'Privado',
+                updatedAt: new Date().toISOString(),
+                files: [],
+                code: code
+            };
+
+            state.apps.push(newApp);
+            saveStateToLocalStorage();
+            closeNewAppModal();
+            selectApp(newApp.id);
+            showToast('HTML Box creado exitosamente');
+        }
+
+        function updateStorageFootprint() {
+            let totalChars = 0;
+            state.apps.forEach(a => totalChars += (a.code ? a.code.length : 0));
+            const totalKB = (totalChars / 1024).toFixed(2);
+            document.getElementById('storageUsedText').innerText = `${totalKB} KB / LocalStorage`;
+        }
+
+        function setupEventListeners() {
+            document.getElementById('sidebarToggle').addEventListener('click', () => {
+                document.getElementById('sidebar').classList.toggle('-translate-x-full');
+                document.getElementById('sidebarBackdrop').classList.toggle('hidden');
+            });
+
+            document.getElementById('codeEditorInput').addEventListener('input', (e) => {
+                document.getElementById('charCount').innerText = `${e.target.value.length} caracteres`;
+            });
+        }
+
+        // Direct .HTML Upload Handlers
+        function handleDirectHtmlUpload(event) {
+            const file = event.target.files[0];
+            if (file) processUploadedHtmlFile(file);
+        }
+
+        function handleModalHtmlUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                closeNewAppModal();
+                processUploadedHtmlFile(file);
+            }
+        }
+
+        function processUploadedHtmlFile(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const codeContent = e.target.result;
+                
+                // Extract Title from <title> tag or filename
+                let appTitle = file.name.replace(/\.[^/.]+$/, "");
+                const match = codeContent.match(/<title>(.*?)<\/title>/i);
+                if (match && match[1] && match[1].trim()) {
+                    appTitle = match[1].trim();
+                }
+
+                const newApp = {
+                    id: 'box-' + Date.now(),
+                    title: appTitle,
+                    visibility: 'Público',
+                    updatedAt: new Date().toISOString(),
+                    files: [],
+                    code: codeContent
+                };
+
+                state.apps.push(newApp);
+                saveStateToLocalStorage();
+                selectApp(newApp.id);
+                showToast(`HTML Box "${appTitle}" creado a partir del archivo subido`);
+            };
+            reader.readAsText(file);
+        }
+
+        // Global Drag and Drop Handlers
+        function handleDragOver(e) {
+            e.preventDefault();
+            document.getElementById('dragOverlay').classList.remove('hidden');
+        }
+
+        function handleDragLeave(e) {
+            e.preventDefault();
+            // Check if leaving main container
+            if (e.clientX <= 0 || e.clientY <= 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
+                document.getElementById('dragOverlay').classList.add('hidden');
+            }
+        }
+
+        function handleGlobalDrop(e) {
+            e.preventDefault();
+            document.getElementById('dragOverlay').classList.add('hidden');
+
+            const files = e.dataTransfer.files;
+            if (!files || files.length === 0) return;
+
+            const file = files[0];
+            const ext = file.name.split('.').pop().toLowerCase();
+
+            if (ext === 'html' || ext === 'htm') {
+                processUploadedHtmlFile(file);
+            } else if (['csv', 'json', 'xlsx'].includes(ext)) {
+                const app = getCurrentApp();
+                if (!app) return;
+                if (!app.files) app.files = [];
+
+                const fileSizeKB = (file.size / 1024).toFixed(1) + ' KB';
+                app.files.push({
+                    name: file.name,
+                    type: file.type || 'text/csv',
+                    size: fileSizeKB,
+                    virtualPath: `r2://${file.name}`
+                });
+
+                saveStateToLocalStorage();
+                renderDataFilesTable();
+                showToast(`Archivo de datos "${file.name}" vinculado a este HTML Box`);
+            }
+        }
+
+        function openShareModal() {
+            const app = getCurrentApp();
+            if (!app) return;
+
+            const shareUrl = `${window.location.origin}/#share-${app.id}`;
+            document.getElementById('shareUrlDisplay').innerText = shareUrl;
+            document.getElementById('shareModal').classList.remove('hidden');
+        }
+
+        function closeShareModal() {
+            document.getElementById('shareModal').classList.add('hidden');
+        }
+
+        function closeSidebar() {
+            document.getElementById('sidebar').classList.add('-translate-x-full');
+            document.getElementById('sidebarBackdrop').classList.add('hidden');
+        }
+
+        function copyShareLink() {
+            const app = getCurrentApp();
+            const shareUrl = `${window.location.origin}/#share-${app.id}`;
+            
+            // Legacy copy support
+            const temp = document.createElement('input');
+            document.body.appendChild(temp);
+            temp.value = shareUrl;
+            temp.select();
+            document.execCommand('copy');
+            document.body.removeChild(temp);
+
+            showToast('Enlace público copiado al portapapeles');
+        }
+
+        function copyMcpConfig() {
+            const manifest = `{
+  "name": "htmlbox_server",
+  "url": "${window.location.origin}/api/mcp",
+  "active_box": "${state.currentAppId}"
+}`;
+            const temp = document.createElement('textarea');
+            document.body.appendChild(temp);
+            temp.value = manifest;
+            temp.select();
+            document.execCommand('copy');
+            document.body.removeChild(temp);
+
+            showToast('Configuración MCP copiada al portapapeles');
+        }
+
+        function formatHTML() {
+            showToast('Formato ajustado');
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMessage').innerText = msg;
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        }
+    </script>
+</body>
+</html>

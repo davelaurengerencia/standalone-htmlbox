@@ -1,0 +1,5 @@
+# Secrets para htmlbox-runtime. NO commitear el .dev.vars real.
+# El runtime NO tiene secretos — toda la auth se resuelve server-side
+# llamando al control-plane con la cookie sid.
+
+HTMLBOX_CONTROL_PLANE_ORIGIN=http://localhost:8781

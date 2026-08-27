@@ -1,0 +1,23 @@
+{
+  "name": "@htmlbox/control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8781",
+    "deploy": "wrangler deploy",
+    "test:node": "node --test src/__tests__/*.test.js",
+    "test:e2e": "vitest run",
+    "test": "npm run test:node && npm run test:e2e"
+  },
+  "dependencies": {
+    "@htmlbox/shared": "*",
+    "@tursodatabase/serverless": "^1.4.0",
+    "nanoid": "^5.0.7"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.1.0",
+    "vitest": "^4.1.11",
+    "wrangler": "^3.114.0"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "@htmlbox/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8783 --local",
+    "deploy": "wrangler deploy",
+    "test": "node --test __tests__/*.test.js"
+  },
+  "dependencies": {
+    "@htmlbox/shared": "*",
+    "@htmlbox/control-plane": "*"
+  },
+  "devDependencies": {
+    "wrangler": "^3.114.0"
+  }
+}
