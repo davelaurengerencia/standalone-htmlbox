@@ -5,7 +5,8 @@
 //   GET  /_sdk/htmlbox.js          → SDK
 //   GET  /_internal/box-info       → para que el portal sepa si el runtime conoce el box
 //   GET  /s/{shareId}              → box público (sin auth)
-//   GET  /{boxSlug}                → box privado (con sesión, en host *.htmlbox.app)
+//   GET  /{boxSlug}                → box privado (con sesión, en host *.htmlbox.dev)
+//   GET  /t/{tenantSlug}/{boxSlug} → box privado path-based (alternativa al subdomain)
 //
 // Toda la resolución de boxId/tenantSlug se hace contra el control-plane vía
 // /api/internal/boxes-by-* — el runtime NO toca D1 ni secretos del box.

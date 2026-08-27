@@ -24,9 +24,9 @@ htmlbox/
 
 | Worker | Host | Rol |
 |---|---|---|
-| `htmlbox-control-plane` | `controlplane.htmlbox.app` | Auth (magic-link), tenants/workspaces/boxes, **provisiona la Turso DB por box**, panel admin |
-| `htmlbox-portal` | `portal.htmlbox.app` | SPA Alpine del tenant (crear/subir boxes, versionar HTML, gestionar) |
-| `htmlbox-runtime` | `*.htmlbox.app` | Sirve HTML de boxes desde R2 + inyecta SDK |
+| `htmlbox-control-plane` | `controlplane.htmlbox.dev` | Auth (magic-link), tenants/workspaces/boxes, **provisiona la Turso DB por box**, panel admin |
+| `htmlbox-portal` | `portal.htmlbox.dev` | SPA Alpine del tenant (crear/subir boxes, versionar HTML, gestionar) |
+| `htmlbox-runtime` | `*.htmlbox.dev` | Sirve HTML de boxes desde R2 + inyecta SDK |
 
 ---
 
@@ -112,8 +112,8 @@ npm test
 
 ## Producción
 
-- Reemplazar `*.localhost` por `*.htmlbox.app` en DNS / Workers routes.
-- Cookies con `Domain=.htmlbox.app` para compartirlas entre los 3 Workers.
+- Reemplazar `*.localhost` por `*.htmlbox.dev` en DNS / Workers routes.
+- Cookies con `Domain=.htmlbox.dev` para compartirlas entre los 3 Workers.
 - `wrangler secret put HTMLBOX_SESSION_SECRET`, `HTMLBOX_TURSO_PLATFORM_TOKEN`, `HTMLBOX_R2_ACCESS_KEY_ID`, `HTMLBOX_R2_SECRET_ACCESS_KEY`.
 - Aplicar migrations a remoto: `npm run migrate:remote`.
 

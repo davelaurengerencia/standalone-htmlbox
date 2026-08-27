@@ -1,8 +1,9 @@
 // src/lib/resolver.js — resuelve un box a partir del request.
 //
 // Modos:
-//   - Público:   https://htmlbox.app/s/{shareId}            (sin auth)
-//   - Privado:   https://{tenantSlug}.htmlbox.app/{boxSlug}  (con sesión)
+//   - Público:   https://htmlbox.dev/s/{shareId}            (sin auth)
+//   - Privado:   https://{tenantSlug}.htmlbox.dev/{boxSlug}  (con sesión)
+//   - Privado:   https://htmlbox.dev/t/{tenantSlug}/{boxSlug}  (path-based, sin wildcard DNS)
 //
 // Caching en KV: `box:{shareId}` → { boxId, tenantSlug, visibility }
 //                `box:{tenant}:{boxSlug}` → { boxId, tenantSlug, visibility }
@@ -92,14 +93,12 @@ export function parseRuntimePath(url) {
   const tp = url.pathname.match(/^\/t\/([a-z0-9][a-z0-9-]{0,38}[a-z0-9])\/([a-z][a-z0-9_-]{0,62}[a-z0-9])\/?$/)
   if (tp) return { mode: 'private', tenantSlug: tp[1], boxSlug: tp[2] }
 
-  // /{boxSlug}  — en host con subdomain {tenant}.htmlbox.{app|dev}
+  // /{boxSlug}  — en host con subdomain {tenant}.htmlbox.dev
   const p = url.pathname.match(/^\/([a-z][a-z0-9_-]{0,62}[a-z0-9])\/?$/)
   if (p) {
     const host = url.hostname
     let tenantSlug
-    if (host.endsWith('.htmlbox.app')) {
-      tenantSlug = host.slice(0, -('.htmlbox.app'.length))
-    } else if (host.endsWith('.htmlbox.dev')) {
+    if (host.endsWith('.htmlbox.dev')) {
       tenantSlug = host.slice(0, -('.htmlbox.dev'.length))
     } else if (host.endsWith('.localhost')) {
       tenantSlug = host.slice(0, -('.localhost'.length))

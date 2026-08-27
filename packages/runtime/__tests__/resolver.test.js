@@ -18,8 +18,8 @@ test('parseRuntimePath /s/{shareId} con slash final', () => {
   assert.equal(r.shareId, 'abc123def4')
 })
 
-test('parseRuntimePath /{boxSlug} en host *.htmlbox.app', () => {
-  const r = parseRuntimePath(base('/cartera', 'acme.htmlbox.app'))
+test('parseRuntimePath /{boxSlug} en host *.htmlbox.dev', () => {
+  const r = parseRuntimePath(base('/cartera', 'acme.htmlbox.dev'))
   assert.equal(r.mode, 'private')
   assert.equal(r.tenantSlug, 'acme')
   assert.equal(r.boxSlug, 'cartera')
@@ -29,6 +29,13 @@ test('parseRuntimePath /{boxSlug} en host *.localhost (dev)', () => {
   const r = parseRuntimePath(base('/cartera', 'acme.localhost'))
   assert.equal(r.mode, 'private')
   assert.equal(r.tenantSlug, 'acme')
+  assert.equal(r.boxSlug, 'cartera')
+})
+
+test('parseRuntimePath /t/{tenantSlug}/{boxSlug} (path-based, sin subdomain)', () => {
+  const r = parseRuntimePath(base('/t/sivocloud/cartera', 'htmlbox.dev'))
+  assert.equal(r.mode, 'private')
+  assert.equal(r.tenantSlug, 'sivocloud')
   assert.equal(r.boxSlug, 'cartera')
 })
 
@@ -43,6 +50,6 @@ test('parseRuntimePath rechaza root /', () => {
 })
 
 test('parseRuntimePath rechaza boxSlug con caracteres raros', () => {
-  const r = parseRuntimePath(base('/Foo Bar!', 'acme.htmlbox.app'))
+  const r = parseRuntimePath(base('/Foo Bar!', 'acme.htmlbox.dev'))
   assert.equal(r, null)
 })

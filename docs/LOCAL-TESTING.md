@@ -107,7 +107,7 @@ En el tab **Vista Previa** el iframe muestra el HTML servido. Para acceder al bo
 desde fuera (URL "real"), abrí (con curl o browser):
 
 - **Privado**: `http://acme.localhost:8783/mi-dashboard` — requiere cookie de sesión del portal.
-- **Público**: la URL del share está en el modal "Compartir" — formato `https://htmlbox.app/s/<shareId>`.
+- **Público**: la URL del share está en el modal "Compartir" — formato `https://htmlbox.dev/s/<shareId>`.
   En dev se sirve igual por el runtime si lo abrís directo.
 
 ---
@@ -206,7 +206,7 @@ Los tests E2E cubren:
 |---|---|
 | Magic link por email | No envía. Loguea + devuelve link en `_dev_preview`. |
 | `createPresignedUrl` (R2) | Reemplazado por URL local-fake. |
-| Cookies cross-host (`Domain=.htmlbox.app`) | Caídas: en dev son host-only. |
+| Cookies cross-host (`Domain=.htmlbox.dev`) | Caídas: en dev son host-only. |
 | Turso Platform API | Caída: se usa sqld local (`http://localhost:8080`). |
 | HTTPS | Solo HTTP. La cookie sid no lleva flag `Secure`. |
 | Cron trigger | No se dispara solo en `wrangler dev`. |

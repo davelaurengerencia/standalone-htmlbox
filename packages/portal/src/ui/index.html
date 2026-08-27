@@ -992,7 +992,7 @@
           const slug = this.currentBox.slug
           const share = this.currentBox.share_id
           const tenantSlug = (this.tenants.find((t) => t.id === this.currentTenantId) || {}).slug || 'tenant'
-          this.shareUrl = `https://htmlbox.app/s/${share}    https://${tenantSlug}.htmlbox.app/${slug}`
+          this.shareUrl = `https://htmlbox.dev/s/${share}    https://${tenantSlug}.htmlbox.dev/${slug}`
           this.shareModalOpen = true
         },
         closeShareModal() { this.shareModalOpen = false },

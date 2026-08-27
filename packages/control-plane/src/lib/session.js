@@ -2,7 +2,7 @@
 //
 // Convenciones:
 //   - Cookie "sid" HttpOnly SameSite=Lax. Domain configurable por var
-//     HTMLBOX_SESSION_DOMAIN (en prod ".htmlbox.app", en dev "" host-only).
+//     HTMLBOX_SESSION_DOMAIN (en prod ".htmlbox.dev", en dev "" host-only).
 //   - Sesiones = random 32 bytes hex. TTL 30 días.
 //   - Magic links = random 32 bytes hex. TTL 15 min.
 //   - Rate limit: 1 magic link pedido cada 60s por email.
@@ -33,9 +33,9 @@ export function randomToken() {
 // Devuelve el valor del atributo Domain de la cookie. '' = host-only (dev).
 function getCookieDomain(request, env) {
   if (env.HTMLBOX_SESSION_DOMAIN) return env.HTMLBOX_SESSION_DOMAIN
-  // Auto-detección: si termina en .htmlbox.app (prod) usa ".htmlbox.app".
+  // Auto-detección: si termina en .htmlbox.dev (prod) usa ".htmlbox.dev".
   const url = new URL(request.url)
-  if (url.hostname.endsWith('.htmlbox.app')) return '.htmlbox.app'
+  if (url.hostname.endsWith('.htmlbox.dev')) return '.htmlbox.dev'
   return ''
 }
 

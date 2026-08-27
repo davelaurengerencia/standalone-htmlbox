@@ -406,18 +406,18 @@ test('6) aislamiento entre tenants (403 cross-tenant)', async () => {
   expect(intRes.status).toBe(403)
 })
 
-test('7) /api/_local/upload: key inválida → 400, mode incorrecto → 403, key válida → 200', async () => {
+test('7) /api/_local/upload: key inválida → 400, mode prod sin firma → 400 (missing_signature), key válida local-fake → 200', async () => {
   const ctx = createExecutionContext()
   const prev = env.HTMLBOX_R2_MODE
 
   try {
-    // Caso A: mode != local-fake → 403
+    // Caso A: mode != local-fake sin firma HMAC → 400 (missing_signature)
     env.HTMLBOX_R2_MODE = 'production'
     let res = await SELF.fetch(
       'http://example.com/api/_local/upload?key=tenants/x/boxes/y/versions/v1.html',
       { method: 'PUT', body: '<html/>' },
     )
-    expect(res.status).toBe(403)
+    expect(res.status).toBe(400)
 
     // Caso B: mode = local-fake pero key mal formado → 400
     env.HTMLBOX_R2_MODE = 'local-fake'
