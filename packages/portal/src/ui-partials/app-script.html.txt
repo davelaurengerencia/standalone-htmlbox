@@ -826,17 +826,10 @@
           }
           this.loadingTables = true
           try {
-            const r = await fetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables`, {
-              credentials: 'include',
-            })
-            if (r.ok) {
-              const d = await r.json()
-              this.tables = d.tables || []
-            } else {
-              this.tables = []
-            }
+            const d = await apiFetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables`)
+            this.tables = d.tables || []
           } catch (err) {
-            console.error('[dataTab] loadTables:', err)
+            debugLog('dataTab.loadTables:', err)
             this.tables = []
           }
           this.loadingTables = false
@@ -853,24 +846,17 @@
             // Crear la tabla subiendo 1 fila vacía + la metadata se genera en el upload.
             // Mejor: insertar metadata directo en htmlbox_tables via API.
             // Por ahora: simular creando con un upsert de 0 filas para registrar metadata.
-            const r = await fetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables/${slug}/upsert`, {
+            await apiFetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables/${slug}/upsert`, {
               method: 'POST',
-              credentials: 'include',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ rows: [] }),
+              body: { rows: [] },
             })
-            if (!r.ok) {
-              const err = await r.json().catch(() => ({}))
-              alert(`Error: ${err.error || r.status}`)
-              this.creatingTable = false
-              return
-            }
             this.newTableSlug = ''
             this.newTableName = ''
             this.showNewTable = false
             await this.loadTables()
           } catch (err) {
-            console.error('[dataTab] createTable:', err)
+            alert(`Error: ${err.code || err.message}`)
+            debugLog('dataTab.createTable:', err)
           }
           this.creatingTable = false
         },
@@ -895,40 +881,32 @@
           this.uploadOk = false
           try {
             const ext = file.name.split('.').pop().toLowerCase()
-            let r
+            let data
             if (ext === 'json') {
               const text = await file.text()
               const rows = JSON.parse(text)
               if (!Array.isArray(rows)) throw new Error('JSON debe ser un array de objetos')
-              r = await fetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables/${this.activeTable}/upload?strategy=${this.uploadStrategy}`, {
+              data = await apiFetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables/${this.activeTable}/upload?strategy=${this.uploadStrategy}`, {
                 method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ rows, filename: file.name }),
+                body: { rows, filename: file.name },
               })
             } else {
-              // CSV / TXT
+              // CSV / TXT — el body es texto crudo, hay que override del Content-Type
+              // (apiFetch default es application/json). El spread de headers en
+              // apiFetch hace que 'Content-Type: text/csv' gane.
               const text = await file.text()
-              r = await fetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables/${this.activeTable}/upload?strategy=${this.uploadStrategy}`, {
+              data = await apiFetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables/${this.activeTable}/upload?strategy=${this.uploadStrategy}`, {
                 method: 'POST',
-                credentials: 'include',
                 headers: { 'Content-Type': 'text/csv' },
                 body: text,
               })
             }
-            if (!r.ok) {
-              const err = await r.json().catch(() => ({}))
-              this.uploadStatus = `Error: ${err.error || r.status}`
-              this.uploadOk = false
-            } else {
-              const data = await r.json()
-              this.uploadStatus = `OK — ${data.inserted} filas insertadas (${data.strategy})`
-              this.uploadOk = true
-              await this.loadTables()
-              this.previewTable({ slug: this.activeTable })
-            }
+            this.uploadStatus = `OK — ${data.inserted} filas insertadas (${data.strategy})`
+            this.uploadOk = true
+            await this.loadTables()
+            this.previewTable({ slug: this.activeTable })
           } catch (err) {
-            this.uploadStatus = `Error: ${err.message}`
+            this.uploadStatus = `Error: ${err.code || err.message}`
             this.uploadOk = false
           }
         },
@@ -945,25 +923,20 @@
           this.previewRows = []
           this.previewColumns = []
           try {
-            const r = await fetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables/${t.slug}/rows?limit=10`, {
-              credentials: 'include',
-            })
-            if (r.ok) {
-              const d = await r.json()
-              this.previewRows = d.rows || []
-              if (this.previewRows.length > 0) {
-                const skip = new Set(['id', 'created_at', 'updated_at'])
-                const cols = new Set()
-                for (const row of this.previewRows) {
-                  for (const k of Object.keys(row)) {
-                    if (!skip.has(k)) cols.add(k)
-                  }
+            const d = await apiFetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables/${t.slug}/rows?limit=10`)
+            this.previewRows = d.rows || []
+            if (this.previewRows.length > 0) {
+              const skip = new Set(['id', 'created_at', 'updated_at'])
+              const cols = new Set()
+              for (const row of this.previewRows) {
+                for (const k of Object.keys(row)) {
+                  if (!skip.has(k)) cols.add(k)
                 }
-                this.previewColumns = Array.from(cols)
               }
+              this.previewColumns = Array.from(cols)
             }
           } catch (err) {
-            console.error('[dataTab] previewTable:', err)
+            debugLog('dataTab.previewTable:', err)
           }
           this.previewLoading = false
         },
