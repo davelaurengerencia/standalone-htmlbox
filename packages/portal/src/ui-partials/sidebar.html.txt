@@ -1,0 +1,89 @@
+      <aside :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'"
+             class="fixed lg:static inset-y-0 left-0 top-16 lg:top-0 w-72 bg-slate-900 border-r border-slate-800 flex flex-col z-40 transform transition-transform duration-300">
+
+        <!-- Tenant + Workspace -->
+        <div class="p-4 border-b border-slate-800 space-y-3">
+          <div>
+            <label class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">Tenant</label>
+            <select x-model="currentTenantId" @change="onTenantChange()" :disabled="tenants.length === 0"
+                    class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50">
+              <template x-for="t in tenants" :key="t.id">
+                <option :value="t.id" x-text="t.name"></option>
+              </template>
+              <template x-if="tenants.length === 0">
+                <option value="" disabled selected>Sin tenants</option>
+              </template>
+            </select>
+          </div>
+          <div>
+            <label class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block mb-1.5">Workspace</label>
+            <select x-model="currentWorkspaceId" @change="loadBoxes()" :disabled="workspaces.length === 0"
+                    class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 disabled:opacity-50">
+              <template x-for="w in workspaces" :key="w.id">
+                <option :value="w.id" x-text="w.name"></option>
+              </template>
+              <template x-if="workspaces.length === 0">
+                <option value="" disabled selected>Sin workspaces</option>
+              </template>
+            </select>
+          </div>
+        </div>
+
+        <!-- Lista de boxes -->
+        <div class="flex-1 overflow-y-auto p-3">
+          <div class="flex items-center justify-between mb-2 px-2">
+            <div class="px-1 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">Mis HTML Boxes</div>
+            <span class="text-[10px] text-slate-500 font-mono" x-text="boxes.length"></span>
+          </div>
+          <div class="space-y-1">
+            <template x-for="b in boxes" :key="b.id">
+              <button @click="selectBox(b)"
+                      :class="b.id === currentBox?.id
+                        ? 'bg-indigo-600/20 border-indigo-500/50 text-white'
+                        : 'hover:bg-slate-800 text-slate-300 border-transparent'"
+                      class="w-full text-left p-2.5 rounded-xl border flex items-start gap-2.5 transition group">
+                <i class="fa-solid fa-cube text-indigo-400 text-sm mt-0.5"></i>
+                <div class="flex-1 min-w-0">
+                  <div class="font-medium text-sm truncate" x-text="b.name"></div>
+                  <div class="flex items-center gap-2 mt-0.5">
+                    <span class="text-[10px] text-slate-500 font-mono" x-text="b.slug"></span>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded-full font-mono"
+                          :class="b.turso_status === 'ready' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'"
+                          x-text="b.turso_status"></span>
+                  </div>
+                </div>
+                <span class="text-[9px] uppercase font-semibold flex-shrink-0 mt-0.5"
+                      :class="b.visibility === 'public' ? 'text-emerald-400' : 'text-slate-500'"
+                      x-text="b.visibility"></span>
+              </button>
+            </template>
+            <template x-if="boxes.length === 0">
+              <div class="px-3 py-6 text-center text-[11px] text-slate-500 space-y-2">
+                <i class="fa-solid fa-cube text-2xl text-slate-700 block"></i>
+                <p>No hay boxes todavía.</p>
+                <button @click="openNewBoxModal()" class="text-indigo-400 hover:underline">Crear el primero →</button>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Footer: storage footprint + MCP -->
+        <div class="p-4 border-t border-slate-800 space-y-3 bg-slate-900/50">
+          <div x-show="storageBytes > 0">
+            <div class="flex justify-between text-[10px] mb-1">
+              <span class="text-slate-400">HTML versionado</span>
+              <span class="text-slate-300 font-mono" x-text="formatBytes(storageBytes)"></span>
+            </div>
+            <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+              <div class="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all"
+                   :style="`width: ${Math.min(100, (storageBytes / (10 * 1024 * 1024)) * 100)}%`"></div>
+            </div>
+          </div>
+
+          <button @click="switchTab('mcp')" class="w-full text-left px-3 py-2 rounded-lg text-[11px] font-medium text-slate-400 hover:text-white hover:bg-slate-800 flex items-center gap-2 transition">
+            <i class="fa-solid fa-microchip text-indigo-400"></i>
+            <span>Protocolo Agentes MCP</span>
+            <i class="fa-solid fa-arrow-up-right-from-square ml-auto text-[9px] text-slate-600"></i>
+          </button>
+        </div>
+      </aside>

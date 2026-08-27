@@ -20,6 +20,24 @@ import { handleBoxes } from './routes/boxes.js'
 import { handleUploads } from './routes/uploads.js'
 import { handleInternal } from './routes/internal.js'
 import { handleAi } from './routes/ai.js'
+import { renderShell } from './lib/partials.js'
+
+import ADMIN_SHELL_HTML from './ui-partials/shell.html.txt'
+import ADMIN_HEADER_HTML from './ui-partials/header.html.txt'
+import ADMIN_LOGIN_HTML from './ui-partials/login.html.txt'
+import ADMIN_DASHBOARD_HTML from './ui-partials/dashboard.html.txt'
+import ADMIN_TOAST_HTML from './ui-partials/toast.html.txt'
+import ADMIN_APP_SCRIPT_HTML from './ui-partials/app-script.html.txt'
+
+// Shell del admin ensamblado en request-time con HTMLRewriter (ver
+// src/lib/partials.js) a partir de fragmentos estáticos en src/ui-partials/.
+const ADMIN_PARTIALS = {
+  header: ADMIN_HEADER_HTML,
+  login: ADMIN_LOGIN_HTML,
+  dashboard: ADMIN_DASHBOARD_HTML,
+  toast: ADMIN_TOAST_HTML,
+  'app-script': ADMIN_APP_SCRIPT_HTML,
+}
 
 export { ControlPlaneDO } from './lib/do.js'  // placeholder para fase 4 (DO de estado)
 
@@ -98,10 +116,18 @@ export default {
       // para que el redirect apunte al subdominio local en dev.
       const adminOrigin = (env.HTMLBOX_PUBLIC_ORIGIN || `${url.protocol}//${url.host}`).replace(/\/+$/, '')
       if (path === '/') return Response.redirect(`${adminOrigin}/admin/`, 302)
-      // Trae el archivo desde ASSETS (binding wrangler).
       const assetPath = path === '/admin' || path === '/admin/'
         ? '/index.html'
         : path.replace(/^\/admin/, '') || '/index.html'
+      // El shell principal se ensambla con HTMLRewriter a partir de los
+      // partials (ver src/ui-partials/ y src/lib/partials.js). Cualquier
+      // otro asset estático (si lo hubiera) sigue viniendo de ASSETS.
+      if (assetPath === '/index.html') {
+        const rewritten = renderShell(ADMIN_SHELL_HTML, ADMIN_PARTIALS)
+        const headers = new Headers(rewritten.headers)
+        headers.set('Content-Type', 'text/html; charset=utf-8')
+        return new Response(rewritten.body, { status: 200, headers })
+      }
       if (env.ASSETS && typeof env.ASSETS.fetch === 'function') {
         const assetUrl = new URL(assetPath, url)
         const res = await env.ASSETS.fetch(assetUrl)

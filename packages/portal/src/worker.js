@@ -11,7 +11,34 @@
 // en /index.html. Cada deploy rebuilds el bundle, lo que invalida cualquier
 // cache stale en el edge.
 
-import PORTAL_HTML from './ui/portal.html.txt'
+import { renderShell } from './lib/partials.js'
+
+import PORTAL_SHELL_HTML from './ui-partials/shell.html.txt'
+import HEADER_HTML from './ui-partials/header.html.txt'
+import LOGIN_HTML from './ui-partials/login.html.txt'
+import SIDEBAR_HTML from './ui-partials/sidebar.html.txt'
+import MAIN_PANEL_HTML from './ui-partials/main-panel.html.txt'
+import MODAL_NEW_BOX_HTML from './ui-partials/modal-new-box.html.txt'
+import MODAL_SHARE_HTML from './ui-partials/modal-share.html.txt'
+import TOAST_HTML from './ui-partials/toast.html.txt'
+import MODAL_AI_SCHEMA_HTML from './ui-partials/modal-ai-schema.html.txt'
+import DEV_PREVIEW_OVERLAY_HTML from './ui-partials/dev-preview-overlay.html.txt'
+import APP_SCRIPT_HTML from './ui-partials/app-script.html.txt'
+
+// Shell del portal ensamblado en request-time con HTMLRewriter (ver
+// src/lib/partials.js) a partir de fragmentos estáticos en src/ui-partials/.
+const PORTAL_PARTIALS = {
+  header: HEADER_HTML,
+  login: LOGIN_HTML,
+  sidebar: SIDEBAR_HTML,
+  'main-panel': MAIN_PANEL_HTML,
+  'modal-new-box': MODAL_NEW_BOX_HTML,
+  'modal-share': MODAL_SHARE_HTML,
+  toast: TOAST_HTML,
+  'modal-ai-schema': MODAL_AI_SCHEMA_HTML,
+  'dev-preview-overlay': DEV_PREVIEW_OVERLAY_HTML,
+  'app-script': APP_SCRIPT_HTML,
+}
 
 function corsHeaders(origin) {
   return {
@@ -103,22 +130,16 @@ export default {
       // Inyectamos las env vars como window.HTMLBOX_* antes del HTML para que el
       // JS de la SPA pueda hablar con el runtime directamente (cross-origin desde
       // portal). En dev .dev.vars del portal apunta a runtime.localhost:8783; en
-      // prod wrangler.jsonc#vars apunta a htmlbox.dev.
+      // prod wrangler.jsonc#vars apunta a htmlbox.dev. Se inyecta con
+      // HTMLRewriter (ver renderShell) en vez de un regex sobre el string.
       const runtimeOrigin = env.HTMLBOX_RUNTIME_ORIGIN || ''
       const safeOrigin = JSON.stringify(runtimeOrigin).replace(/</g, '\\u003c')
       const injection = `<script>window.HTMLBOX_RUNTIME_ORIGIN=${safeOrigin};</script>`
-      // El HTML viene de portal.html.txt que arranca con <!doctype html>; le
-      // metemos el <script> dentro de <head>. Si el archivo ya tiene <head>,
-      // insertamos después; si no, prepende uno.
-      const html = PORTAL_HTML.includes('<head>')
-        ? PORTAL_HTML.replace('<head>', '<head>' + injection)
-        : injection + PORTAL_HTML
-      return new Response(html, {
-        headers: {
-          'Content-Type': 'text/html; charset=utf-8',
-          'Cache-Control': 'no-store, no-cache, must-revalidate',
-        },
-      })
+      const rewritten = renderShell(PORTAL_SHELL_HTML, PORTAL_PARTIALS, injection)
+      const headers = new Headers(rewritten.headers)
+      headers.set('Content-Type', 'text/html; charset=utf-8')
+      headers.set('Cache-Control', 'no-store, no-cache, must-revalidate')
+      return new Response(rewritten.body, { status: 200, headers })
     }
 
     // Static assets (CSS, JS, imágenes) desde el ASSETS binding.

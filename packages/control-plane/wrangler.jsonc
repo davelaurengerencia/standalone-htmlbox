@@ -5,6 +5,10 @@
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
 
+  "rules": [
+    { "type": "Text", "globs": ["src/ui-partials/*.txt"], "fallthrough": true }
+  ],
+
   "dev": {
     "ip": "0.0.0.0",
     "port": 8781,

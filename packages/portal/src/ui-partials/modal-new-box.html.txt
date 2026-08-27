@@ -1,0 +1,60 @@
+      <div x-show="newBoxModalOpen" x-transition.opacity class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" x-cloak>
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl space-y-4 p-6">
+          <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h3 class="font-bold text-base text-slate-100 flex items-center gap-2">
+              <i class="fa-solid fa-box-open text-indigo-400"></i> Crear HTML Box
+            </h3>
+            <button @click="closeNewBoxModal()" class="text-slate-500 hover:text-white"><i class="fa-solid fa-xmark text-lg"></i></button>
+          </div>
+          <form @submit.prevent="createBox()" class="space-y-3">
+            <!-- Upload directo -->
+            <div class="p-4 rounded-xl bg-indigo-950/40 border border-indigo-800/60 text-center space-y-2">
+              <i class="fa-solid fa-file-code text-2xl text-indigo-400"></i>
+              <h4 class="text-[10px] font-bold text-slate-200 uppercase tracking-wider">Opción Recomendada</h4>
+              <p class="text-xs text-slate-300">Subir un archivo <code>.html</code> generado previamente en ChatGPT, Claude o Gemini.</p>
+              <label class="inline-flex px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs rounded-xl cursor-pointer transition shadow-lg shadow-indigo-600/30">
+                <i class="fa-solid fa-upload mr-2"></i> Seleccionar archivo .HTML
+                <input type="file" accept=".html,.htm" class="hidden" @change="handleNewBoxFile($event)">
+              </label>
+              <template x-if="newBox.htmlContent">
+                <p class="text-[10px] text-emerald-400 mt-1"><i class="fa-solid fa-check"></i> Archivo cargado: <span x-text="newBox.htmlContent.length + ' bytes'"></span></p>
+              </template>
+            </div>
+
+            <div class="relative flex py-1 items-center">
+              <div class="flex-grow border-t border-slate-800"></div>
+              <span class="flex-shrink mx-4 text-[10px] font-mono text-slate-500 uppercase">O crea desde plantilla</span>
+              <div class="flex-grow border-t border-slate-800"></div>
+            </div>
+
+            <div>
+              <label class="text-xs font-medium text-slate-300 block mb-1">Nombre de la aplicación</label>
+              <input type="text" x-model="newBox.name" required placeholder="Ej: Dashboard de Cartera 2026"
+                     class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500">
+            </div>
+            <div>
+              <label class="text-xs font-medium text-slate-300 block mb-1">Plantilla inicial</label>
+              <select x-model="newBox.template" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500">
+                <option value="empty">HTML en blanco</option>
+                <option value="dashboard">Dashboard de Cartera (Tailwind)</option>
+                <option value="crm">Mini CRM &amp; Gestión</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs font-medium text-slate-300 block mb-1">Visibilidad</label>
+              <select x-model="newBox.visibility" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500">
+                <option value="private">Privado (requiere sesión)</option>
+                <option value="public">Público (link compartible)</option>
+              </select>
+            </div>
+            <div class="flex justify-end gap-2 pt-2">
+              <button type="button" @click="closeNewBoxModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium transition">Cancelar</button>
+              <button type="submit" :disabled="creating" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 rounded-xl text-xs font-medium transition shadow-lg shadow-indigo-600/30 flex items-center gap-2">
+                <template x-if="creating"><i class="fa-solid fa-spinner animate-spin"></i></template>
+                <span x-text="creating ? 'Creando…' : 'Crear'"></span>
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+

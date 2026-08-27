@@ -19,7 +19,7 @@
   },
 
   "rules": [
-    { "type": "Text", "globs": ["src/ui/*.txt"], "fallthrough": true }
+    { "type": "Text", "globs": ["src/ui/*.txt", "src/ui-partials/*.txt"], "fallthrough": true }
   ],
 
   "assets": {

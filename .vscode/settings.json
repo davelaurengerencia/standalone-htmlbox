@@ -1,0 +1,16 @@
+{
+  // Los archivos *.html.txt (y el .txt del SDK) son fragmentos HTML/JS reales,
+  // pero necesitan la extensión .txt para que la regla "Text" de wrangler.jsonc
+  // los importe como string en build-time (ver src/lib/partials.js). Esta
+  // asociación es solo para el editor: le dice a VS Code que los resalte,
+  // linte y autocomplete como HTML/JS, sin tocar el nombre real del archivo.
+  "files.associations": {
+    "*.html.txt": "html",
+    "src/sdk/*.txt": "javascript"
+  },
+  // Para que Emmet (ctrl+e / tab-expand de tags) también funcione en esos
+  // archivos, ya que por defecto solo corre en lenguajes marcados como HTML.
+  "emmet.includeLanguages": {
+    "html.txt": "html"
+  }
+}

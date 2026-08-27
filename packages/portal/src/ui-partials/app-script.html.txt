@@ -1,0 +1,903 @@
+  <script>
+    // ============ Constantes de seed ============
+
+    const SEED_DASHBOARD = `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard de Cartera</title>
+<script src="https://cdn.tailwindcss.com"><\/script>
+</head>
+<body class="bg-slate-900 text-slate-100 p-6">
+  <div class="max-w-5xl mx-auto space-y-6">
+    <header class="flex justify-between items-center bg-slate-800 p-4 rounded-2xl border border-slate-700">
+      <div>
+        <h1 class="text-xl font-bold text-indigo-400">Resumen de Cartera y Cobranzas</h1>
+        <p class="text-xs text-slate-400">Box versionado en HTMLBox · v1</p>
+      </div>
+      <button class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-xl shadow">
+        <i class="fa-solid fa-file-pdf mr-1"></i> Spot Check
+      </button>
+    </header>
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+        <div class="text-xs text-slate-400">Total en Cartera</div>
+        <div class="text-2xl font-bold text-white mt-1">$ 148,450,000</div>
+        <div class="text-xs text-emerald-400 mt-2"><i class="fa-solid fa-arrow-up"></i> +4.2% este mes</div>
+      </div>
+      <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+        <div class="text-xs text-slate-400">Cartera Vencida (> 60 días)</div>
+        <div class="text-2xl font-bold text-rose-400 mt-1">$ 32,100,000</div>
+        <div class="text-xs text-rose-400 mt-2"><i class="fa-solid fa-triangle-exclamation"></i> 8 Clientes Críticos</div>
+      </div>
+      <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+        <div class="text-xs text-slate-400">Recaudado Hoy</div>
+        <div class="text-2xl font-bold text-emerald-400 mt-1">$ 9,800,000</div>
+        <div class="text-xs text-slate-400 mt-2">12 Transacciones</div>
+      </div>
+    </div>
+    <p class="text-xs text-slate-500 text-center">Editá este HTML y guardá — la siguiente versión aparece en este mismo link.</p>
+  </div>
+</body>
+</html>`
+
+    const SEED_CRM = `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<script src="https://cdn.tailwindcss.com"><\/script>
+</head>
+<body class="bg-slate-950 text-slate-100 p-8">
+  <div class="max-w-xl mx-auto space-y-4">
+    <h1 class="text-xl font-bold text-purple-400">Mini CRM Local - Sync Active</h1>
+    <p class="text-xs text-slate-400">Guarda observaciones que se sincronizan con la base de datos de HTMLBox.</p>
+    <div class="bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
+      <input type="text" placeholder="Nombre del cliente" class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs">
+      <textarea placeholder="Observación de la llamada..." class="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs h-20"></textarea>
+      <button class="w-full bg-indigo-600 text-white py-2 rounded text-xs font-bold">Registrar Gestión</button>
+    </div>
+  </div>
+</body>
+</html>`
+
+    const SEED_EMPTY = `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<script src="https://cdn.tailwindcss.com"><\/script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center">
+  <h1 class="text-3xl font-bold">Mi nuevo HTML Box</h1>
+</body>
+</html>`
+
+    // ============ App Alpine ============
+
+    function portalApp() {
+      // URLs inyectadas por el worker antes de servir el HTML (window.HTMLBOX_*).
+      // Las llamadas a /api/* al control-plane van relativas (mismo origen) y el
+      // portal las proxy-ea. RUNTIME sí necesita URL absoluta (es otro worker).
+      const CONTROL_PLANE = ''
+      const RUNTIME = (typeof window !== 'undefined' && window.HTMLBOX_RUNTIME_ORIGIN) || ''
+      return {
+        // sesión
+        user: null,
+        userMenuOpen: false,
+        email: '',
+        busy: false,
+        lastMessage: '',
+        previewLink: null,
+        showDevPreview: false,
+        copyButtonLabel: 'Copiar',
+        syncStatusText: 'R2 + D1 + Turso Sync',
+
+        // tenants / workspaces / boxes
+        tenants: [],
+        currentTenantId: null,
+        workspaces: [],
+        currentWorkspaceId: null,
+        boxes: [],
+        currentBox: null,
+
+        // UI
+        sidebarOpen: false,
+        activeTab: 'preview',
+        toast: null,
+        toastTimer: null,
+
+        // editor
+        editorHtml: '',
+
+        // modales
+        newBoxModalOpen: false,
+        shareModalOpen: false,
+        creating: false,
+        saving: false,
+        newBox: { name: '', template: 'empty', visibility: 'private', htmlContent: '' },
+
+        // share
+        shareUrl: '',
+
+        // AI (fase 4 v1)
+        aiAnalyzing: false,
+        aiAutoAnalyzePending: false,
+        aiSchema: null,
+        aiModalOpen: false,
+        aiModalEdited: null,
+        updatingAutoAnalyze: false,
+        aiHistory: [],
+        aiApplying: false,
+        aiPendingReview: false,
+
+        async init() {
+          await this.loadMe()
+        },
+
+        get userInitial() {
+          return (this.user?.email || '?').charAt(0).toUpperCase()
+        },
+
+        // --------- Sesión ---------
+
+        async loadMe() {
+          try {
+            const res = await this.api('/api/auth/me')
+            const data = await res.json()
+            this.user = data.user
+            if (this.user) {
+              this.showDevPreview = false
+              await this.loadTenants()
+            }
+          } catch (err) {
+            console.error('loadMe:', err)
+          }
+        },
+
+        async requestMagicLink() {
+          this.busy = true
+          this.lastMessage = ''
+          this.previewLink = null
+          this.showDevPreview = false
+          try {
+            const res = await this.api('/api/auth/request', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: this.email }),
+            })
+            const data = await res.json()
+            this.lastMessage = data.message || 'Listo. Revisá tu email.'
+            if (data._dev_preview) {
+              this.previewLink = data._dev_preview
+              this.showDevPreview = true
+              this.showToast('Link generado. Tocá Entrar para autenticarte.')
+            }
+          } catch (err) {
+            this.lastMessage = 'Error: ' + err.message
+          } finally {
+            this.busy = false
+          }
+        },
+
+        async logout() {
+          await this.api('/api/auth/logout', { method: 'POST' })
+          this.user = null
+          this.tenants = []
+          this.workspaces = []
+          this.boxes = []
+          this.currentBox = null
+          this.editorHtml = ''
+          this.previewLink = null
+          this.showDevPreview = false
+          this.userMenuOpen = false
+        },
+
+        dismissDevPreview() {
+          this.showDevPreview = false
+        },
+
+        async copyPreviewLink() {
+          if (!this.previewLink) return
+          try {
+            await navigator.clipboard.writeText(this.previewLink)
+            this.copyButtonLabel = '¡Copiado!'
+            setTimeout(() => { this.copyButtonLabel = 'Copiar' }, 2000)
+          } catch {
+            const ta = document.createElement('textarea')
+            ta.value = this.previewLink
+            ta.style.position = 'fixed'
+            ta.style.opacity = '0'
+            document.body.appendChild(ta)
+            ta.select()
+            document.execCommand('copy')
+            document.body.removeChild(ta)
+            this.copyButtonLabel = '¡Copiado!'
+            setTimeout(() => { this.copyButtonLabel = 'Copiar' }, 2000)
+          }
+        },
+
+        async enterViaPreview() {
+          if (!this.previewLink) return
+          let token = null
+          try {
+            token = new URL(this.previewLink).searchParams.get('token')
+          } catch {
+            window.location.href = this.previewLink
+            return
+          }
+          if (!token) {
+            window.location.href = this.previewLink
+            return
+          }
+          this.busy = true
+          try {
+            const res = await this.api('/api/auth/consume', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token }),
+            })
+            const data = await res.json()
+            if (res.ok && data.ok) {
+              this.showDevPreview = false
+              this.previewLink = null
+              await this.loadMe()
+              this.showToast(`Bienvenido, ${data.user.email}`)
+            } else {
+              this.showToast('Error consumiendo link: ' + (data.error || res.status))
+            }
+          } catch (err) {
+            this.showToast('Error: ' + err.message)
+          } finally {
+            this.busy = false
+          }
+        },
+
+        // --------- Tenants / Workspaces / Boxes ---------
+
+        async loadTenants() {
+          const res = await this.api('/api/me/tenants')
+          const data = await res.json()
+          this.tenants = data.tenants ?? []
+          if (this.tenants.length > 0 && !this.currentTenantId) {
+            this.currentTenantId = this.tenants[0].id
+            await this.onTenantChange()
+          }
+        },
+
+        async onTenantChange() {
+          if (!this.currentTenantId) return
+          const res = await this.api(`/api/tenants/${this.currentTenantId}/workspaces`)
+          const data = await res.json()
+          this.workspaces = data.workspaces ?? []
+          if (this.workspaces.length > 0) {
+            this.currentWorkspaceId = this.workspaces[0].id
+            await this.loadBoxes()
+          } else {
+            this.boxes = []
+            this.currentBox = null
+            this.editorHtml = ''
+          }
+        },
+
+        async loadBoxes() {
+          if (!this.currentWorkspaceId) return
+          const res = await this.api(`/api/boxes?workspace=${this.currentWorkspaceId}`)
+          const data = await res.json()
+          this.boxes = data.boxes ?? []
+          if (this.boxes.length > 0) await this.selectBox(this.boxes[0])
+          else { this.currentBox = null; this.editorHtml = ''; this.activeTab = 'preview' }
+        },
+
+        async selectBox(b) {
+          this.currentBox = b
+          this.activeTab = 'preview'
+          await this.loadActiveHtml()
+          if (window.innerWidth < 1024) this.sidebarOpen = false
+        },
+
+        async loadActiveHtml() {
+          if (!this.currentBox) return
+          const res = await this.api(`/api/boxes/${this.currentBox.id}/active-html`)
+          if (res.ok) {
+            const data = await res.json()
+            this.editorHtml = data.html
+          } else {
+            this.editorHtml = this.seedFor(this.currentBox.template)
+          }
+        },
+
+        seedFor(template) {
+          if (template === 'dashboard') return SEED_DASHBOARD
+          if (template === 'crm') return SEED_CRM
+          return SEED_EMPTY
+        },
+
+        // --------- Tab ---------
+
+        switchTab(tab) {
+          this.activeTab = tab
+          if (tab === 'editor' && this.currentBox && !this.editorHtml) this.loadActiveHtml()
+        },
+
+        // --------- Upload ---------
+
+        async handleFileUpload(ev) {
+          const file = ev.target.files[0]
+          if (!file) return
+          const reader = new FileReader()
+          reader.onload = async (e) => {
+            const content = e.target.result
+            if (!this.currentBox) {
+              this.showToast('Seleccioná o creá un box antes de subir.')
+              ev.target.value = ''
+              return
+            }
+            this.editorHtml = content
+            this.activeTab = 'editor'
+            this.showToast(`HTML cargado (${content.length} bytes). Tocá Guardar para crear v${(this.currentBox?.htmlbox_version ?? 0) + 1}.`)
+          }
+          reader.readAsText(file)
+          ev.target.value = ''
+        },
+
+        async handleNewBoxFile(ev) {
+          const file = ev.target.files[0]
+          if (!file) return
+          const reader = new FileReader()
+          reader.onload = (e) => {
+            this.newBox.htmlContent = e.target.result
+            this.showToast(`HTML cargado (${this.newBox.htmlContent.length} bytes).`)
+          }
+          reader.readAsText(file)
+          ev.target.value = ''
+        },
+
+        async saveCurrentBox() {
+          if (!this.currentBox) return
+          if (!this.editorHtml.trim()) {
+            this.showToast('El HTML está vacío.')
+            return
+          }
+          this.saving = true
+          try {
+            const size = new Blob([this.editorHtml]).size
+            const urlRes = await this.api(`/api/boxes/${this.currentBox.id}/upload-url`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ size, contentType: 'text/html' }),
+            })
+            const urlData = await urlRes.json()
+            if (!urlRes.ok) throw new Error(urlData.error || 'no se pudo firmar upload')
+
+            const putRes = await fetch(urlData.uploadUrl, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'text/html' },
+              body: this.editorHtml,
+            })
+            if (!putRes.ok) throw new Error(`PUT R2 falló: ${putRes.status}`)
+
+            const summary = prompt('Resumen corto de la versión (obligatorio):', 'Cambios manuales')
+            if (!summary) {
+              this.showToast('Versión cancelada.')
+              return
+            }
+            const confRes = await this.api(`/api/boxes/${this.currentBox.id}/html`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ r2Key: urlData.key, summary, source: 'portal' }),
+            })
+            const confData = await confRes.json()
+            if (!confRes.ok) throw new Error(confData.error || 'confirmar versión falló')
+
+            await this.loadBoxes()
+            const fresh = this.boxes.find((b) => b.id === this.currentBox.id)
+            if (fresh) await this.selectBox(fresh)
+            this.activeTab = 'preview'
+            this.showToast(`Guardado como v${confData.version}.`)
+            if (this.currentBox && this.currentBox.auto_analyze_on_save) {
+              this.aiAutoAnalyzePending = true
+              this.aiAnalyze({ silent: true }).then(() => {
+                this.aiAutoAnalyzePending = false
+              })
+            }
+          } catch (err) {
+            console.error(err)
+            this.showToast('Error: ' + err.message)
+          } finally {
+            this.saving = false
+          }
+        },
+
+        // --------- Modales ---------
+
+        openNewBoxModal() {
+          if (!this.currentWorkspaceId) {
+            this.showToast('Seleccioná un workspace primero.')
+            return
+          }
+          this.newBox = { name: '', template: 'empty', visibility: 'private', htmlContent: '' }
+          this.newBoxModalOpen = true
+        },
+        closeNewBoxModal() { this.newBoxModalOpen = false },
+
+        async createBox() {
+          if (!this.currentWorkspaceId) {
+            this.showToast('Seleccioná un workspace primero.')
+            return
+          }
+          if (!this.newBox.name.trim()) {
+            this.showToast('Poné un nombre.')
+            return
+          }
+          this.creating = true
+          try {
+            const res = await this.api('/api/boxes', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                name: this.newBox.name,
+                template: this.newBox.template,
+                visibility: this.newBox.visibility,
+                workspace_id: this.currentWorkspaceId,
+              }),
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || 'falló')
+            await this.loadBoxes()
+            const fresh = this.boxes.find((b) => b.id === data.box.id)
+            if (fresh) {
+              await this.selectBox(fresh)
+              // Si subió archivo, sembramos el editor con eso y guardamos como v1.
+              if (this.newBox.htmlContent) {
+                this.editorHtml = this.newBox.htmlContent
+                this.activeTab = 'editor'
+                await this.saveCurrentBox()
+              } else {
+                this.editorHtml = this.seedFor(this.newBox.template)
+                this.activeTab = 'editor'
+              }
+            }
+            this.closeNewBoxModal()
+            this.showToast(`Box "${data.box.name}" creado (v${data.box.htmlbox_version}).`)
+          } catch (err) {
+            this.showToast('Error: ' + err.message)
+          } finally {
+            this.creating = false
+          }
+        },
+
+        openShareModal() {
+          if (!this.currentBox) return
+          const slug = this.currentBox.slug
+          const share = this.currentBox.share_id
+          const tenantSlug = (this.tenants.find((t) => t.id === this.currentTenantId) || {}).slug || 'tenant'
+          this.shareUrl = `https://htmlbox.dev/s/${share}    https://${tenantSlug}.htmlbox.dev/${slug}`
+          this.shareModalOpen = true
+        },
+        closeShareModal() { this.shareModalOpen = false },
+
+        async copyShareLink() {
+          if (!this.shareUrl) return
+          try {
+            await navigator.clipboard.writeText(this.shareUrl.split(/\s{2,}/)[0])
+            this.showToast('Enlace copiado al portapapeles.')
+          } catch {
+            const ta = document.createElement('textarea')
+            ta.value = this.shareUrl
+            ta.style.position = 'fixed'
+            ta.style.opacity = '0'
+            document.body.appendChild(ta)
+            ta.select()
+            document.execCommand('copy')
+            document.body.removeChild(ta)
+            this.showToast('Enlace copiado.')
+          }
+        },
+
+        // --------- Helpers ---------
+
+        async api(path, init = {}) {
+          return await fetch(path, { credentials: 'include', ...init })
+        },
+
+        formatBytes(n) {
+          if (!n) return '0 B'
+          const units = ['B', 'KB', 'MB', 'GB']
+          let i = 0
+          while (n >= 1024 && i < units.length - 1) { n /= 1024; i++ }
+          return `${n.toFixed(1)} ${units[i]}`
+        },
+
+        get storageBytes() {
+          return (this.editorHtml || '').length
+        },
+
+        get previewSrcdoc() {
+          const html = this.editorHtml || ''
+          if (!html) return ''
+          const sdkTag = '<script src="/_sdk/htmlbox.js?boxId=preview&v=public"><\/script>'
+          if (/<\/body\s*>/i.test(html)) {
+            return html.replace(/<\/body\s*>/i, `${sdkTag}</body>`)
+          }
+          return html + '\n' + sdkTag
+        },
+
+        formatHTML() {
+          // Re-indenta simple (no es un beautifier completo, pero ayuda).
+          let level = 0
+          const out = []
+          const tokens = this.editorHtml
+            .replace(/></g, '>\n<')
+            .replace(/>\s+</g, '>\n<')
+            .split('\n')
+          for (const t of tokens) {
+            const trimmed = t.trim()
+            if (!trimmed) continue
+            if (/^<\/.+>/.test(trimmed)) level = Math.max(0, level - 1)
+            out.push('  '.repeat(level) + trimmed)
+            if (/^<[^!?\/][^>]*[^/]>$/.test(trimmed) && !/^<(br|hr|img|input|meta|link)/.test(trimmed)) {
+              level++
+            }
+          }
+          this.editorHtml = out.join('\n')
+          this.showToast('HTML re-indentado.')
+        },
+
+        showToast(msg, duration = 3000) {
+          this.toast = msg
+          clearTimeout(this.toastTimer)
+          this.toastTimer = setTimeout(() => { this.toast = null }, duration)
+        },
+
+        // --------- AI (fase 4 v1) ---------
+
+        async aiAnalyze({ silent = false } = {}) {
+          if (!this.currentBox) {
+            if (!silent) this.showToast('Seleccioná un box antes de analizar.')
+            return
+          }
+          if (!this.editorHtml || !this.editorHtml.trim()) {
+            if (!silent) this.showToast('Escribí o pegá HTML antes de analizar.')
+            return
+          }
+          this.aiAnalyzing = true
+          if (silent) this.aiAutoAnalyzePending = true
+          try {
+            const r = await fetch(`${CONTROL_PLANE}/api/ai/analyze-html`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ boxId: this.currentBox.id, html: this.editorHtml })
+            })
+            if (!r.ok) {
+              const err = await r.json().catch(() => ({}))
+              this.showToast('IA: ' + (err.error || `HTTP ${r.status}`))
+              return
+            }
+            const data = await r.json()
+            if (!data.tables || data.tables.length === 0) {
+              this.showToast('La IA no propuso tablas para este HTML.')
+              return
+            }
+            this.aiSchema = data
+            this.aiModalEdited = JSON.parse(JSON.stringify(data.tables))
+            if (silent) {
+              this.aiPendingReview = true
+              this.showToast(`IA propuso ${data.tables.length} tabla(s).`, 15000)
+            } else {
+              this.aiModalOpen = true
+              this.aiPendingReview = false
+            }
+          } catch (err) {
+            this.showToast('IA: ' + err.message)
+          } finally {
+            this.aiAnalyzing = false
+            this.aiAutoAnalyzePending = false
+          }
+        },
+
+        async aiApply() {
+          if (!this.aiModalEdited || !this.aiModalEdited.length) return
+          if (!this.validEditedTables()) {
+            this.showToast('Revisá los slugs. Deben ser minúsculas y empezar con letra.')
+            return
+          }
+          this.aiApplying = true
+          try {
+            if (this.aiSchema && this.aiSchema.analysisId) {
+              await fetch(`${CONTROL_PLANE}/api/ai/analyses/${this.aiSchema.analysisId}/apply`, {
+                method: 'POST',
+                credentials: 'include'
+              })
+            }
+            const r = await fetch(`${RUNTIME}/api/data/${this.currentBox.id}/tables/bulk-create`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ tables: this.aiModalEdited })
+            })
+            if (!r.ok) {
+              const err = await r.json().catch(() => ({}))
+              this.showToast('Aplicar: ' + (err.error || `HTTP ${r.status}`))
+              return
+            }
+            const result = await r.json()
+            const created = result.created?.length || 0
+            const errors = result.errors?.length || 0
+            this.showToast(`Creadas ${created} tabla(s)${errors ? `, ${errors} error(es)` : ''}.`)
+            this.closeAiModal()
+            if (this.activeTab === 'data' && this.$refs.dataTabRef && typeof this.$refs.dataTabRef.loadTables === 'function') {
+              await this.$refs.dataTabRef.loadTables()
+            }
+          } catch (err) {
+            this.showToast('Aplicar: ' + err.message)
+          } finally {
+            this.aiApplying = false
+          }
+        },
+
+        async toggleAutoAnalyze(evt) {
+          if (!this.currentBox) return
+          const newValue = !!(evt && evt.target && evt.target.checked)
+          if (typeof this.currentBox.auto_analyze_on_save === 'boolean') {
+            this.currentBox.auto_analyze_on_save = newValue
+          } else {
+            this.currentBox = { ...this.currentBox, auto_analyze_on_save: newValue }
+          }
+          this.updatingAutoAnalyze = true
+          try {
+            await fetch(`${CONTROL_PLANE}/api/boxes/${this.currentBox.id}`, {
+              method: 'PATCH',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ auto_analyze_on_save: newValue })
+            })
+          } catch (err) {
+            this.toast = 'Auto-IA: ' + err.message
+          } finally {
+            this.updatingAutoAnalyze = false
+          }
+        },
+
+        async aiLoadHistory() {
+          if (!this.currentBox) return
+          try {
+            const r = await fetch(`${CONTROL_PLANE}/api/ai/analyses?boxId=${this.currentBox.id}`, {
+              credentials: 'include'
+            })
+            if (r.ok) {
+              const data = await r.json()
+              this.aiHistory = data.analyses || []
+            }
+          } catch (err) {
+            console.error('aiLoadHistory:', err)
+          }
+        },
+
+        aiReviewPending() {
+          this.aiPendingReview = false
+          if (this.aiSchema && this.aiModalEdited) {
+            this.aiModalOpen = true
+          }
+        },
+
+        closeAiModal() {
+          this.aiModalOpen = false
+          this.aiSchema = null
+          this.aiModalEdited = null
+          this.aiPendingReview = false
+        },
+
+        isValidSlug(slug) {
+          return /^[a-z][a-z0-9_]{0,40}$/.test(slug || '')
+        },
+
+        validEditedTables() {
+          if (!this.aiModalEdited || this.aiModalEdited.length === 0) return false
+          return this.aiModalEdited.every((t) => this.isValidSlug(t.slug))
+        },
+
+        addSampleRow(t) {
+          if (!t) return
+          if (!Array.isArray(t.sample_rows)) t.sample_rows = []
+          if (!Array.isArray(t.columns)) t.columns = []
+          const row = {}
+          for (const c of t.columns) row[c.name || ''] = ''
+          t.sample_rows.push(row)
+        },
+
+        async copyToClipboard(s) {
+          const text = String(s || '')
+          try {
+            await navigator.clipboard.writeText(text)
+            this.showToast('Copiado al portapapeles.')
+          } catch {
+            const ta = document.createElement('textarea')
+            ta.value = text
+            ta.style.position = 'fixed'
+            ta.style.opacity = '0'
+            document.body.appendChild(ta)
+            ta.select()
+            document.execCommand('copy')
+            document.body.removeChild(ta)
+            this.showToast('Copiado.')
+          }
+        },
+      }
+    }
+
+    // ============ Tab Datos (fase 3 v1) ============
+    function dataTab() {
+      const RUNTIME = (typeof window !== 'undefined' && window.HTMLBOX_RUNTIME_ORIGIN) || ''
+      return {
+        tables: [],
+        loadingTables: false,
+        showNewTable: false,
+        newTableSlug: '',
+        newTableName: '',
+        creatingTable: false,
+        activeTable: null,
+        uploadStrategy: 'replace',
+        uploadStatus: null,
+        uploadOk: false,
+        previewSlug: null,
+        previewRows: [],
+        previewColumns: [],
+        previewLoading: false,
+
+        async init() {
+          if (!this.$root.currentBox) return
+          await this.loadTables()
+        },
+
+        async loadTables() {
+          if (!this.$root.currentBox) {
+            this.tables = []
+            return
+          }
+          this.loadingTables = true
+          try {
+            const r = await fetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables`, {
+              credentials: 'include',
+            })
+            if (r.ok) {
+              const d = await r.json()
+              this.tables = d.tables || []
+            } else {
+              this.tables = []
+            }
+          } catch (err) {
+            console.error('[dataTab] loadTables:', err)
+            this.tables = []
+          }
+          this.loadingTables = false
+        },
+
+        async createTable() {
+          const slug = this.newTableSlug.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_')
+          if (!slug || !/^[a-z][a-z0-9_]{0,40}$/.test(slug)) {
+            alert('Slug inválido. Use minúsculas y guiones bajos, empezando con letra.')
+            return
+          }
+          this.creatingTable = true
+          try {
+            // Crear la tabla subiendo 1 fila vacía + la metadata se genera en el upload.
+            // Mejor: insertar metadata directo en htmlbox_tables via API.
+            // Por ahora: simular creando con un upsert de 0 filas para registrar metadata.
+            const r = await fetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables/${slug}/upsert`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ rows: [] }),
+            })
+            if (!r.ok) {
+              const err = await r.json().catch(() => ({}))
+              alert(`Error: ${err.error || r.status}`)
+              this.creatingTable = false
+              return
+            }
+            this.newTableSlug = ''
+            this.newTableName = ''
+            this.showNewTable = false
+            await this.loadTables()
+          } catch (err) {
+            console.error('[dataTab] createTable:', err)
+          }
+          this.creatingTable = false
+        },
+
+        selectTable(t) {
+          this.activeTable = t.slug
+          this.uploadStatus = null
+        },
+
+        handleDrop(e) {
+          const file = e.dataTransfer.files?.[0]
+          if (file) this.uploadFile(file)
+        },
+        handleFile(e) {
+          const file = e.target.files?.[0]
+          if (file) this.uploadFile(file)
+        },
+
+        async uploadFile(file) {
+          if (!this.activeTable) return
+          this.uploadStatus = 'Subiendo…'
+          this.uploadOk = false
+          try {
+            const ext = file.name.split('.').pop().toLowerCase()
+            let r
+            if (ext === 'json') {
+              const text = await file.text()
+              const rows = JSON.parse(text)
+              if (!Array.isArray(rows)) throw new Error('JSON debe ser un array de objetos')
+              r = await fetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables/${this.activeTable}/upload?strategy=${this.uploadStrategy}`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rows, filename: file.name }),
+              })
+            } else {
+              // CSV / TXT
+              const text = await file.text()
+              r = await fetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables/${this.activeTable}/upload?strategy=${this.uploadStrategy}`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'text/csv' },
+                body: text,
+              })
+            }
+            if (!r.ok) {
+              const err = await r.json().catch(() => ({}))
+              this.uploadStatus = `Error: ${err.error || r.status}`
+              this.uploadOk = false
+            } else {
+              const data = await r.json()
+              this.uploadStatus = `OK — ${data.inserted} filas insertadas (${data.strategy})`
+              this.uploadOk = true
+              await this.loadTables()
+              this.previewTable({ slug: this.activeTable })
+            }
+          } catch (err) {
+            this.uploadStatus = `Error: ${err.message}`
+            this.uploadOk = false
+          }
+        },
+
+        async previewTable(t) {
+          if (this.previewSlug === t.slug) {
+            this.previewSlug = null
+            this.previewRows = []
+            this.previewColumns = []
+            return
+          }
+          this.previewSlug = t.slug
+          this.previewLoading = true
+          this.previewRows = []
+          this.previewColumns = []
+          try {
+            const r = await fetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables/${t.slug}/rows?limit=10`, {
+              credentials: 'include',
+            })
+            if (r.ok) {
+              const d = await r.json()
+              this.previewRows = d.rows || []
+              if (this.previewRows.length > 0) {
+                const skip = new Set(['id', 'created_at', 'updated_at'])
+                const cols = new Set()
+                for (const row of this.previewRows) {
+                  for (const k of Object.keys(row)) {
+                    if (!skip.has(k)) cols.add(k)
+                  }
+                }
+                this.previewColumns = Array.from(cols)
+              }
+            }
+          } catch (err) {
+            console.error('[dataTab] previewTable:', err)
+          }
+          this.previewLoading = false
+        },
+      }
+    }
+  </script>

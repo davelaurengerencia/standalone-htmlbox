@@ -1,0 +1,60 @@
+  <header class="h-16 border-b border-slate-800 bg-slate-900/80 backdrop-blur-md px-4 lg:px-6 flex items-center justify-between z-30 flex-shrink-0">
+    <div class="flex items-center gap-3">
+      <button @click="sidebarOpen = !sidebarOpen" class="lg:hidden p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition">
+        <i class="fa-solid fa-bars text-lg"></i>
+      </button>
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center font-black text-white text-lg shadow-lg shadow-indigo-500/20">
+          <i class="fa-solid fa-box-open"></i>
+        </div>
+        <div>
+          <span class="font-bold text-lg bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">SIVO APPS</span>
+          <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 ml-2 font-medium">Runtime v1.2</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <!-- Sync indicator (visible cuando hay sesión y al menos un box) -->
+      <div x-show="user && boxes.length > 0" class="hidden sm:flex items-center gap-2 text-xs px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+        <span class="relative flex h-2 w-2">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+        </span>
+        <span x-text="syncStatusText"></span>
+      </div>
+
+      <!-- Subir HTML directamente -->
+      <label class="hidden md:flex px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium text-sm rounded-xl cursor-pointer transition items-center gap-2 active:scale-95">
+        <i class="fa-solid fa-cloud-arrow-up text-indigo-400"></i>
+        <span>Subir .HTML de IA</span>
+        <input type="file" accept=".html,.htm" class="hidden" @change="handleFileUpload($event)">
+      </label>
+
+      <!-- Nuevo Box -->
+      <button @click="openNewBoxModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-sm rounded-xl shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition active:scale-95">
+        <i class="fa-solid fa-plus"></i>
+        <span class="hidden sm:inline">Nuevo HTML Box</span>
+      </button>
+
+      <!-- User dropdown -->
+      <div x-show="user" class="relative" @click.outside="userMenuOpen = false">
+        <button @click="userMenuOpen = !userMenuOpen" class="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-slate-800 transition">
+          <div class="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-bold text-xs uppercase" x-text="userInitial"></div>
+          <span class="hidden md:inline text-xs text-slate-300" x-text="user?.email?.split('@')[0]"></span>
+        </button>
+        <div x-show="userMenuOpen" x-transition class="absolute right-0 top-full mt-2 w-56 bg-slate-900 border border-slate-800 rounded-xl shadow-2xl p-2 space-y-1 z-50">
+          <div class="px-3 py-2 border-b border-slate-800">
+            <div class="text-xs text-slate-500 truncate" x-text="user?.email"></div>
+            <div class="text-[10px] mt-1">
+              <span x-show="user?.is_platform_owner" class="px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-medium">Platform Owner</span>
+              <span x-show="!user?.is_platform_owner" class="px-2 py-0.5 rounded-full bg-slate-500/10 text-slate-400 border border-slate-700">Member</span>
+            </div>
+          </div>
+          <button @click="logout(); userMenuOpen = false" class="w-full text-left px-3 py-2 rounded-lg text-xs text-slate-300 hover:bg-slate-800 flex items-center gap-2">
+            <i class="fa-solid fa-right-from-bracket text-rose-400"></i> Cerrar sesión
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>

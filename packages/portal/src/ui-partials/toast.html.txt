@@ -1,0 +1,12 @@
+      <div x-show="toast" x-transition class="fixed bottom-6 right-6 z-50 transform bg-slate-900 border border-slate-700 text-slate-100 px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3" x-cloak>
+        <i class="fa-solid fa-circle-check text-emerald-400"></i>
+        <span class="text-xs font-medium" x-text="toast"></span>
+        <template x-if="aiPendingReview">
+          <button @click="aiReviewPending()"
+                  class="ml-2 px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-medium transition flex items-center gap-1">
+            <i class="fa-solid fa-wand-magic-sparkles text-xs"></i>
+            <span>Revisar propuesta</span>
+          </button>
+        </template>
+      </div>
+

@@ -1,0 +1,22 @@
+  <div x-show="showDevPreview" x-transition.opacity class="fixed bottom-4 right-4 z-50 max-w-sm bg-slate-900 border border-emerald-500/40 rounded-2xl shadow-2xl shadow-emerald-500/10 p-4 space-y-3" x-cloak>
+    <div class="flex items-center justify-between gap-2">
+      <p class="font-bold text-emerald-400 text-sm flex items-center gap-2">
+        <i class="fa-solid fa-wand-magic-sparkles"></i>
+        Magic link generado
+      </p>
+      <button @click="dismissDevPreview()" class="text-slate-500 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <p class="text-xs text-slate-400">
+      Modo dev: el email no se envía. Tocá <strong class="text-emerald-300">Entrar</strong> para autenticarte sin abrir la terminal.
+    </p>
+    <div class="break-all text-emerald-200 bg-slate-950/70 p-2.5 rounded-lg font-mono text-[11px] leading-relaxed border border-emerald-500/20" x-text="previewLink"></div>
+    <div class="flex gap-2">
+      <button @click="copyPreviewLink()" class="flex-1 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition">
+        <i class="fa-solid fa-copy"></i>
+        <span x-text="copyButtonLabel"></span>
+      </button>
+      <button @click="enterViaPreview()" class="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition">
+        <i class="fa-solid fa-arrow-right"></i> Entrar
+      </button>
+    </div>
+  </div>

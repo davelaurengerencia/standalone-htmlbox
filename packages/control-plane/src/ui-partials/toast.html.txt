@@ -1,0 +1,3 @@
+    <div x-show="toast" x-transition
+         class="fixed bottom-4 right-4 px-4 py-2 bg-emerald-600 rounded-xl text-sm shadow-lg"
+         x-text="toast"></div>

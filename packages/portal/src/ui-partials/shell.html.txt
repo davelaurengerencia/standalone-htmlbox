@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="es" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HTMLBox — Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.5/dist/cdn.min.js" defer></script>
+
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+    [x-cloak] { display: none !important; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    .glass-panel {
+      background: rgba(30, 41, 59, 0.7);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .code-editor { tab-size: 2; }
+    @media (pointer: coarse) {
+      button.btn-touch, input, select, textarea { min-height: 44px; }
+    }
+    /* Drag-over visual feedback */
+    .drag-active {
+      background: rgba(99, 102, 241, 0.08) !important;
+      border-color: rgb(99, 102, 241) !important;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col overflow-hidden" x-data="portalApp()" x-init="init()" x-cloak>
+
+
+  <!-- ============ HEADER ============ -->
+  <htmlbox-partial name="header"></htmlbox-partial>
+
+  <!-- ============ LOGIN ============ -->
+  <template x-if="!user">
+    <htmlbox-partial name="login"></htmlbox-partial>
+  </template>
+
+  <!-- ============ APP (con sesión) ============ -->
+  <template x-if="user">
+    <div class="flex-1 flex overflow-hidden relative">
+
+      <!-- Sidebar backdrop mobile -->
+      <div x-show="sidebarOpen" @click="sidebarOpen = false"
+           class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-30 lg:hidden"></div>
+      <htmlbox-partial name="sidebar"></htmlbox-partial>
+
+      <htmlbox-partial name="main-panel"></htmlbox-partial>
+
+      <htmlbox-partial name="modal-new-box"></htmlbox-partial>
+
+      <htmlbox-partial name="modal-share"></htmlbox-partial>
+
+      <htmlbox-partial name="toast"></htmlbox-partial>
+
+      <htmlbox-partial name="modal-ai-schema"></htmlbox-partial>
+    </div>
+  </template>
+
+  <!-- ============ DEV PREVIEW OVERLAY ============ -->
+  <htmlbox-partial name="dev-preview-overlay"></htmlbox-partial>
+
+  <htmlbox-partial name="app-script"></htmlbox-partial>
+</body>
+</html>

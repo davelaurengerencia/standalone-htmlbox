@@ -1,0 +1,64 @@
+      <section class="max-w-6xl mx-auto p-6 space-y-6">
+          <!-- Crear tenant (solo platform owner) -->
+          <template x-if="user.is_platform_owner">
+            <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+              <h2 class="text-sm font-bold uppercase tracking-wider text-slate-400">Crear tenant</h2>
+              <form @submit.prevent="createTenant()" class="flex flex-wrap gap-2">
+                <input x-model="newTenant.slug" placeholder="slug" required
+                       class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm flex-1 min-w-[120px]">
+                <input x-model="newTenant.name" placeholder="Nombre del tenant" required
+                       class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px]">
+                <button class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-medium">
+                  <i class="fa-solid fa-plus mr-1"></i> Crear
+                </button>
+              </form>
+            </div>
+          </template>
+
+          <!-- Lista de tenants -->
+          <div>
+            <h2 class="text-sm font-bold uppercase tracking-wider text-slate-400 mb-2">Tenants</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <template x-for="t in tenants" :key="t.id">
+                <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2 cursor-pointer hover:border-indigo-500 transition"
+                     @click="selectTenant(t)">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <div class="font-bold" x-text="t.name"></div>
+                      <div class="text-xs text-slate-500 font-mono" x-text="t.slug"></div>
+                    </div>
+                    <span class="text-xs px-2 py-0.5 rounded-full"
+                          :class="t.status === 'active' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'"
+                          x-text="t.status"></span>
+                  </div>
+                </div>
+              </template>
+              <template x-if="tenants.length === 0">
+                <div class="p-6 text-center text-slate-500 text-sm">No pertenecés a ningún tenant todavía.</div>
+              </template>
+            </div>
+          </div>
+
+          <!-- Workspaces del tenant seleccionado -->
+          <template x-if="currentTenant">
+            <div class="space-y-3">
+              <h2 class="text-sm font-bold uppercase tracking-wider text-slate-400">
+                Workspaces — <span class="text-indigo-400" x-text="currentTenant.slug"></span>
+              </h2>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <template x-for="w in workspaces" :key="w.id">
+                  <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800">
+                    <div class="flex items-center justify-between">
+                      <div>
+                        <div class="font-bold" x-text="w.name"></div>
+                        <div class="text-xs text-slate-500">
+                          <span x-text="w.box_count"></span> boxes
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+        </section>

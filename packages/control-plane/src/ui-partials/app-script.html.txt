@@ -1,0 +1,93 @@
+  <script>
+    function adminApp() {
+      return {
+        user: null,
+        email: '',
+        busy: false,
+        lastMessage: '',
+        previewLink: null,
+        tenants: [],
+        currentTenant: null,
+        workspaces: [],
+        newTenant: { slug: '', name: '' },
+        toast: null,
+        _toastTimer: null,
+
+        async init() {
+          await this.loadMe()
+        },
+
+        async loadMe() {
+          const res = await fetch('/api/auth/me', { credentials: 'include' })
+          const data = await res.json()
+          this.user = data.user
+          if (this.user) await this.loadTenants()
+        },
+
+        async requestMagicLink() {
+          this.busy = true
+          this.lastMessage = ''
+          this.previewLink = null
+          try {
+            const res = await fetch('/api/auth/request', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ email: this.email }),
+            })
+            const data = await res.json()
+            this.lastMessage = data.message || 'Listo. Revisá tu email.'
+            if (data._dev_preview) this.previewLink = data._dev_preview
+          } catch (err) {
+            this.lastMessage = 'Error: ' + err.message
+          } finally {
+            this.busy = false
+          }
+        },
+
+        async logout() {
+          await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+          this.user = null
+          this.tenants = []
+          this.currentTenant = null
+          this.workspaces = []
+        },
+
+        async loadTenants() {
+          const res = await fetch('/api/me/tenants', { credentials: 'include' })
+          const data = await res.json()
+          this.tenants = data.tenants ?? []
+        },
+
+        async createTenant() {
+          const res = await fetch('/api/tenants', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(this.newTenant),
+          })
+          const data = await res.json()
+          if (data.tenant) {
+            this.newTenant = { slug: '', name: '' }
+            await this.loadTenants()
+            this.showToast('Tenant creado.')
+          } else {
+            this.showToast('Error: ' + (data.error || 'desconocido'))
+          }
+        },
+
+        async selectTenant(t) {
+          this.currentTenant = t
+          const res = await fetch(`/api/tenants/${t.id}/workspaces`, { credentials: 'include' })
+          const data = await res.json()
+          this.workspaces = data.workspaces ?? []
+        },
+
+        showToast(msg) {
+          this.toast = msg
+          clearTimeout(this._toastTimer)
+          this._toastTimer = setTimeout(() => { this.toast = null }, 3000)
+        },
+      }
+    }
+  </script>
