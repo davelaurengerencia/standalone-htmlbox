@@ -94,7 +94,6 @@
 
     debugLog('boot', window.HTMLBOX_PORTAL_VERSION || window.HTMLBOX_ADMIN_VERSION || 'dev')
 
-  <script>
     function adminApp() {
       return {
         user: null,
