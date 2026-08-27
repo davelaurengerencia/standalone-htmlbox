@@ -24,6 +24,15 @@ test('securityHeaders whitelist de CDNs populares en script-src', () => {
   assert.match(csp, /https:\/\/cdnjs\.cloudflare\.com/, 'cdnjs')
 })
 
+test('securityHeaders connect-src permite APIs externas HTTPS', () => {
+  const h = securityHeaders('public')
+  const csp = h['Content-Security-Policy']
+  // SPAs del usuario típicamente llaman APIs externas (fetch/XHR/WebSocket).
+  // El host 'self' es para endpoints internos del box; https: para todo lo demás.
+  assert.match(csp, /connect-src[^;]*'self'[^;]*https:/, 'permite self + https')
+  assert.match(csp, /wss:/, 'permite WebSockets seguros')
+})
+
 test('securityHeaders caja privado también recibe headers equivalentes', () => {
   const h = securityHeaders('private')
   assert.equal(h['Cross-Origin-Opener-Policy'], 'same-origin')

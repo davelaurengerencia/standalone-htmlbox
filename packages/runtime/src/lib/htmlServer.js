@@ -20,7 +20,10 @@ export function securityHeaders(visibility) {
     "style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://fonts.googleapis.com https://cdnjs.cloudflare.com",
     "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:",
     "img-src 'self' data: https:",
-    "connect-src 'self'",
+    // SPAs del usuario típicamente llaman APIs externas (fetch/XHR/WebSocket).
+    // Permitimos HTTPS para no romper el caso normal; el resto del CSP sigue
+    // bloqueando XSS y embebidos.
+    "connect-src 'self' https: wss:",
     "frame-ancestors 'self'",
     "base-uri 'self'",
     "form-action 'self'",
