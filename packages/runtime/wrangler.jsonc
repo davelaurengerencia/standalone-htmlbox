@@ -41,10 +41,16 @@
   // namespace, devuelve null y el dispatcher cae al path viejo
   // (fetchActiveHtml + serveBoxHtml).
   //
+  // `remote: true` es REQUERIDO — wrangler --local NO emula dispatch
+  // namespaces (warning explícito en cada boot). Con `remote: true`, las
+  // llamadas .get()/.fetch() van contra el namespace real en Cloudflare.
+  // Costo: una llamada extra cross-network por cada GET, pero a cambio
+  // podés testear el ciclo WFP completo desde local sin deployar runtime.
+  //
   // Si esto falla o el namespace se borra accidentalmente, todos los boxes
   // siguen sirviendo por el path viejo (graceful degradation).
   "dispatch_namespaces": [
-    { "binding": "BOX_DISPATCH", "namespace": "htmlbox-boxes" }
+    { "binding": "BOX_DISPATCH", "namespace": "htmlbox-boxes", "remote": true }
   ],
 
   "observability": { "enabled": true }
