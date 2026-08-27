@@ -702,22 +702,27 @@
           this.initCM(container)
         },
 
-        // initCM() hace el mount puro. CM6 es ESM puro — importamos
-        // dinámicamente desde esm.sh (4 imports en paralelo: core,
-        // lang-html, commands para keymaps, theme one-dark). No usar
-        // arrow functions en el updateListener — Alpine proxy-ea 'this'.
+        // initCM() hace el mount puro. CM6 se distribuye como subpackages
+        // individuales (@codemirror/state, @codemirror/view, etc.); el
+        // meta-package `codemirror` solo tiene 6.0.x y 6.65.7 en npm, no
+        // llega a 6.65.1 — por eso importamos cada parte desde su
+        // subpackage. Importamos 5 módulos en paralelo: state, view,
+        // commands (keymaps), lang-html, theme one-dark. Sin usar arrow
+        // functions en el updateListener — Alpine proxy-ea 'this'.
         async initCM(container) {
           this._cmReady = (async () => {
             const [
-              { EditorView, EditorState, basicSetup, lineNumbers, history, keymap },
+              { EditorState },
+              { EditorView, lineNumbers, keymap },
+              { defaultKeymap, history, historyKeymap },
               { html },
-              { defaultKeymap, historyKeymap },
               { oneDark },
             ] = await Promise.all([
-              import('https://esm.sh/codemirror@6.65.1'),
-              import('https://esm.sh/@codemirror/lang-html@6.4.9'),
-              import('https://esm.sh/@codemirror/commands@6.5.0'),
-              import('https://esm.sh/@codemirror/theme-one-dark@6.1.2'),
+              import('https://esm.sh/@codemirror/state@6.7.1'),
+              import('https://esm.sh/@codemirror/view@6.43.9'),
+              import('https://esm.sh/@codemirror/commands@6.11.0'),
+              import('https://esm.sh/@codemirror/lang-html@6.4.12'),
+              import('https://esm.sh/@codemirror/theme-one-dark@6.1.3'),
             ])
 
             // CM → Alpine: solo en docChanged (no en selección / scroll /

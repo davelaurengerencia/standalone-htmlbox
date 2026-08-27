@@ -67,20 +67,25 @@ mountCMIfNeeded() {
 
 async initCM(container) {
   // CM6 es ESM puro. Importamos desde esm.sh (CDN que wrappea cada
-  // dependencia en un módulo ESM con deps resueltas). Tres imports en
-  // paralelo: codemirror core, lang-html (que ya trae lang-javascript y
-  // lang-css para bloques <script>/<style> embebidos), theme-one-dark.
+  // dependencia en un módulo ESM con deps resueltas). CM6 se distribuye
+  // como subpackages individuales (@codemirror/*) — el meta-package
+  // `codemirror` solo tiene versiones muy viejas y no llega a 6.65.x.
+  // Cinco imports en paralelo: state, view, commands (keymaps),
+  // lang-html (que ya trae lang-javascript y lang-css para bloques
+  // <script>/<style> embebidos), theme-one-dark.
   this._cmReady = (async () => {
     const [
-      { EditorView, EditorState, basicSetup, lineNumbers, history, keymap },
+      { EditorState },
+      { EditorView, lineNumbers, keymap },
+      { defaultKeymap, history, historyKeymap },
       { html },
-      { defaultKeymap, historyKeymap },
       { oneDark },
     ] = await Promise.all([
-      import('https://esm.sh/codemirror@6.65.1'),
-      import('https://esm.sh/@codemirror/lang-html@6.4.9'),
-      import('https://esm.sh/@codemirror/commands@6.5.0'),
-      import('https://esm.sh/@codemirror/theme-one-dark@6.1.2'),
+      import('https://esm.sh/@codemirror/state@6.7.1'),
+      import('https://esm.sh/@codemirror/view@6.43.9'),
+      import('https://esm.sh/@codemirror/commands@6.11.0'),
+      import('https://esm.sh/@codemirror/lang-html@6.4.12'),
+      import('https://esm.sh/@codemirror/theme-one-dark@6.1.3'),
     ])
 
     // CM → Alpine: cada cambio del doc empuja a editorHtml. UpdateListener
@@ -215,11 +220,14 @@ CM6 mantiene su propio `EditorState` (undo stack, cursor, syntax). Forzar re-ren
 
 | Recurso | Versión | Por qué |
 |---|---|---|
-| `https://esm.sh/codemirror@6.65.1` | 6.65.1 | Última estable de la 6.x (la 7.x está en preview). |
-| `https://esm.sh/@codemirror/lang-html@6.4.9` | 6.4.9 | Trae `lang-javascript` y `lang-css` para bloques embebidos. |
-| `https://esm.sh/@codemirror/commands@6.5.0` | 6.5.0 | Para `defaultKeymap` y `historyKeymap` (Ctrl+Z, etc.). |
-| `https://esm.sh/@codemirror/theme-one-dark@6.1.2` | 6.1.2 | Equivalente al `vs-dark` de Monaco. |
+| `https://esm.sh/@codemirror/state@6.7.1` | 6.7.1 | `EditorState` (state interno del editor). |
+| `https://esm.sh/@codemirror/view@6.43.9` | 6.43.9 | `EditorView`, `lineNumbers`, `keymap`. |
+| `https://esm.sh/@codemirror/commands@6.11.0` | 6.11.0 | `defaultKeymap`, `history`, `historyKeymap` (Ctrl+Z, etc.). |
+| `https://esm.sh/@codemirror/lang-html@6.4.12` | 6.4.12 | `html()` — trae `lang-javascript` y `lang-css` para bloques embebidos. |
+| `https://esm.sh/@codemirror/theme-one-dark@6.1.3` | 6.1.3 | Equivalente al `vs-dark` de Monaco. |
 | `https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.11/beautify-html.min.js` | 1.14.11 | UMD, expone `window.html_beautify`. |
+
+**Por qué importamos desde cada `@codemirror/*` y no del meta-package `codemirror`**: el package `codemirror` en npm solo tiene 4 versiones (`6.0.0`, `6.0.1`, `6.65.7`, `6.0.2`); no existe `codemirror@6.65.1`. CM6 se distribuye como subpackages individuales — el editor real está en `@codemirror/state` + `@codemirror/view`, y se compone con los demás `@codemirror/*` que necesites. Importar de `codemirror` directamente pin a versiones muy viejas.
 
 **Por qué esm.sh y no jsdelivr/unpkg directo para CM6**: esm.sh wrappea cada paquete npm en un módulo ESM con todas sus deps resueltas (incluso las peer deps que CM6 tiene entre sus sub-paquetes, que son un quilombo). jsdelivr sirve el `main` de cada paquete tal cual, que a veces es CJS — incompatible con `<script type="module">`. esm.sh es la opción más predecible para browser sin bundler.
 

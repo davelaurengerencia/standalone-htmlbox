@@ -95,16 +95,20 @@ function makeStubApp({ cmEditorView = null, refs = {}, activeTab = 'preview', im
     async initCM(container) {
       const imp = stub._importFn || ((u) => import(u))
       stub._cmReady = (async () => {
+        // CM6 se distribuye como subpackages individuales. Importamos
+        // los 5 módulos en paralelo. Mirrors app-script.html.txt EXACTO.
         const [
-          { EditorView, EditorState, lineNumbers, history, keymap },
+          { EditorState },
+          { EditorView, lineNumbers, keymap },
+          { defaultKeymap, history, historyKeymap },
           { html },
-          { defaultKeymap, historyKeymap },
           { oneDark },
         ] = await Promise.all([
-          imp('https://esm.sh/codemirror@6.65.1'),
-          imp('https://esm.sh/@codemirror/lang-html@6.4.9'),
-          imp('https://esm.sh/@codemirror/commands@6.5.0'),
-          imp('https://esm.sh/@codemirror/theme-one-dark@6.1.2'),
+          imp('https://esm.sh/@codemirror/state@6.7.1'),
+          imp('https://esm.sh/@codemirror/view@6.43.9'),
+          imp('https://esm.sh/@codemirror/commands@6.11.0'),
+          imp('https://esm.sh/@codemirror/lang-html@6.4.12'),
+          imp('https://esm.sh/@codemirror/theme-one-dark@6.1.3'),
         ])
 
         const updateListener = EditorView.updateListener.of(function (update) {
@@ -175,11 +179,12 @@ function makeStubApp({ cmEditorView = null, refs = {}, activeTab = 'preview', im
   return stub
 }
 
-// ============ Mock de CodeMirror 6 (EditorView + EditorState) ============
+// ============ Mock de CodeMirror 6 (subpackages individuales) ============
 //
-// Devuelve un array de 4 módulos mockeados en el orden esperado por
-// initCM: [core, lang-html, commands, theme]. Los tests inyectan esto
-// vía `_importFn` en makeStubApp.
+// Devuelve un array de 5 módulos mockeados en el orden esperado por
+// initCM: [state, view, commands, lang-html, theme-one-dark]. Cada
+// elemento es lo que el import real devuelve (un namespace object).
+// Los tests inyectan esto vía `_importFn` en makeStubApp.
 
 function makeCMMock() {
   const listeners = []
@@ -215,19 +220,12 @@ function makeCMMock() {
   fakeEditorView.theme = () => ({ __theme: true })
 
   return [
-    { EditorView: fakeEditorView, EditorState: fakeState, lineNumbers: () => ({}), history: () => ({}), keymap: fakeKeymap },
-    { html: () => ({ __langHtml: true }) },
-    { defaultKeymap: [], historyKeymap: [] },
-    { oneDark: {} },
+    { EditorState: fakeState },                                                          // @codemirror/state
+    { EditorView: fakeEditorView, lineNumbers: () => ({}), keymap: fakeKeymap },         // @codemirror/view
+    { defaultKeymap: [], history: () => ({}), historyKeymap: [] },                       // @codemirror/commands
+    { html: () => ({ __langHtml: true }) },                                              // @codemirror/lang-html
+    { oneDark: {} },                                                                     // @codemirror/theme-one-dark
   ]
-}
-
-function makeImportFn(urls) {
-  return async (url) => {
-    const idx = urls.indexOf(url)
-    if (idx === -1) throw new Error(`Mock no preparado para ${url}`)
-    return urls[`__${idx}__`] || urls[idx]
-  }
 }
 
 // ============ reindentHtml() ============
@@ -363,12 +361,13 @@ test('mountCMIfNeeded: NO monta si $refs.cmContainer no existe', async () => {
 })
 
 test('mountCMIfNeeded: monta cuando activeTab === "editor" y refs OK', async () => {
-  const [core, langHtml, commands, theme] = makeCMMock()
+  const [state, view, commands, langHtml, theme] = makeCMMock()
   const importFn = async (url) => {
-    if (url.includes('codemirror@6')) return core
-    if (url.includes('lang-html')) return langHtml
-    if (url.includes('commands')) return commands
-    if (url.includes('theme-one-dark')) return theme
+    if (url.includes('@codemirror/state')) return state
+    if (url.includes('@codemirror/view')) return view
+    if (url.includes('@codemirror/commands')) return commands
+    if (url.includes('@codemirror/lang-html')) return langHtml
+    if (url.includes('@codemirror/theme-one-dark')) return theme
     throw new Error(`Mock no preparado para ${url}`)
   }
   const app = makeStubApp({
@@ -384,24 +383,26 @@ test('mountCMIfNeeded: monta cuando activeTab === "editor" y refs OK', async () 
 
 // ============ initCM (dynamic import mockeado) ============
 
-test('initCM: importa 4 módulos en paralelo (codemirror, lang-html, commands, theme)', async () => {
+test('initCM: importa 5 módulos en paralelo (state, view, commands, lang-html, theme)', async () => {
   const calls = []
-  const [core, langHtml, commands, theme] = makeCMMock()
+  const [state, view, commands, langHtml, theme] = makeCMMock()
   const importFn = async (url) => {
     calls.push(url)
-    if (url.includes('codemirror@6')) return core
-    if (url.includes('lang-html')) return langHtml
-    if (url.includes('commands')) return commands
-    if (url.includes('theme-one-dark')) return theme
+    if (url.includes('@codemirror/state')) return state
+    if (url.includes('@codemirror/view')) return view
+    if (url.includes('@codemirror/commands')) return commands
+    if (url.includes('@codemirror/lang-html')) return langHtml
+    if (url.includes('@codemirror/theme-one-dark')) return theme
     throw new Error(`Mock no preparado para ${url}`)
   }
   const app = makeStubApp({ importFn })
   await app.initCM({ tagName: 'DIV' })
-  assert.equal(calls.length, 4)
-  assert.ok(calls[0].includes('codemirror@6'))
-  assert.ok(calls[1].includes('lang-html'))
-  assert.ok(calls[2].includes('commands'))
-  assert.ok(calls[3].includes('theme-one-dark'))
+  assert.equal(calls.length, 5)
+  assert.ok(calls[0].includes('@codemirror/state'))
+  assert.ok(calls[1].includes('@codemirror/view'))
+  assert.ok(calls[2].includes('@codemirror/commands'))
+  assert.ok(calls[3].includes('@codemirror/lang-html'))
+  assert.ok(calls[4].includes('@codemirror/theme-one-dark'))
   assert.ok(app._cmEditorView)
 })
 
@@ -568,8 +569,8 @@ test('shell.html.txt: Alpine sigue cargándose (sin regresión)', () => {
   assert.match(src, /alpinejs@3\.13\.5/, 'Alpine debe seguir cargándose (sin regresión)')
 })
 
-test('spec htmlbox-spec-codemirror-editor.md existe en la raíz del repo', () => {
+test('spec htmlbox-spec-codemirror-editor-IMPLEMENTED.md existe en la raíz del repo', () => {
   const repoRoot = path.join(here, '..', '..', '..')
-  const specPath = path.join(repoRoot, 'htmlbox-spec-codemirror-editor.md')
+  const specPath = path.join(repoRoot, 'htmlbox-spec-codemirror-editor-IMPLEMENTED.md')
   assert.ok(fs.existsSync(specPath), `spec debe existir en ${specPath}`)
 })
