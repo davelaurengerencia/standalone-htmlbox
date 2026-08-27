@@ -94,6 +94,40 @@
 
     debugLog('boot', window.HTMLBOX_PORTAL_VERSION || window.HTMLBOX_ADMIN_VERSION || 'dev')
 
+    // ============ Editor split-view (htmlbox-spec-editor-split-view.md) ============
+    //
+    // Helper puros que cortan y reensamblan el HTML del editor para soportar
+    // el selector Todo | HTML | JS | CSS — basado en regex con flag 'd' para
+    // obtener match.indices absolutos, así reensamblamos exactamente el mismo
+    // string sin reserializar nada (no usamos DOMParser porque reordena
+    // atributos y mangle entities). Son funciones sueltas globales; en el
+    // browser se usan via window.findEditableBlocks(); en Node tests se
+    // importan via require() del guard de exports al final.
+
+    function findEditableBlocks(html) {
+      const re = /<(script|style)\b([^>]*)>([\s\S]*?)<\/\1>/gid
+      const scripts = []
+      const styles = []
+      let m
+      while ((m = re.exec(html))) {
+        const tag = m[1].toLowerCase()
+        const attrs = m[2]
+        if (tag === 'script' && /\bsrc\s*=/i.test(attrs)) continue
+        const [innerStart, innerEnd] = m.indices[3]
+        const block = { innerStart, innerEnd, content: m[3] }
+        if (tag === 'script') scripts.push(block)
+        else styles.push(block)
+      }
+      return {
+        script: scripts.length === 1 ? scripts[0] : null,
+        style: styles.length === 1 ? styles[0] : null,
+      }
+    }
+
+    function spliceBlock(html, block, newContent) {
+      return html.slice(0, block.innerStart) + newContent + html.slice(block.innerEnd)
+    }
+
     // ============ Constantes de seed ============
 
     const SEED_DASHBOARD = `<!doctype html>
@@ -203,6 +237,13 @@
 
         // editor
         editorHtml: '',
+        // editor split-view (Todo | HTML | JS | CSS) — spec editor-split-view.
+        // _editorFullHtml guarda el HTML COMPLETO cuando el textarea está
+        // mostrando solo un fragmento (vista js/css), así spliceBlock()
+        // puede reconstruirlo al cambiar de vista o al guardar.
+        editorView: 'all',       // 'all' | 'js' | 'css'
+        _editorBlocks: null,     // cache de findEditableBlocks(_editorFullHtml)
+        _editorFullHtml: '',     // snapshot del HTML completo antes de entrar a vista parcial
 
         // modales
         newBoxModalOpen: false,
@@ -282,7 +323,7 @@
           this.workspaces = []
           this.boxes = []
           this.currentBox = null
-          this.editorHtml = ''
+          this._resetEditorState('')
           this.previewLink = null
           this.showDevPreview = false
           this.userMenuOpen = false
@@ -372,7 +413,7 @@
             } else {
               this.boxes = []
               this.currentBox = null
-              this.editorHtml = ''
+              this._resetEditorState('')
             }
           } catch (err) {
             debugLog('onTenantChange:', err)
@@ -385,7 +426,7 @@
             const data = await apiFetch(`/api/boxes?workspace=${this.currentWorkspaceId}`)
             this.boxes = data.boxes ?? []
             if (this.boxes.length > 0) await this.selectBox(this.boxes[0])
-            else { this.currentBox = null; this.editorHtml = ''; this.activeTab = 'preview' }
+            else { this.currentBox = null; this._resetEditorState(''); this.activeTab = 'preview' }
           } catch (err) {
             debugLog('loadBoxes:', err)
           }
@@ -419,12 +460,12 @@
           if (!this.currentBox) return
           try {
             const data = await apiFetch(`/api/boxes/${this.currentBox.id}/active-html`)
-            this.editorHtml = data.html
+            this._resetEditorState(data.html)
           } catch (err) {
             // Si el endpoint falla (404 cuando el box no tiene versión publicada
             // todavía, 500, etc.), caemos al seed del template para que el editor
             // no se quede vacío.
-            this.editorHtml = this.seedFor(this.currentBox.template)
+            this._resetEditorState(this.seedFor(this.currentBox.template))
             debugLog('loadActiveHtml:', err)
           }
         },
@@ -450,7 +491,7 @@
               ev.target.value = ''
               return
             }
-            this.editorHtml = content
+            this._resetEditorState(content)
             this.activeTab = 'editor'
             this.showToast(`HTML cargado (${content.length} bytes). Tocá Guardar para crear v${(this.currentBox?.htmlbox_version ?? 0) + 1}.`)
           }
@@ -472,13 +513,18 @@
 
         async saveCurrentBox() {
           if (!this.currentBox) return
-          if (!this.editorHtml.trim()) {
+          // Si estamos en vista js/css, primero commitear el fragmento
+          // editado al HTML completo — si no, guardaríamos solo el <script>
+          // o el <style> suelto.
+          this._commitEditorView()
+          const fullHtml = this.editorView === 'all' ? this.editorHtml : this._editorFullHtml
+          if (!fullHtml.trim()) {
             this.showToast('El HTML está vacío.')
             return
           }
           this.saving = true
           try {
-            const size = new Blob([this.editorHtml]).size
+            const size = new Blob([fullHtml]).size
             const urlData = await apiFetch(`/api/boxes/${this.currentBox.id}/upload-url`, {
               method: 'POST',
               body: { size, contentType: 'text/html' },
@@ -487,7 +533,7 @@
             const putRes = await fetch(urlData.uploadUrl, {
               method: 'PUT',
               headers: { 'Content-Type': 'text/html' },
-              body: this.editorHtml,
+              body: fullHtml,
             })
             if (!putRes.ok) throw new Error(`PUT R2 falló: ${putRes.status}`)
 
@@ -558,11 +604,11 @@
               await this.selectBox(fresh)
               // Si subió archivo, sembramos el editor con eso y guardamos como v1.
               if (this.newBox.htmlContent) {
-                this.editorHtml = this.newBox.htmlContent
+                this._resetEditorState(this.newBox.htmlContent)
                 this.activeTab = 'editor'
                 await this.saveCurrentBox()
               } else {
-                this.editorHtml = this.seedFor(this.newBox.template)
+                this._resetEditorState(this.seedFor(this.newBox.template))
                 this.activeTab = 'editor'
               }
             }
@@ -630,8 +676,64 @@
           return (this.editorHtml || '').length
         },
 
+        // Devuelve SIEMPRE el HTML completo del box, no el fragmento que esté
+        // mostrando el textarea (cuando la vista es 'js' o 'css').
+        // saveCurrentBox / aiAnalyze / aiApply / previewSrcdoc deben leer ESTE
+        // getter, no `this.editorHtml`, para no guardar ni mandar al server
+        // solo un <script> o un <style>.
+        get _fullHtml() {
+          return this.editorView === 'all' ? (this.editorHtml || '') : (this._editorFullHtml || '')
+        },
+
+        // Reset unificado cuando se asigna un HTML nuevo al editor (cargar
+        // box, subir archivo, crear box, logout, vaciar lista). Vuelve
+        // automáticamente a vista 'all' con el snapshot completo.
+        _resetEditorState(html) {
+          this.editorHtml = html || ''
+          this.editorView = 'all'
+          this._editorFullHtml = html || ''
+          this._editorBlocks = null
+        },
+
+        // --- Editor split-view (Todo | HTML | JS | CSS) ---
+        // Llamar al click de cada botón del selector. Si estábamos en js/css,
+        // primero reconstruye _editorFullHtml con lo editado, y después
+        // entra a la nueva vista. Si se pide una vista sin un único bloque
+        // disponible (0 o 2+), avisa con un toast y no cambia la vista.
+        setEditorView(view) {
+          if (view === this.editorView) return
+          this._commitEditorView()
+          if (view === 'all') {
+            this.editorView = 'all'
+            this.editorHtml = this._editorFullHtml
+            return
+          }
+          const blocks = findEditableBlocks(this._editorFullHtml)
+          const block = view === 'js' ? blocks.script : blocks.style
+          if (!block) {
+            this.showToast(view === 'js' ? 'No hay un único <script> para editar por separado.' : 'No hay un único <style> para editar por separado.')
+            return
+          }
+          this._editorBlocks = blocks
+          this.editorView = view
+          this.editorHtml = block.content
+        },
+
+        // Mete de vuelta el contenido del textarea (vista parcial) dentro
+        // del HTML completo guardado en _editorFullHtml. Llamado antes de
+        // cambiar de vista Y antes de saveCurrentBox().
+        _commitEditorView() {
+          if (this.editorView === 'all') {
+            this._editorFullHtml = this.editorHtml
+            return
+          }
+          const block = this.editorView === 'js' ? (this._editorBlocks && this._editorBlocks.script) : (this._editorBlocks && this._editorBlocks.style)
+          if (!block) return
+          this._editorFullHtml = spliceBlock(this._editorFullHtml, block, this.editorHtml)
+        },
+
         get previewSrcdoc() {
-          const html = this.editorHtml || ''
+          const html = this._fullHtml
           if (!html) return ''
           const sdkTag = '<script src="/_sdk/htmlbox.js?boxId=preview&v=public"><\/script>'
           if (/<\/body\s*>/i.test(html)) {
@@ -641,6 +743,13 @@
         },
 
         formatHTML() {
+          // Si el usuario estaba en vista js/css, commitear el fragmento y
+          // volver a 'all' — el re-indent opera sobre el HTML completo, no
+          // sobre un fragmento suelto.
+          this._commitEditorView()
+          this.editorView = 'all'
+          this.editorHtml = this._editorFullHtml
+
           // Re-indenta simple (no es un beautifier completo, pero ayuda).
           let level = 0
           const out = []
@@ -657,7 +766,7 @@
               level++
             }
           }
-          this.editorHtml = out.join('\n')
+          this._resetEditorState(out.join('\n'))
           this.showToast('HTML re-indentado.')
         },
 
@@ -674,7 +783,11 @@
             if (!silent) this.showToast('Seleccioná un box antes de analizar.')
             return
           }
-          if (!this.editorHtml || !this.editorHtml.trim()) {
+          // La IA necesita el HTML completo (no solo el <script> si el
+          // usuario está en vista js). _fullHtml ya devuelve _editorFullHtml
+          // cuando editorView !== 'all' y editorHtml cuando sí.
+          const fullHtml = this._fullHtml
+          if (!fullHtml || !fullHtml.trim()) {
             if (!silent) this.showToast('Escribí o pegá HTML antes de analizar.')
             return
           }
@@ -683,7 +796,7 @@
           try {
             const data = await apiFetch(`${CONTROL_PLANE}/api/ai/analyze-html`, {
               method: 'POST',
-              body: { boxId: this.currentBox.id, html: this.editorHtml },
+              body: { boxId: this.currentBox.id, html: fullHtml },
             })
             if (!data.tables || data.tables.length === 0) {
               this.showToast('La IA no propuso tablas para este HTML.')
@@ -737,10 +850,11 @@
             // el HTML, guarda nueva versión. Por eso mandamos el HTML actual
             // del editor (no el que tenía el server cuando se hizo el
             // análisis): si el tenant editó el box, queremos que el apply
-            // corra sobre lo que está viendo AHORA.
+            // corra sobre lo que está viendo AHORA. _fullHtml garantiza que
+            // mandamos el HTML completo aunque la vista esté en js/css.
             const result = await apiFetch(`${CONTROL_PLANE}/api/ai/analyses/${this.aiSchema.analysisId}/apply`, {
               method: 'POST',
-              body: { html: this.editorHtml || '' },
+              body: { html: this._fullHtml },
             })
             const appliedCount = (result.tables || []).length
             const skippedCount = (result.skipped || []).length

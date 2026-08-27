@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev --port 8782",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "test": "node --test __tests__/*.test.js"
   },
   "dependencies": {
     "@htmlbox/shared": "*"
