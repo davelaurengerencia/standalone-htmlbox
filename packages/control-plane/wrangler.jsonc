@@ -11,6 +11,7 @@
     "HTMLBOX_SESSION_DOMAIN": ".htmlbox.dev",
     "HTMLBOX_RUNTIME_ORIGIN": "https://htmlbox.dev",
     "HTMLBOX_PUBLIC_ORIGIN": "https://controlplane.htmlbox.dev",
+    "HTMLBOX_PORTAL_ORIGIN": "https://portal.htmlbox.dev",
     "HTMLBOX_EMAIL_MODE": "prod",
     "HTMLBOX_EMAIL_FROM_ADDRESS": "no-reply@htmlbox.dev",
     "HTMLBOX_EMAIL_FROM_NAME": "HTMLBox"

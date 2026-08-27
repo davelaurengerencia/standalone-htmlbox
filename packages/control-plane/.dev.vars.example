@@ -16,3 +16,16 @@ HTMLBOX_TURSO_ORG=
 # usa si necesitamos firmar URLs fuera del Worker.
 HTMLBOX_R2_ACCESS_KEY_ID=
 HTMLBOX_R2_SECRET_ACCESS_KEY=
+
+# Origen del portal (para redirigir después del magic-link login).
+# Sobreescribe el valor default de wrangler.jsonc#vars para dev.
+HTMLBOX_PORTAL_ORIGIN=http://localhost:8782
+
+# Secreto compartido entre control-plane y runtime (A3). El runtime debe
+# mandar este valor en el header X-HTMLBox-Internal-Secret al llamar a
+# /api/internal/boxes/:id/db, /api/internal/boxes/:id/membership y
+# /api/internal/whoami — sin él, el control-plane rechaza con 403.
+# Generá uno con:  openssl rand -hex 32
+# En prod usá:  wrangler secret put HTMLBOX_INTERNAL_SECRET
+# (en ambos Workers, control-plane y runtime, con el MISMO valor).
+HTMLBOX_INTERNAL_SECRET=

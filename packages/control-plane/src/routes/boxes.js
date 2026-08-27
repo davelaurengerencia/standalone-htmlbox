@@ -11,7 +11,7 @@
 // y se puede reintentar desde el admin panel.
 
 import { boxId as newBoxId, shareId, isValidBoxSlug, isValidTenantSlug } from '@htmlbox/shared'
-import { createBoxDatabase, ensureBoxSchema } from '../lib/tursoClient.js'
+import { createBoxDatabase, ensureBoxSchema, deleteBoxDatabase } from '../lib/tursoClient.js'
 import { getSessionIdFromRequest, validateSession, assertTenantScope, assertWorkspaceScope, requireRole } from '../lib/session.js'
 
 function json(data, status = 200, extraHeaders = {}) {
@@ -228,7 +228,8 @@ async function deleteBox(request, env, boxId) {
   if (error) return error
 
   const row = await env.DB.prepare(`
-    SELECT b.id, b.workspace_id, w.tenant_id AS ws_tenant_id, b.tenant_id AS box_tenant_id
+    SELECT b.id, b.workspace_id, w.tenant_id AS ws_tenant_id, b.tenant_id AS box_tenant_id,
+           b.turso_db_url
       FROM htmlbox_boxes b
       JOIN htmlbox_workspaces w ON w.id = b.workspace_id
      WHERE b.id = ?1
@@ -238,9 +239,24 @@ async function deleteBox(request, env, boxId) {
   const ws = await assertWorkspaceScope(env, user, row.workspace_id, 'borrar box')
   requireRole(ws, 'owner')
 
-  // Marcar borrado (no destruimos histórico todavía — fase 5)
+  // Hard-delete: borramos el row y todas sus versiones en D1. La Turso DB
+  // queda huérfana hasta que la limpiemos abajo (best-effort) — sin esa
+  // limpieza, seguiría consumiendo cuota en Turso indefinidamente.
   await env.DB.prepare(`DELETE FROM htmlbox_boxes WHERE id = ?1`).bind(boxId).run()
   await env.DB.prepare(`DELETE FROM htmlbox_versions WHERE box_id = ?1`).bind(boxId).run()
+
+  // Limpiar la Turso DB del box vía Platform API (best-effort).
+  // En modo local sqld no hay equivalente — la operación es no-op.
+  if (row.turso_db_url) {
+    try {
+      const result = await deleteBoxDatabase(env, row.turso_db_url)
+      if (!result.ok) {
+        console.warn(`[boxes] turso cleanup for ${boxId} skipped: ${result.reason || 'unknown'}`)
+      }
+    } catch (err) {
+      console.error(`[boxes] turso cleanup failed for ${boxId}:`, err)
+    }
+  }
 
   // Limpiar versiones en R2 (best-effort)
   try {

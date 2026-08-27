@@ -1,5 +1,14 @@
 # Secrets para htmlbox-runtime. NO commitear el .dev.vars real.
-# El runtime NO tiene secretos — toda la auth se resuelve server-side
-# llamando al control-plane con la cookie sid.
+# El runtime NO tiene secretos propios de auth — toda la auth se resuelve
+# server-side llamando al control-plane con la cookie sid.
 
 HTMLBOX_CONTROL_PLANE_ORIGIN=http://localhost:8781
+
+# Secreto compartido con control-plane (A3). El runtime debe mandar este
+# valor en el header X-HTMLBox-Internal-Secret al llamar a
+# /api/internal/boxes/:id/db, /api/internal/boxes/:id/membership y
+# /api/internal/whoami — sin él, el control-plane rechaza con 403.
+# Debe coincidir EXACTAMENTE con HTMLBOX_INTERNAL_SECRET del control-plane.
+# Generá uno con:  openssl rand -hex 32
+# En prod usá:  wrangler secret put HTMLBOX_INTERNAL_SECRET
+HTMLBOX_INTERNAL_SECRET=

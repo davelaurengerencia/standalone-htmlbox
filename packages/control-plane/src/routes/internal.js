@@ -18,6 +18,26 @@ function json(data, status = 200) {
 }
 
 export async function handleInternal(request, env, ctx, path, method) {
+  // Gate de secreto compartido con el runtime Worker. Los endpoints bajo
+  // /api/internal/boxes/* y /api/internal/whoami devuelven credenciales
+  // sensibles (Turso DB token) o gobiernan permisos, así que NO pueden
+  // ser llamados directo desde un browser con solo la cookie sid — eso
+  // habilitaría un bypass de rol (cualquier viewer podría obtener el
+  // token completo de Turso).
+  //
+  // boxes-by-share y boxes-by-slug quedan exentos: son lookups públicos
+  // (resolución shareId/tenant+slug → boxId) que el runtime hace ANTES
+  // de tener credenciales para agregar headers.
+  const requiresInternalSecret =
+    path.startsWith('/api/internal/boxes/') || path === '/api/internal/whoami'
+
+  if (requiresInternalSecret) {
+    const provided = request.headers.get('X-HTMLBox-Internal-Secret') || ''
+    if (!env.HTMLBOX_INTERNAL_SECRET || provided !== env.HTMLBOX_INTERNAL_SECRET) {
+      return json({ error: 'forbidden' }, 403)
+    }
+  }
+
   // /api/internal/whoami
   if (path === '/api/internal/whoami' && method === 'GET') {
     return await whoami(env, request)
@@ -157,7 +177,7 @@ async function getBoxDb(env, boxId, request) {
 
   const row = await env.DB.prepare(`
     SELECT b.id, b.slug, b.visibility, b.turso_status, b.turso_db_url, b.turso_db_token,
-           t.slug AS tenant_slug, b.workspace_id
+           t.slug AS tenant_slug, b.workspace_id, b.tenant_id
       FROM htmlbox_boxes b
       JOIN htmlbox_tenants t ON t.id = b.tenant_id
      WHERE b.id = ?1
@@ -166,15 +186,16 @@ async function getBoxDb(env, boxId, request) {
     return json({ box: null }, 404)
   }
 
-  // Auth: platform_owner pasa. Resto: debe ser miembro del workspace.
+  // Auth: platform_owner pasa. Resto: debe ser del mismo tenant Y miembro del workspace.
   if (!sess.is_platform_owner) {
-    if (sess.tenant_id !== row.workspace_id) {
-      // (workspace_id del box != tenant_id del user) — verificar membresía.
-      const m = await env.DB.prepare(`
-        SELECT 1 FROM htmlbox_memberships WHERE user_id = ?1 AND workspace_id = ?2
-      `).bind(sess.user_id, row.workspace_id).first()
-      if (!m) return json({ box: null }, 403)
+    if (sess.tenant_id !== row.tenant_id) {
+      // ni siquiera es del mismo tenant — cortar acá
+      return json({ box: null }, 403)
     }
+    const m = await env.DB.prepare(`
+      SELECT 1 FROM htmlbox_memberships WHERE user_id = ?1 AND workspace_id = ?2
+    `).bind(sess.user_id, row.workspace_id).first()
+    if (!m) return json({ box: null }, 403)
   }
   return json({ box: row })
 }

@@ -34,6 +34,7 @@ export default defineConfig({
           HTMLBOX_R2_MODE: 'local-fake',
           HTMLBOX_EMAIL_MODE: 'dev',
           HTMLBOX_SESSION_DOMAIN: '',
+          HTMLBOX_INTERNAL_SECRET: 'test-internal-secret-not-for-prod',
         },
       },
     }),

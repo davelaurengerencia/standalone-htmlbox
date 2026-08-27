@@ -75,8 +75,9 @@ async function getVerify(request, env) {
       headers: { 'Content-Type': 'text/html; charset=utf-8' },
     })
   }
-  // HTML con form que se auto-envía por POST a /api/auth/consume.
-  return new Response(loginConfirmHtml(token), {
+  // HTML que hace fetch JSON al consume — un submit de form HTML nativo manda
+  // x-www-form-urlencoded y rompía el parseo (A1).
+  return new Response(loginConfirmHtml(token, env.HTMLBOX_PORTAL_ORIGIN || ''), {
     status: 200,
     headers: { 'Content-Type': 'text/html; charset=utf-8' },
   })
@@ -125,15 +126,35 @@ async function postLogout(request, env) {
   return json({ ok: true }, 200, { 'Set-Cookie': buildClearCookie(request, env) })
 }
 
-function loginConfirmHtml(token) {
+function loginConfirmHtml(token, portalOrigin) {
+  // JSON.stringify evita reabrir XSS si el token (hoy hex) trajera chars raros.
+  const safeToken = JSON.stringify(token)
+  const safeOrigin = JSON.stringify(portalOrigin || '')
   return `<!doctype html><html><head><meta charset="utf-8"><title>Verificando…</title></head>
 <body style="font-family:-apple-system,sans-serif;max-width:480px;margin:60px auto;padding:0 20px;text-align:center;color:#1f2637">
   <h2 style="color:#6366f1">Verificando tu link</h2>
-  <p>Un momento…</p>
-  <form id="f" method="POST" action="/api/auth/consume" style="display:none">
-    <input name="token" value="${escape(token)}">
-  </form>
-  <script>document.getElementById('f').submit();</script>
+  <p id="status">Un momento…</p>
+  <script>
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/consume', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: ${safeToken} }),
+        })
+        const data = await res.json()
+        if (res.ok && data.ok) {
+          document.getElementById('status').textContent = 'Listo — ya podés cerrar esta pestaña o ir al portal.'
+          const portalOrigin = ${safeOrigin}
+          if (portalOrigin) setTimeout(() => { window.location.href = portalOrigin }, 1200)
+        } else {
+          document.getElementById('status').textContent = 'Error: ' + (data.error || res.status)
+        }
+      } catch (err) {
+        document.getElementById('status').textContent = 'Error: ' + err.message
+      }
+    })()
+  </script>
 </body></html>`
 }
 

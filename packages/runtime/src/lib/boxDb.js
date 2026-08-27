@@ -28,6 +28,9 @@ export async function resolveBoxDb(env, boxId, request) {
   const headers = new Headers()
   const cookie = request?.headers?.get?.('Cookie')
   if (cookie) headers.set('Cookie', cookie)
+  if (env.HTMLBOX_INTERNAL_SECRET) {
+    headers.set('X-HTMLBox-Internal-Secret', env.HTMLBOX_INTERNAL_SECRET)
+  }
 
   const res = await fetch(`${origin}/api/internal/boxes/${encodeURIComponent(boxId)}/db`, { headers })
   if (!res.ok) return null

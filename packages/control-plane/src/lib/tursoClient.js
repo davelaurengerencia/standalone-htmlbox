@@ -140,6 +140,28 @@ export async function createBoxDatabase(env, boxId) {
   return await localCreateDb(env, boxId)
 }
 
+// Borra la Turso DB del box vía Platform API. Best-effort: en modo local
+// (sqld) no hay equivalente y la operación es un no-op. El caller debe
+// envolver en try/catch igual que con R2 — si falla, logueamos y seguimos,
+// porque la box ya está borrada en D1.
+export async function deleteBoxDatabase(env, dbUrl) {
+  if (mode(env) !== 'cloud') return { ok: false, reason: 'local_mode_noop' }
+  const org = env.HTMLBOX_TURSO_ORG
+  const token = env.HTMLBOX_TURSO_PLATFORM_TOKEN
+  if (!org || !token) return { ok: false, reason: 'missing_turso_credentials' }
+  if (!dbUrl || !dbUrl.startsWith('libsql://')) return { ok: false, reason: 'invalid_url' }
+  const name = dbUrl.replace('libsql://', '').split('.')[0]
+  const res = await fetch(`${TURSO_API_BASE}/organizations/${org}/databases/${name}`, {
+    method: 'DELETE',
+    headers: tursoHeaders(env),
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    return { ok: false, status: res.status, reason: text || `turso_delete_${res.status}` }
+  }
+  return { ok: true }
+}
+
 export async function ensureBoxSchema(env, boxUrl, boxToken) {
   const client = mode(env) === 'cloud'
     ? await cloudConnect(env, boxUrl, boxToken)

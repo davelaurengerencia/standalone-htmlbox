@@ -23,11 +23,14 @@ import { handleAi } from './routes/ai.js'
 
 export { ControlPlaneDO } from './lib/do.js'  // placeholder para fase 4 (DO de estado)
 
-function corsHeaders(request, allowed = true) {
+function corsHeaders(request) {
+  // Siempre reflejamos el Origin del request (A6). Access-Control-Allow-Origin: *
+  // combinado con Allow-Credentials: true es inválido según la spec CORS — los
+  // browsers rechazan la respuesta. Si el request no trae Origin (ej: curl
+  // directo desde server-to-server), caemos a '*' como fallback defensivo.
   const origin = request.headers.get('Origin') || ''
-  const allow = allowed === true ? '*' : (Array.isArray(allowed) ? allowed.join(', ') : '')
   return {
-    'Access-Control-Allow-Origin': allow,
+    'Access-Control-Allow-Origin': origin || '*',
     'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-HTMLBox-*',
@@ -39,7 +42,7 @@ function corsHeaders(request, allowed = true) {
 function jsonError(msg, status, request) {
   return new Response(JSON.stringify({ error: msg }), {
     status,
-    headers: { 'Content-Type': 'application/json', ...corsHeaders(request, true) },
+    headers: { 'Content-Type': 'application/json', ...corsHeaders(request) },
   })
 }
 
@@ -51,7 +54,7 @@ export default {
 
     // CORS preflight
     if (method === 'OPTIONS') {
-      return new Response(null, { status: 204, headers: corsHeaders(request, true) })
+      return new Response(null, { status: 204, headers: corsHeaders(request) })
     }
 
     // Endpoint interno para uploads R2.
@@ -84,7 +87,7 @@ export default {
       await env.BUCKET.put(key, buf, { httpMetadata: { contentType: ct } })
       return new Response(JSON.stringify({ ok: true, key, size: buf.byteLength }), {
         status: 200,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders(request, true) },
+        headers: { 'Content-Type': 'application/json', ...corsHeaders(request) },
       })
     }
 
@@ -108,7 +111,7 @@ export default {
     // Health check
     if (path === '/health') {
       return new Response(JSON.stringify({ ok: true, env: env.HTMLBOX_ENV || 'unknown' }), {
-        headers: { 'Content-Type': 'application/json', ...corsHeaders(request, true) },
+        headers: { 'Content-Type': 'application/json', ...corsHeaders(request) },
       })
     }
 

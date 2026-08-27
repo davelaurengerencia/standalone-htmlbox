@@ -48,6 +48,20 @@ function rateLimitOk(userId, limit = 5, windowMs = 60_000) {
   return true
 }
 
+// Rate-limit distribuido vía D1 (A7). Cuenta los análisis del usuario en la
+// ventana. Es ligeramente distinto del in-memory: solo cuenta intentos
+// exitosos (los que llegan a insertar la fila en htmlbox_ai_analyses). En
+// la práctica eso no cambia el comportamiento — un user con sesión válida
+// que ya hizo 5 análisis en 60s sigue bloqueado en el 6to.
+async function rateLimitOkD1(env, userId, limit = 5, windowMs = 60_000) {
+  const windowSec = Math.max(1, Math.floor(windowMs / 1000))
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM htmlbox_ai_analyses
+      WHERE user_id = ?1 AND created_at > datetime('now', '-${windowSec} seconds')`
+  ).bind(userId).first()
+  return (row?.n ?? 0) < limit
+}
+
 function resetRateLimits() {
   RATE_BUCKETS.clear()
 }
@@ -73,7 +87,7 @@ async function analyzeHtmlRoute(request, env) {
   const { user, error } = await requireUser(request, env)
   if (error) return error
 
-  if (!rateLimitOk(user.id)) return json({ error: 'rate_limited' }, 429)
+  if (!await rateLimitOkD1(env, user.id)) return json({ error: 'rate_limited' }, 429)
 
   let body
   try { body = await request.json() } catch { return json({ error: 'invalid_body' }, 400) }

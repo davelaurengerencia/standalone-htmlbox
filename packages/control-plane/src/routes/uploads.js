@@ -119,7 +119,7 @@ async function postUploadUrl(request, env, boxId) {
   // NO expone createPresignedUrl() en producción (solo en wrangler dev), y
   // los tokens S3 de R2 requieren creación vía dashboard (no vía OAuth CLI).
   // HMAC usa el HTMLBOX_SESSION_SECRET que ya es secret.
-  const controlPlaneOrigin = env.HTMLBOX_PUBLIC_ORIGIN || url.origin
+  const controlPlaneOrigin = env.HTMLBOX_PUBLIC_ORIGIN || new URL(request.url).origin
   const expiresAt = Math.floor(Date.now() / 1000) + 600 // 10 min
   const sig = await hmacSignHex(env.HTMLBOX_SESSION_SECRET, `${key}\n${expiresAt}`)
   const signedUrl = `${controlPlaneOrigin}/api/_local/upload?key=${encodeURIComponent(key)}&exp=${expiresAt}&sig=${sig}`
