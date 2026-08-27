@@ -2,6 +2,17 @@
 
 Anexo a `htmlbox-spec-app-users-IMPLEMENTED.md`, `htmlbox-spec-app-customers-IMPLEMENTED.md` y `htmlbox-spec-app-users-centralized-IMPLEMENTED.md`. Auditoría de seguridad sobre la implementación real, commits `e709872` (fase 1+2) y `ebc9391` (fase 3). No reemplaza esas specs — son 4 hallazgos puntuales a corregir antes de dar el trabajo por cerrado.
 
+> **ESTADO (post-revisión):** los 4 hallazgos quedaron corregidos en el commit `995a475`. Resumen ejecutivo:
+>
+> | Hallazgo | Severidad | Commit | Tests nuevos |
+> |---|---|---|---|
+> | 1. Admin tenant_app_users sin chequeo de rol | CRÍTICO | 995a475 | 10 |
+> | 2. Cookie path dependía del Referer | CRÍTICO | 995a475 | 6 |
+> | 3. checkTenantAppAccess sin defensa cross-tenant | IMPORTANTE | 995a475 | 4 |
+> | 4. GET admin sin chequeo de rol | MENOR | 995a475 | 2 |
+>
+> Total: 22 tests nuevos, 0 regresiones (209 → 225 verde, todos los workspaces). Detalle por hallazgo abajo.
+
 ## 1. CRÍTICO — el admin de usuarios centralizados no chequea rol
 
 **Archivo:** `packages/control-plane/src/routes/tenantAppUsers.js`
