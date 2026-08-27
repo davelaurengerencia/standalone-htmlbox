@@ -114,10 +114,13 @@
         },
 
         async loadMe() {
-          const res = await fetch('/api/auth/me', { credentials: 'include' })
-          const data = await res.json()
-          this.user = data.user
-          if (this.user) await this.loadTenants()
+          try {
+            const data = await apiFetch('/api/auth/me')
+            this.user = data.user
+            if (this.user) await this.loadTenants()
+          } catch (err) {
+            debugLog('loadMe:', err)
+          }
         },
 
         async requestMagicLink() {
@@ -125,13 +128,10 @@
           this.lastMessage = ''
           this.previewLink = null
           try {
-            const res = await fetch('/api/auth/request', {
+            const data = await apiFetch('/api/auth/request', {
               method: 'POST',
-              credentials: 'include',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email: this.email }),
+              body: { email: this.email },
             })
-            const data = await res.json()
             this.lastMessage = data.message || 'Listo. Revisá tu email.'
             if (data._dev_preview) this.previewLink = data._dev_preview
           } catch (err) {
@@ -142,7 +142,11 @@
         },
 
         async logout() {
-          await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+          try {
+            await apiFetch('/api/auth/logout', { method: 'POST' })
+          } catch (err) {
+            debugLog('logout:', err)
+          }
           this.user = null
           this.tenants = []
           this.currentTenant = null
@@ -150,33 +154,36 @@
         },
 
         async loadTenants() {
-          const res = await fetch('/api/me/tenants', { credentials: 'include' })
-          const data = await res.json()
-          this.tenants = data.tenants ?? []
+          try {
+            const data = await apiFetch('/api/me/tenants')
+            this.tenants = data.tenants ?? []
+          } catch (err) {
+            debugLog('loadTenants:', err)
+          }
         },
 
         async createTenant() {
-          const res = await fetch('/api/tenants', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(this.newTenant),
-          })
-          const data = await res.json()
-          if (data.tenant) {
+          try {
+            await apiFetch('/api/tenants', {
+              method: 'POST',
+              body: this.newTenant,
+            })
             this.newTenant = { slug: '', name: '' }
             await this.loadTenants()
             this.showToast('Tenant creado.')
-          } else {
-            this.showToast('Error: ' + (data.error || 'desconocido'))
+          } catch (err) {
+            this.showToast('Error: ' + (err.code || err.message))
           }
         },
 
         async selectTenant(t) {
           this.currentTenant = t
-          const res = await fetch(`/api/tenants/${t.id}/workspaces`, { credentials: 'include' })
-          const data = await res.json()
-          this.workspaces = data.workspaces ?? []
+          try {
+            const data = await apiFetch(`/api/tenants/${t.id}/workspaces`)
+            this.workspaces = data.workspaces ?? []
+          } catch (err) {
+            debugLog('selectTenant:', err)
+          }
         },
 
         showToast(msg) {
