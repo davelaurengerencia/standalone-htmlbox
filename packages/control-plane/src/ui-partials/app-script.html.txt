@@ -94,6 +94,10 @@
 
     debugLog('boot', window.HTMLBOX_PORTAL_VERSION || window.HTMLBOX_ADMIN_VERSION || 'dev')
 
+    // Regex del tenant slug — mirror del backend (packages/shared/src/id.js#TENANT_SLUG_REGEX).
+    // Si cambia allá, cambiar acá también.
+    const TENANT_SLUG_REGEX = /^[a-z][a-z0-9-]{1,30}[a-z0-9]$/
+
     function adminApp() {
       return {
         user: null,
@@ -101,10 +105,36 @@
         busy: false,
         lastMessage: '',
         previewLink: null,
-        tenants: [],
+
+        // Tabs
+        activeTab: 'tenants',
+
+        // Stats agregadas del dashboard
+        stats: null,
+        // Tenants con counts (workspace_count, box_count, wfp breakdown)
+        adminTenants: [],
+
+        // Modal nuevo tenant (platform owner)
+        newTenantModalOpen: false,
+        creatingTenant: false,
+        newTenantError: '',
+        newTenant: { name: '', slug: '' },
+        newTenantSlugTouched: false,
+        tenantSlugValid: false,
+
+        // Modal detalle de un tenant (workspaces + boxes)
+        tenantDetailModalOpen: false,
         currentTenant: null,
+        tenantDetail: null,
+        loadingTenantDetail: false,
+
+        // Backward compat — la versión vieja del dashboard usaba
+        // tenants/currentTenant/workspaces. Los mantenemos por si hay
+        // otros partials o código viejo que los lea. El dashboard nuevo
+        // usa adminTenants + tenantDetail.
+        tenants: [],
         workspaces: [],
-        newTenant: { slug: '', name: '' },
+
         toast: null,
         _toastTimer: null,
 
@@ -116,9 +146,31 @@
           try {
             const data = await apiFetch('/api/auth/me')
             this.user = data.user
-            if (this.user) await this.loadTenants()
+            if (this.user) {
+              await Promise.all([this.loadStats(), this.loadAdminTenants()])
+            }
           } catch (err) {
             debugLog('loadMe:', err)
+          }
+        },
+
+        async loadStats() {
+          try {
+            this.stats = await apiFetch('/api/admin/stats')
+          } catch (err) {
+            debugLog('loadStats:', err)
+          }
+        },
+
+        async loadAdminTenants() {
+          try {
+            const data = await apiFetch('/api/admin/tenants')
+            this.adminTenants = data.tenants ?? []
+            // Mantener el shape viejo también — usado por código que
+            // ya estuviera referenciando tenants[].
+            this.tenants = this.adminTenants
+          } catch (err) {
+            debugLog('loadAdminTenants:', err)
           }
         },
 
@@ -148,41 +200,153 @@
           }
           this.user = null
           this.tenants = []
+          this.adminTenants = []
           this.currentTenant = null
+          this.tenantDetail = null
           this.workspaces = []
+          this.stats = null
         },
 
-        async loadTenants() {
-          try {
-            const data = await apiFetch('/api/me/tenants')
-            this.tenants = data.tenants ?? []
-          } catch (err) {
-            debugLog('loadTenants:', err)
+        // --------- Modal nuevo tenant (platform owner) ---------
+
+        openNewTenantModal() {
+          if (!this.user?.is_platform_owner) {
+            this.showToast('Solo el platform owner puede crear tenants.')
+            return
           }
+          this.newTenant = { name: '', slug: '' }
+          this.newTenantError = ''
+          this.newTenantSlugTouched = false
+          this.tenantSlugValid = false
+          this.newTenantModalOpen = true
+        },
+        closeNewTenantModal() {
+          this.newTenantModalOpen = false
+          this.newTenantError = ''
+          this.creatingTenant = false
+        },
+
+        onTenantNameInput(event) {
+          this.newTenant.name = event.target.value
+          if (!this.newTenantSlugTouched) {
+            this.newTenant.slug = this._tenantSlugifyFromName(this.newTenant.name)
+            this._recomputeTenantSlugValid()
+          }
+        },
+        onTenantSlugInput(event) {
+          this.newTenant.slug = event.target.value
+          this.newTenantSlugTouched = true
+          this._recomputeTenantSlugValid()
+        },
+        _recomputeTenantSlugValid() {
+          this.tenantSlugValid = TENANT_SLUG_REGEX.test(this.newTenant.slug)
+        },
+        _tenantSlugifyFromName(name) {
+          return String(name || '')
+            .toLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9_-]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 60) || ''
         },
 
         async createTenant() {
+          if (!this.user?.is_platform_owner) {
+            this.newTenantError = 'Solo el platform owner puede crear tenants.'
+            return
+          }
+          const name = this.newTenant.name.trim()
+          const slug = this.newTenant.slug.trim()
+          if (!name) {
+            this.newTenantError = 'Poné un nombre.'
+            return
+          }
+          if (!this.tenantSlugValid) {
+            this.newTenantError = 'Slug inválido.'
+            return
+          }
+          this.creatingTenant = true
+          this.newTenantError = ''
           try {
-            await apiFetch('/api/tenants', {
+            const data = await apiFetch('/api/tenants', {
               method: 'POST',
-              body: this.newTenant,
+              body: { name, slug },
             })
-            this.newTenant = { slug: '', name: '' }
-            await this.loadTenants()
-            this.showToast('Tenant creado.')
+            if (!data || data.error) {
+              const code = data?.error
+              this.newTenantError = ({
+                invalid_slug: 'Slug inválido.',
+                slug_taken: 'Ya hay un tenant con ese slug.',
+                missing_name: 'Falta el nombre.',
+                platform_owner_only: 'Tu cuenta no es platform owner.',
+              })[code] || ('Error: ' + (code || 'desconocido'))
+              return
+            }
+            this.showToast(`Tenant "${data.tenant.name}" creado.`)
+            this.closeNewTenantModal()
+            await Promise.all([this.loadStats(), this.loadAdminTenants()])
           } catch (err) {
-            this.showToast('Error: ' + (err.code || err.message))
+            this.newTenantError = 'Error: ' + (err?.code || err?.message || 'desconocido')
+          } finally {
+            this.creatingTenant = false
           }
         },
 
-        async selectTenant(t) {
+        // --------- Modal detalle de un tenant ---------
+
+        async openTenantDetail(t) {
           this.currentTenant = t
+          this.tenantDetailModalOpen = true
+          this.tenantDetail = null
+          this.loadingTenantDetail = true
           try {
-            const data = await apiFetch(`/api/tenants/${t.id}/workspaces`)
-            this.workspaces = data.workspaces ?? []
+            // Traer workspaces + boxes en paralelo. (boxes no tiene endpoint
+            // cross-tenant en /api/boxes/:workspaceId/...; usamos /api/boxes
+            // con ?workspace=... no aplica porque tenant tiene varios.
+            // Para v1: leemos workspaces del tenant + boxes via /api/boxes
+            // una vez por workspace.)
+            const wsData = await apiFetch(`/api/tenants/${t.id}/workspaces`)
+            const workspaces = wsData.workspaces ?? []
+            const boxesArrays = await Promise.all(workspaces.map((w) =>
+              apiFetch(`/api/boxes?workspace=${w.id}`).then((d) => d.boxes ?? [])
+                .catch(() => [])
+            ))
+            this.tenantDetail = {
+              workspaces,
+              boxes: boxesArrays.flat(),
+            }
           } catch (err) {
-            debugLog('selectTenant:', err)
+            debugLog('openTenantDetail:', err)
+            this.showToast('Error cargando detalle: ' + (err?.code || err?.message))
+          } finally {
+            this.loadingTenantDetail = false
           }
+        },
+        closeTenantDetail() {
+          this.tenantDetailModalOpen = false
+          // Mantener currentTenant/tenantDetail un momento para que la
+          // animación de cierre tenga datos, pero no es estrictamente
+          // necesario — Alpine limpia solo.
+        },
+
+        // --------- Utilidades ---------
+
+        // '2026-08-27T...' → 'hace 5 min' / 'hace 2h' / 'hace 3d' / fecha completa
+        formatRelativeTime(iso) {
+          if (!iso) return '—'
+          const t = new Date(iso + (iso.endsWith('Z') ? '' : 'Z'))
+          if (isNaN(t.getTime())) return iso
+          const diffMs = Date.now() - t.getTime()
+          const sec = Math.round(diffMs / 1000)
+          if (sec < 60) return 'hace ' + sec + 's'
+          const min = Math.round(sec / 60)
+          if (min < 60) return 'hace ' + min + ' min'
+          const hr = Math.round(min / 60)
+          if (hr < 24) return 'hace ' + hr + 'h'
+          const day = Math.round(hr / 24)
+          if (day < 30) return 'hace ' + day + 'd'
+          // Más viejo: fecha completa en formato YYYY-MM-DD.
+          return t.toISOString().slice(0, 10)
         },
 
         showToast(msg) {

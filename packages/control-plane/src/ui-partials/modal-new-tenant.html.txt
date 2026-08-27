@@ -1,0 +1,69 @@
+<div x-show="newTenantModalOpen" x-transition.opacity class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" x-cloak>
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
+        <div class="flex items-center justify-between border-b border-slate-800 px-6 py-4">
+          <h3 class="font-bold text-base text-slate-100 flex items-center gap-2">
+            <i class="fa-solid fa-building text-indigo-400"></i> Nuevo Tenant
+          </h3>
+          <button @click="closeNewTenantModal()" type="button" class="text-slate-500 hover:text-white">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+        <form @submit.prevent="createTenant()" class="p-6 space-y-4">
+          <p class="text-xs text-slate-400 leading-relaxed">
+            El tenant agrupa workspaces y boxes. El slug es la URL pública
+            (<code class="text-indigo-300 font-mono text-[10px]">{slug}.htmlbox.dev</code>)
+            y <strong>no se puede cambiar después</strong>.
+          </p>
+
+          <div>
+            <label class="text-xs font-medium text-slate-300 block mb-1">Nombre visible</label>
+            <input type="text"
+                   x-model="newTenant.name"
+                   required
+                   maxlength="64"
+                   placeholder="Ej: Confetex"
+                   @input="onTenantNameInput($event)"
+                   class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500">
+          </div>
+
+          <div>
+            <label class="text-xs font-medium text-slate-300 block mb-1">Slug (URL pública)</label>
+            <div class="flex items-stretch gap-0 bg-slate-950 border border-slate-800 rounded-xl focus-within:border-indigo-500 overflow-hidden">
+              <input type="text"
+                     x-model="newTenant.slug"
+                     required
+                     pattern="[a-z][a-z0-9\-]{1,30}[a-z0-9]"
+                     placeholder="confetex"
+                     @input="onTenantSlugInput($event)"
+                     class="flex-1 bg-transparent px-3 py-2 text-sm font-mono focus:outline-none text-slate-100">
+              <span class="px-3 py-2 text-xs text-slate-500 font-mono bg-slate-900 border-l border-slate-800 flex items-center">.htmlbox.dev</span>
+            </div>
+            <p class="text-[10px] mt-1 text-slate-500">Solo minúsculas, números y guiones. Empieza con letra, 3-32 chars.</p>
+            <p x-show="newTenant.slug && !tenantSlugValid" class="text-[10px] mt-1 text-rose-400">
+              <i class="fa-solid fa-circle-exclamation"></i> Slug inválido.
+            </p>
+          </div>
+
+          <template x-if="newTenantError">
+            <div class="rounded-xl bg-rose-950/40 border border-rose-800/60 px-3 py-2 text-xs text-rose-300">
+              <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+              <span x-text="newTenantError"></span>
+            </div>
+          </template>
+
+          <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-800 -mx-6 px-6 -mb-6 pb-4">
+            <button @click="closeNewTenantModal()" type="button"
+                    class="px-4 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-800 text-xs font-medium transition">
+              Cancelar
+            </button>
+            <button type="submit"
+                    :disabled="creatingTenant || !newTenant.name.trim() || !tenantSlugValid"
+                    class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-medium text-xs rounded-xl shadow-lg shadow-indigo-600/20 flex items-center gap-2 transition">
+              <template x-if="creatingTenant"><i class="fa-solid fa-spinner animate-spin"></i></template>
+              <template x-if="!creatingTenant"><i class="fa-solid fa-check"></i></template>
+              <span x-text="creatingTenant ? 'Creando…' : 'Crear Tenant'"></span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>

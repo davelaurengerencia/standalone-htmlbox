@@ -1,64 +1,173 @@
-      <section class="max-w-6xl mx-auto p-6 space-y-6">
-          <!-- Crear tenant (solo platform owner) -->
-          <template x-if="user.is_platform_owner">
-            <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
-              <h2 class="text-sm font-bold uppercase tracking-wider text-slate-400">Crear tenant</h2>
-              <form @submit.prevent="createTenant()" class="flex flex-wrap gap-2">
-                <input x-model="newTenant.slug" placeholder="slug" required
-                       class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm flex-1 min-w-[120px]">
-                <input x-model="newTenant.name" placeholder="Nombre del tenant" required
-                       class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px]">
-                <button class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-sm font-medium">
-                  <i class="fa-solid fa-plus mr-1"></i> Crear
-                </button>
-              </form>
-            </div>
-          </template>
+<div x-show="user" class="max-w-6xl mx-auto p-6 space-y-6" x-cloak>
 
-          <!-- Lista de tenants -->
-          <div>
-            <h2 class="text-sm font-bold uppercase tracking-wider text-slate-400 mb-2">Tenants</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <template x-for="t in tenants" :key="t.id">
-                <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-2 cursor-pointer hover:border-indigo-500 transition"
-                     @click="selectTenant(t)">
-                  <div class="flex items-center justify-between">
-                    <div>
-                      <div class="font-bold" x-text="t.name"></div>
-                      <div class="text-xs text-slate-500 font-mono" x-text="t.slug"></div>
-                    </div>
-                    <span class="text-xs px-2 py-0.5 rounded-full"
-                          :class="t.status === 'active' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'"
-                          x-text="t.status"></span>
-                  </div>
-                </div>
-              </template>
-              <template x-if="tenants.length === 0">
-                <div class="p-6 text-center text-slate-500 text-sm">No pertenecés a ningún tenant todavía.</div>
-              </template>
-            </div>
+      <!-- ============ Stats cards ============ -->
+      <section class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Tenants</span>
+            <i class="fa-solid fa-building text-slate-600 text-sm"></i>
           </div>
+          <div class="text-3xl font-bold tabular-nums" x-text="stats?.totals?.tenants ?? '—'"></div>
+          <div class="text-[10px] text-slate-500" x-show="stats?.recentTenants?.length">
+            <span x-text="stats.recentTenants.length"></span> recientes
+          </div>
+        </div>
+        <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Boxes</span>
+            <i class="fa-solid fa-cube text-slate-600 text-sm"></i>
+          </div>
+          <div class="text-3xl font-bold tabular-nums" x-text="stats?.totals?.boxes ?? '—'"></div>
+          <div class="text-[10px] text-slate-500">
+            <span x-text="stats?.totals?.workspaces ?? '—'"></span> workspaces
+          </div>
+        </div>
+        <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">WFP</span>
+            <i class="fa-solid fa-server text-slate-600 text-sm"></i>
+          </div>
+          <div class="flex items-baseline gap-2">
+            <div class="text-3xl font-bold tabular-nums text-emerald-400" x-text="stats?.wfp?.ready ?? '—'"></div>
+            <div class="text-[10px] text-slate-500">ready</div>
+          </div>
+          <div class="text-[10px] flex items-center gap-3">
+            <span class="text-amber-400">
+              <span class="font-mono" x-text="stats?.wfp?.pending ?? 0"></span> pending
+            </span>
+            <span class="text-rose-400">
+              <span class="font-mono" x-text="stats?.wfp?.failed ?? 0"></span> failed
+            </span>
+          </div>
+        </div>
+        <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Users</span>
+            <i class="fa-solid fa-users text-slate-600 text-sm"></i>
+          </div>
+          <div class="text-3xl font-bold tabular-nums" x-text="stats?.totals?.users ?? '—'"></div>
+          <div class="text-[10px] text-slate-500">cuentas registradas</div>
+        </div>
+      </section>
 
-          <!-- Workspaces del tenant seleccionado -->
-          <template x-if="currentTenant">
-            <div class="space-y-3">
-              <h2 class="text-sm font-bold uppercase tracking-wider text-slate-400">
-                Workspaces — <span class="text-indigo-400" x-text="currentTenant.slug"></span>
-              </h2>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <template x-for="w in workspaces" :key="w.id">
-                  <div class="p-4 rounded-2xl bg-slate-900 border border-slate-800">
-                    <div class="flex items-center justify-between">
-                      <div>
-                        <div class="font-bold" x-text="w.name"></div>
-                        <div class="text-xs text-slate-500">
-                          <span x-text="w.box_count"></span> boxes
-                        </div>
-                      </div>
+      <!-- ============ Tabs ============ -->
+      <nav class="border-b border-slate-800 flex items-center gap-1">
+        <button @click="activeTab = 'tenants'" :class="activeTab === 'tenants' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'"
+                class="px-4 py-2 border-b-2 text-sm font-medium flex items-center gap-2 transition">
+          <i class="fa-solid fa-building text-xs"></i> Tenants
+        </button>
+        <button @click="activeTab = 'billing'" :class="activeTab === 'billing' ? 'border-indigo-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'"
+                class="px-4 py-2 border-b-2 text-sm font-medium flex items-center gap-2 transition">
+          <i class="fa-solid fa-credit-card text-xs"></i> Facturación
+          <span class="px-1.5 py-0.5 rounded-full bg-slate-800 text-[9px] uppercase tracking-wider text-slate-500">Pronto</span>
+        </button>
+        <div class="flex-1"></div>
+        <button x-show="activeTab === 'tenants' && user?.is_platform_owner" @click="openNewTenantModal()" type="button"
+                class="px-3 py-1.5 mb-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl shadow-lg shadow-indigo-600/20 flex items-center gap-1.5 transition">
+          <i class="fa-solid fa-plus"></i> Nuevo tenant
+        </button>
+      </nav>
+
+      <!-- ============ Tab: Tenants ============ -->
+      <section x-show="activeTab === 'tenants'" class="space-y-3">
+        <div class="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-950/50 border-b border-slate-800">
+              <tr class="text-[10px] font-bold uppercase tracking-wider text-slate-400 text-left">
+                <th class="px-4 py-3">Tenant</th>
+                <th class="px-4 py-3">Status</th>
+                <th class="px-4 py-3 text-right">Workspaces</th>
+                <th class="px-4 py-3 text-right">Boxes</th>
+                <th class="px-4 py-3">WFP</th>
+                <th class="px-4 py-3">Última actividad</th>
+                <th class="px-4 py-3 text-right">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="t in adminTenants" :key="t.id">
+                <tr class="border-b border-slate-800/50 hover:bg-slate-950/30 transition">
+                  <td class="px-4 py-3">
+                    <div class="font-bold" x-text="t.name"></div>
+                    <div class="text-[10px] text-slate-500 font-mono" x-text="t.slug"></div>
+                  </td>
+                  <td class="px-4 py-3">
+                    <span class="text-[10px] px-2 py-0.5 rounded-full uppercase font-semibold border"
+                          :class="t.status === 'active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-slate-800 text-slate-400 border-slate-700'"
+                          x-text="t.status || 'active'"></span>
+                  </td>
+                  <td class="px-4 py-3 text-right tabular-nums" x-text="t.workspace_count"></td>
+                  <td class="px-4 py-3 text-right tabular-nums" x-text="t.box_count"></td>
+                  <td class="px-4 py-3">
+                    <div class="flex items-center gap-1.5 text-[10px] font-mono">
+                      <span class="px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                            x-show="t.wfp_ready > 0"
+                            :title="t.wfp_ready + ' boxes con WFP ready'"
+                            x-text="t.wfp_ready + ' ready'"></span>
+                      <span class="px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                            x-show="t.wfp_pending > 0"
+                            :title="t.wfp_pending + ' boxes con WFP pending'"
+                            x-text="t.wfp_pending + ' pending'"></span>
+                      <span class="px-1.5 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                            x-show="t.wfp_failed > 0"
+                            :title="t.wfp_failed + ' boxes con WFP failed'"
+                            x-text="t.wfp_failed + ' failed'"></span>
+                      <span x-show="t.box_count > 0 && t.wfp_ready === 0 && t.wfp_failed === 0 && t.wfp_pending === 0"
+                            class="text-slate-500">—</span>
                     </div>
-                  </div>
-                </template>
-              </div>
-            </div>
-          </template>
-        </section>
+                  </td>
+                  <td class="px-4 py-3 text-[11px] text-slate-400" x-text="t.last_box_updated_at ? formatRelativeTime(t.last_box_updated_at) : '—'"></td>
+                  <td class="px-4 py-3 text-right">
+                    <button @click="openTenantDetail(t)" class="text-slate-400 hover:text-indigo-400 text-xs font-medium px-2 py-1 rounded transition" title="Ver detalle">
+                      <i class="fa-solid fa-arrow-up-right-from-square"></i> Detalle
+                    </button>
+                  </td>
+                </tr>
+              </template>
+              <template x-if="adminTenants.length === 0">
+                <tr>
+                  <td colspan="7" class="px-4 py-12 text-center">
+                    <template x-if="user?.is_platform_owner">
+                      <div class="space-y-3">
+                        <i class="fa-solid fa-rocket text-3xl text-slate-600"></i>
+                        <p class="text-sm text-slate-400">No tenés tenants todavía.</p>
+                        <button @click="openNewTenantModal()" type="button"
+                                class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-sm rounded-xl inline-flex items-center gap-2">
+                          <i class="fa-solid fa-plus"></i> Crear tu primer tenant
+                        </button>
+                      </div>
+                    </template>
+                    <template x-if="!user?.is_platform_owner">
+                      <div class="space-y-2">
+                        <i class="fa-solid fa-circle-info text-2xl text-slate-500"></i>
+                        <p class="text-sm text-slate-400">No pertenecés a ningún tenant todavía.</p>
+                      </div>
+                    </template>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ Tab: Facturación (placeholder) ============ -->
+      <section x-show="activeTab === 'billing'" class="space-y-3">
+        <div class="rounded-2xl bg-slate-900 border border-slate-800 p-8 text-center space-y-3">
+          <i class="fa-solid fa-credit-card text-4xl text-slate-700"></i>
+          <h3 class="text-lg font-bold">Facturación — Próximamente</h3>
+          <p class="text-sm text-slate-400 max-w-md mx-auto">
+            Acá vas a poder ver planes, suscripciones por tenant, métricas de uso
+            (boxes deployados, requests al runtime, GB de R2, etc.) y emitir
+            facturas manuales o vía Stripe.
+          </p>
+          <p class="text-[11px] text-slate-500 max-w-md mx-auto">
+            Cuando esté listo, el endpoint <code class="font-mono text-slate-400">/api/admin/billing</code>
+            se enchufa acá y solo hay que cambiar el contenido de este tab.
+          </p>
+        </div>
+      </section>
+
+      <!-- ============ Modales ============ -->
+      <htmlbox-partial name="modal-new-tenant"></htmlbox-partial>
+      <htmlbox-partial name="modal-tenant-detail"></htmlbox-partial>
+    </div>

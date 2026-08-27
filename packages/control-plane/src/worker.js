@@ -21,6 +21,7 @@ import { handleTenantAppUsers } from './routes/tenantAppUsers.js'
 import { handleUploads } from './routes/uploads.js'
 import { handleInternal } from './routes/internal.js'
 import { handleAi } from './routes/ai.js'
+import { handleAdmin } from './routes/admin.js'
 import { renderShell } from './lib/partials.js'
 
 import ADMIN_SHELL_HTML from './ui-partials/shell.html.txt'
@@ -28,6 +29,8 @@ import ADMIN_HEADER_HTML from './ui-partials/header.html.txt'
 import ADMIN_LOGIN_HTML from './ui-partials/login.html.txt'
 import ADMIN_DASHBOARD_HTML from './ui-partials/dashboard.html.txt'
 import ADMIN_TOAST_HTML from './ui-partials/toast.html.txt'
+import ADMIN_MODAL_NEW_TENANT_HTML from './ui-partials/modal-new-tenant.html.txt'
+import ADMIN_MODAL_TENANT_DETAIL_HTML from './ui-partials/modal-tenant-detail.html.txt'
 import ADMIN_APP_SCRIPT_HTML from './ui-partials/app-script.html.txt'
 
 // Shell del admin ensamblado en request-time con HTMLRewriter (ver
@@ -37,6 +40,8 @@ const ADMIN_PARTIALS = {
   login: ADMIN_LOGIN_HTML,
   dashboard: ADMIN_DASHBOARD_HTML,
   toast: ADMIN_TOAST_HTML,
+  'modal-new-tenant': ADMIN_MODAL_NEW_TENANT_HTML,
+  'modal-tenant-detail': ADMIN_MODAL_TENANT_DETAIL_HTML,
   'app-script': ADMIN_APP_SCRIPT_HTML,
 }
 
@@ -183,6 +188,12 @@ export default {
           ? path.slice('/api/tenants/'.length).split('/')[0]
           : null
         const res = await handleTenants(request, env, ctx, path, sub, method)
+        return withCors(res, request)
+      }
+
+      // Admin endpoints (platform owner dashboard — stats + tenants con counts).
+      if (path.startsWith('/api/admin/')) {
+        const res = await handleAdmin(request, env, path, method)
         return withCors(res, request)
       }
 

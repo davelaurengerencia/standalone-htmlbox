@@ -1,0 +1,104 @@
+<div x-show="tenantDetailModalOpen" x-transition.opacity class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4" x-cloak>
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+        <div class="flex items-center justify-between border-b border-slate-800 px-6 py-4">
+          <h3 class="font-bold text-base text-slate-100 flex items-center gap-2" x-show="currentTenant">
+            <i class="fa-solid fa-building text-indigo-400"></i>
+            <span x-text="currentTenant?.name"></span>
+            <span class="text-xs text-slate-500 font-mono ml-2" x-text="currentTenant?.slug"></span>
+          </h3>
+          <button @click="closeTenantDetail()" type="button" class="text-slate-500 hover:text-white">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-6 space-y-4">
+          <!-- Loading state -->
+          <div x-show="loadingTenantDetail" class="text-center py-12 text-slate-500">
+            <i class="fa-solid fa-spinner animate-spin text-2xl"></i>
+            <p class="text-xs mt-2">Cargando detalle...</p>
+          </div>
+
+          <!-- Loaded -->
+          <div x-show="!loadingTenantDetail && currentTenant">
+            <!-- Resumen rápido -->
+            <section class="grid grid-cols-3 gap-2">
+              <div class="p-3 rounded-xl bg-slate-950/50 border border-slate-800">
+                <div class="text-[10px] uppercase tracking-wider text-slate-500">Workspaces</div>
+                <div class="text-2xl font-bold tabular-nums" x-text="tenantDetail?.workspaces?.length ?? 0"></div>
+              </div>
+              <div class="p-3 rounded-xl bg-slate-950/50 border border-slate-800">
+                <div class="text-[10px] uppercase tracking-wider text-slate-500">Boxes</div>
+                <div class="text-2xl font-bold tabular-nums" x-text="tenantDetail?.boxes?.length ?? 0"></div>
+              </div>
+              <div class="p-3 rounded-xl bg-slate-950/50 border border-slate-800">
+                <div class="text-[10px] uppercase tracking-wider text-slate-500">WFP</div>
+                <div class="text-2xl font-bold tabular-nums text-emerald-400"
+                     x-text="(tenantDetail?.boxes ?? []).filter(b => b.wfp_status === 'ready').length"></div>
+              </div>
+            </section>
+
+            <!-- Workspaces -->
+            <section>
+              <h4 class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Workspaces</h4>
+              <div class="rounded-xl bg-slate-950/50 border border-slate-800 divide-y divide-slate-800">
+                <template x-for="w in (tenantDetail?.workspaces ?? [])" :key="w.id">
+                  <div class="px-3 py-2 flex items-center justify-between text-sm">
+                    <div>
+                      <div class="font-medium" x-text="w.name"></div>
+                      <div class="text-[10px] text-slate-500 font-mono" x-text="w.id"></div>
+                    </div>
+                    <div class="text-[10px] text-slate-400">
+                      <span x-text="(tenantDetail?.boxes ?? []).filter(b => b.workspace_id === w.id).length"></span> boxes
+                    </div>
+                  </div>
+                </template>
+                <template x-if="!tenantDetail?.workspaces?.length">
+                  <div class="px-3 py-4 text-center text-xs text-slate-500">Sin workspaces.</div>
+                </template>
+              </div>
+            </section>
+
+            <!-- Boxes -->
+            <section>
+              <h4 class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Boxes</h4>
+              <div class="rounded-xl bg-slate-950/50 border border-slate-800 overflow-hidden">
+                <table class="w-full text-xs">
+                  <thead class="bg-slate-950/50 text-[10px] uppercase tracking-wider text-slate-500">
+                    <tr>
+                      <th class="px-3 py-2 text-left">Nombre</th>
+                      <th class="px-3 py-2 text-left">Workspace</th>
+                      <th class="px-3 py-2">WFP</th>
+                      <th class="px-3 py-2">Turso</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="b in (tenantDetail?.boxes ?? [])" :key="b.id">
+                      <tr class="border-t border-slate-800/50">
+                        <td class="px-3 py-2">
+                          <div class="font-medium text-slate-200" x-text="b.name"></div>
+                          <div class="text-[10px] text-slate-500 font-mono" x-text="b.slug"></div>
+                        </td>
+                        <td class="px-3 py-2 text-[11px] text-slate-400 font-mono" x-text="b.workspace_id"></td>
+                        <td class="px-3 py-2 text-center">
+                          <span class="text-[10px] px-1.5 py-0.5 rounded-full font-mono uppercase"
+                                :class="b.wfp_status === 'ready' ? 'bg-emerald-500/10 text-emerald-400' : b.wfp_status === 'failed' ? 'bg-rose-500/10 text-rose-400' : 'bg-amber-500/10 text-amber-400'"
+                                x-text="b.wfp_status"></span>
+                        </td>
+                        <td class="px-3 py-2 text-center">
+                          <span class="text-[10px] px-1.5 py-0.5 rounded-full font-mono uppercase"
+                                :class="b.turso_status === 'ready' ? 'bg-emerald-500/10 text-emerald-400' : b.turso_status?.startsWith('failed') ? 'bg-rose-500/10 text-rose-400' : 'bg-amber-500/10 text-amber-400'"
+                                x-text="b.turso_status || '—'"></span>
+                        </td>
+                      </tr>
+                    </template>
+                    <template x-if="!tenantDetail?.boxes?.length">
+                      <tr><td colspan="4" class="px-3 py-4 text-center text-slate-500">Sin boxes.</td></tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>

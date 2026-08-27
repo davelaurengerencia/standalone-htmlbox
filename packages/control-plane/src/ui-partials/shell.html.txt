@@ -32,8 +32,10 @@
     </template>
 
     <!-- Toast -->
-    <htmlbox-partial name="toast"></htmlbox-partial>
-  </main>
+<htmlbox-partial name="toast"></htmlbox-partial>
+      <htmlbox-partial name="modal-new-tenant"></htmlbox-partial>
+      <htmlbox-partial name="modal-tenant-detail"></htmlbox-partial>
+    </main>
 
   <htmlbox-partial name="app-script"></htmlbox-partial>
 </body>
