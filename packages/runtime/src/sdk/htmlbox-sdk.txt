@@ -1,0 +1,138 @@
+// src/sdk/htmlbox-sdk.txt — SDK inyectado en cada box servido (bundled as Text).
+//
+// Uso:
+//   <script src="/_sdk/htmlbox.js"></script>
+//
+// Expone window.HTMLBox con la API documentada en §5 de arquitectura.md.
+// v1: implementación real contra /api/data/{boxId}/tables/{slug}/...
+//     Soporta: rows / columns / upsert / onChange (polling).
+//
+// Inyección: htmlServer.js#injectSdk agrega <script src="/_sdk/htmlbox.js?boxId=…&v=public|private"></script>.
+
+;(function () {
+  const URL_PARAMS = new URLSearchParams(location.search)
+  const BOX_ID = URL_PARAMS.get('boxId') || ''
+  const VISIBILITY = URL_PARAMS.get('v') || 'public'
+
+  const RUNTIME_ORIGIN = (URL_PARAMS.get('origin') || location.origin).replace(/\/$/, '')
+
+  function apiPath(slug, op) {
+    return `${RUNTIME_ORIGIN}/api/data/${BOX_ID}/tables/${slug}/${op}`
+  }
+
+  async function apiGet(slug, op, params) {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : ''
+    const res = await fetch(apiPath(slug, op) + qs, {
+      method: 'GET',
+      credentials: 'include',
+      headers: { 'Accept': 'application/json' },
+    })
+    return parseResponse(res)
+  }
+
+  async function apiPost(slug, op, body) {
+    const res = await fetch(apiPath(slug, op), {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(body || {}),
+    })
+    return parseResponse(res)
+  }
+
+  async function parseResponse(res) {
+    const ct = res.headers.get('Content-Type') || ''
+    const data = ct.includes('json') ? await res.json() : await res.text()
+    if (!res.ok) {
+      const err = new Error(`HTMLBox ${res.status}: ${(data && data.error) || res.statusText}`)
+      err.status = res.status
+      err.body = data
+      throw err
+    }
+    return data
+  }
+
+  function table(slug) {
+    if (!slug || typeof slug !== 'string') {
+      throw new Error('HTMLBox.table(slug): slug requerido')
+    }
+
+    const listeners = new Set()
+    let pollTimer = null
+
+    function startPolling(intervalMs) {
+      if (pollTimer) return
+      const tick = async () => {
+        try {
+          const fresh = await apiGet(slug, 'rows', { limit: 1000 })
+          for (const cb of listeners) {
+            try { cb(fresh.rows, fresh) } catch (e) { console.error('[HTMLBox] onChange cb:', e) }
+          }
+        } catch (e) {
+          // silencioso: reintento en el próximo tick
+          console.warn('[HTMLBox] onChange poll:', e.message)
+        }
+      }
+      pollTimer = setInterval(tick, intervalMs)
+      tick() // primera corrida inmediata
+    }
+
+    function stopPolling() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
+    }
+
+    const api = {
+      rows(opts) {
+        const params = {}
+        if (opts && typeof opts.limit === 'number') params.limit = String(opts.limit)
+        if (opts && typeof opts.offset === 'number') params.offset = String(opts.offset)
+        if (opts && opts.where && typeof opts.where === 'object') {
+          params.where = JSON.stringify(opts.where)
+        }
+        return apiGet(slug, 'rows', params)
+      },
+      columns() {
+        return apiGet(slug, 'columns')
+      },
+      upsert(rows) {
+        if (!Array.isArray(rows)) {
+          return Promise.reject(new Error('HTMLBox.table().upsert(rows): rows debe ser array'))
+        }
+        return apiPost(slug, 'upsert', { rows })
+      },
+      onChange(cb, opts) {
+        if (typeof cb !== 'function') {
+          throw new Error('HTMLBox.table().onChange(cb): cb debe ser función')
+        }
+        const intervalMs = (opts && opts.intervalMs) || 5000
+        listeners.add(cb)
+        startPolling(intervalMs)
+        return () => { listeners.delete(cb); if (listeners.size === 0) stopPolling() }
+      },
+    }
+    return api
+  }
+
+  function flow(flowId) {
+    if (!flowId || typeof flowId !== 'string') {
+      throw new Error('HTMLBox.flow(flowId): flowId requerido')
+    }
+    return {
+      run() {
+        return Promise.reject(new Error('[HTMLBox] flow().run() no disponible en fase 3 v1 (requiere fase 4)'))
+      },
+    }
+  }
+
+  const htmlbox = {
+    boxId: BOX_ID,
+    visibility: VISIBILITY,
+    runtimeOrigin: RUNTIME_ORIGIN,
+    sdkVersion: '0.2.0',
+    table,
+    flow,
+  }
+
+  window.HTMLBox = htmlbox
+  console.log('[HTMLBox] SDK v' + htmlbox.sdkVersion + ' listo (box=' + BOX_ID + ', visibility=' + VISIBILITY + ')')
+})()

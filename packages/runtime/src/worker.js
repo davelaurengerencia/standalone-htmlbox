@@ -1,28 +1,24 @@
 // src/worker.js — entry point de htmlbox-runtime.
 //
 // Sirve:
-//   GET  /                         → health
-//   GET  /_sdk/htmlbox.js          → SDK
-//   GET  /_internal/box-info       → para que el portal sepa si el runtime conoce el box
-//   GET  /s/{shareId}              → box público (sin auth)
-//   GET  /{boxSlug}                → box privado (con sesión, en host *.htmlbox.dev)
-//   GET  /t/{tenantSlug}/{boxSlug} → box privado path-based (alternativa al subdomain)
+//   GET  /                                          → health
+//   GET  /_sdk/htmlbox.js                           → SDK (texto del bundle)
+//   GET  /api/data/{boxId}/tables...                → data API (lectura/escritura de tablas del box)
+//   GET  /s/{shareId}                               → box público (sin auth)
+//   GET  /t/{tenantSlug}/{boxSlug}                  → box privado path-based
+//   GET  /{boxSlug}                                 → box privado (host *.htmlbox.dev, con sesión)
 //
-// Toda la resolución de boxId/tenantSlug se hace contra el control-plane vía
-// /api/internal/boxes-by-* — el runtime NO toca D1 ni secretos del box.
+// La data API es servida por el mismo runtime que sirve HTML: la URL pública
+// es /api/data/{boxId}/... y el SDK del box la consume con credentials=include
+// (cookie de sesión reenviada). El control-plane valida membresía vía
+// /api/internal/boxes/{boxId}/membership.
 
 import { parseRuntimePath, resolveByShareId, resolveByTenantAndSlug } from './lib/resolver.js'
 import { serveBoxHtml } from './lib/htmlServer.js'
+import { handleDataApi } from './lib/dataApi.js'
 import { SDK_VERSION } from '@htmlbox/shared'
 
-const SDK_SOURCE = require_sdk_source()
-
-function require_sdk_source() {
-  // En dev se lee de disco (build-time static); wrangler empaqueta el archivo
-  // en el bundle. Importarlo como `?raw` no es portable, así que lo embebemos
-  // via fetch en runtime.
-  return null
-}
+import SDK_SOURCE_BODY from './sdk/htmlbox-sdk.txt' // bundled as Text por wrangler rules
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
@@ -45,7 +41,6 @@ export default {
     }
 
     if (path === '/_sdk/htmlbox.js') {
-      // Lo lee del bundle (se importa desde el archivo fuente).
       return new Response(SDK_SOURCE_BODY, {
         status: 200,
         headers: {
@@ -53,6 +48,11 @@ export default {
           'Cache-Control': 'public, max-age=60',
         },
       })
+    }
+
+    // Data API
+    if (path.startsWith('/api/data/')) {
+      return (await handleDataApi(request, env, url)) || notFound('not_found')
     }
 
     // Box público
@@ -104,53 +104,3 @@ async function fetchActiveHtml(env, boxId, request) {
   const data = await res.json()
   return { version: data.version, html: data.html }
 }
-
-// Embed del SDK. En producción esto se mueve a un asset (wrangler.jsonc →
-// assets) o a un módulo con build-time bundling. Para mantener este worker
-// sin paso de build, embebemos el contenido.
-const SDK_SOURCE_BODY = `;(function () {
-  const URL_PARAMS = new URLSearchParams(location.search)
-  const BOX_ID = URL_PARAMS.get('boxId') || ''
-  const VISIBILITY = URL_PARAMS.get('v') || 'public'
-  const RUNTIME_ORIGIN = location.origin
-
-  function notImplemented(method, op) {
-    return Promise.reject(new Error(
-      '[HTMLBox] ' + method + '.' + op + ' no está disponible todavía (fase 3). ' +
-      'Box: ' + BOX_ID + ', visibilidad: ' + VISIBILITY + '.'
-    ))
-  }
-
-  function table(slug) {
-    if (!slug || typeof slug !== 'string') {
-      throw new Error('HTMLBox.table(slug): slug requerido')
-    }
-    return {
-      rows: () => notImplemented('table', 'rows'),
-      columns: () => notImplemented('table', 'columns'),
-      upsert: () => notImplemented('table', 'upsert'),
-      onChange: () => {
-        console.info('[HTMLBox] table(' + slug + ').onChange — fase 3.')
-      },
-    }
-  }
-
-  function flow(flowId) {
-    if (!flowId || typeof flowId !== 'string') {
-      throw new Error('HTMLBox.flow(flowId): flowId requerido')
-    }
-    return { run: () => notImplemented('flow', 'run') }
-  }
-
-  const htmlbox = {
-    boxId: BOX_ID,
-    visibility: VISIBILITY,
-    runtimeOrigin: RUNTIME_ORIGIN,
-    sdkVersion: '${SDK_VERSION}',
-    table,
-    flow,
-  }
-  window.HTMLBox = htmlbox
-  console.log('[HTMLBox] SDK v' + htmlbox.sdkVersion + ' listo (box=' + BOX_ID + ', visibility=' + VISIBILITY + ')')
-})()
-`

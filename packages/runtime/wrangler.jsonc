@@ -5,6 +5,10 @@
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
 
+  "rules": [
+    { "type": "Text", "globs": ["src/sdk/*.txt"], "fallthrough": true }
+  ],
+
   "vars": {
     "HTMLBOX_ENV": "production",
     "HTMLBOX_CONTROL_PLANE_ORIGIN": "https://controlplane.htmlbox.dev"

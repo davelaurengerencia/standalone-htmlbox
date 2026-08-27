@@ -329,25 +329,145 @@
                       class="flex-1 w-full bg-slate-950 text-slate-200 font-mono p-4 text-xs lg:text-sm focus:outline-none resize-none code-editor"></textarea>
           </div>
 
-          <!-- Data placeholder (fase 3) -->
+          <!-- Tabla & Ingesta de Datos (fase 3 v1) -->
           <div x-show="activeTab === 'data'" class="absolute inset-0 p-6 overflow-y-auto bg-slate-950">
-            <div class="max-w-2xl mx-auto space-y-4">
-              <div class="p-6 rounded-2xl bg-slate-900 border border-slate-800 text-center space-y-3">
-                <i class="fa-solid fa-database text-3xl text-indigo-400"></i>
-                <h2 class="font-bold text-base">Tabla &amp; Ingesta de Datos</h2>
-                <p class="text-xs text-slate-400">Subida de CSV/XLSX/JSON y tablas consultables llega en la fase 3. Mientras tanto, el box está vivo y el SDK <code class="text-indigo-300">window.HTMLBox.table()</code> está documentado (stub).</p>
+            <div class="max-w-4xl mx-auto space-y-4" x-data="dataTab()" x-init="init()">
+
+              <!-- Header con acciones -->
+              <div class="flex items-center justify-between">
+                <div>
+                  <h2 class="text-lg font-bold flex items-center gap-2">
+                    <i class="fa-solid fa-database text-indigo-400"></i>
+                    Tablas &amp; Datos
+                  </h2>
+                  <p class="text-xs text-slate-400 mt-1">
+                    Subí CSV/XLSX/JSON. El HTML del box los lee con
+                    <code class="text-indigo-300">HTMLBox.table('&lt;slug&gt;').rows()</code>.
+                  </p>
+                </div>
+                <button @click="showNewTable = true"
+                        class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-lg text-xs font-medium transition">
+                  <i class="fa-solid fa-plus mr-1"></i> Nueva tabla
+                </button>
               </div>
-              <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
-                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Archivos subidos (mockup)</h3>
-                <table class="w-full text-left text-xs">
-                  <thead class="text-slate-500 border-b border-slate-800">
-                    <tr><th class="p-2">Archivo</th><th class="p-2">Tipo</th><th class="p-2">Tamaño</th><th class="p-2">R2</th></tr>
-                  </thead>
-                  <tbody class="divide-y divide-slate-800/60">
-                    <tr><td class="p-2 text-slate-500 italic" colspan="4">Sin archivos. La fase 3 habilita upload CSV/XLSX/JSON con auto-parse.</td></tr>
-                  </tbody>
-                </table>
+
+              <!-- Form nueva tabla -->
+              <div x-show="showNewTable" x-transition
+                   class="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Crear tabla</h3>
+                <div class="flex gap-2">
+                  <input x-model="newTableSlug" placeholder="slug (ej: ventas, productos, clientes)"
+                           class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500">
+                  <input x-model="newTableName" placeholder="Nombre (opcional)"
+                           class="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500">
+                  <button @click="createTable()" :disabled="!newTableSlug || creatingTable"
+                          class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 rounded-lg text-sm font-medium transition">
+                    <span x-show="!creatingTable">Crear</span>
+                    <span x-show="creatingTable"><i class="fa-solid fa-spinner fa-spin"></i></span>
+                  </button>
+                  <button @click="showNewTable = false"
+                          class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-lg text-sm transition">Cancelar</button>
+                </div>
+                <p class="text-[10px] text-slate-500">El slug debe ser minúsculas, sin espacios (se usa como nombre de tabla SQL y para el SDK).</p>
               </div>
+
+              <!-- Dropzone upload -->
+              <div x-show="activeTable"
+                   class="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-3">
+                <div class="flex items-center justify-between">
+                  <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    Subir archivo a <code class="text-indigo-300" x-text="activeTable"></code>
+                  </h3>
+                  <button @click="activeTable = null"
+                          class="text-slate-500 hover:text-white text-xs"><i class="fa-solid fa-times"></i></button>
+                </div>
+                <div @dragover.prevent @drop.prevent="handleDrop($event)"
+                     @click="$refs.fileInput.click()"
+                     class="border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-xl p-6 text-center cursor-pointer transition">
+                  <i class="fa-solid fa-cloud-upload-arrow text-2xl text-slate-500 mb-2"></i>
+                  <p class="text-sm text-slate-400">
+                    Arrastrá un archivo CSV, XLSX o JSON, o hacé click para elegir
+                  </p>
+                  <p class="text-[10px] text-slate-500 mt-1">
+                    Estrategia:
+                    <select x-model="uploadStrategy" class="bg-slate-950 border border-slate-800 rounded px-1 text-[10px]">
+                      <option value="replace">replace (borrar todo y recargar)</option>
+                      <option value="upsert">upsert (agregar)</option>
+                    </select>
+                  </p>
+                  <input type="file" x-ref="fileInput" class="hidden"
+                         accept=".csv,.json,.txt" @change="handleFile($event)">
+                </div>
+                <div x-show="uploadStatus" x-text="uploadStatus"
+                     class="text-xs px-3 py-2 rounded-lg"
+                     :class="uploadOk ? 'bg-emerald-900/30 text-emerald-300' : 'bg-rose-900/30 text-rose-300'"></div>
+              </div>
+
+              <!-- Lista de tablas -->
+              <div class="space-y-2">
+                <template x-for="t in tables" :key="t.slug">
+                  <div class="p-4 rounded-2xl bg-slate-900/60 border border-slate-800">
+                    <div class="flex items-center justify-between">
+                      <div>
+                        <h3 class="font-medium text-sm">
+                          <i class="fa-solid fa-table text-indigo-400 mr-2"></i>
+                          <span x-text="t.name || t.slug"></span>
+                        </h3>
+                        <p class="text-[10px] text-slate-500 mt-0.5">
+                          slug: <code class="text-slate-400" x-text="t.slug"></code>
+                          · <span x-text="t.mode"></span>
+                          · <span x-text="t.created_at"></span>
+                        </p>
+                      </div>
+                      <div class="flex gap-1">
+                        <button @click="selectTable(t)"
+                                class="px-3 py-1 bg-slate-800 hover:bg-indigo-600 rounded-lg text-[11px] transition">
+                          Subir archivo
+                        </button>
+                        <button @click="previewTable(t)"
+                                class="px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded-lg text-[11px] transition">
+                          Ver filas
+                        </button>
+                      </div>
+                    </div>
+                    <div x-show="previewSlug === t.slug" class="mt-3" x-transition>
+                      <div x-show="previewLoading" class="text-xs text-slate-500 py-2">
+                        <i class="fa-solid fa-spinner fa-spin mr-1"></i> Cargando…
+                      </div>
+                      <div x-show="!previewLoading && previewRows.length === 0" class="text-xs text-slate-500 italic py-2">
+                        Tabla vacía. Subí un archivo para verla acá.
+                      </div>
+                      <div x-show="!previewLoading && previewRows.length > 0" class="overflow-x-auto">
+                        <table class="w-full text-left text-[11px]">
+                          <thead class="text-slate-500 border-b border-slate-800">
+                            <tr>
+                              <template x-for="c in previewColumns" :key="c">
+                                <th class="p-2 font-medium" x-text="c"></th>
+                              </template>
+                            </tr>
+                          </thead>
+                          <tbody class="divide-y divide-slate-800/60">
+                            <template x-for="r in previewRows" :key="r.id">
+                              <tr>
+                                <template x-for="c in previewColumns" :key="c">
+                                  <td class="p-2 text-slate-300" x-text="r[c] !== undefined ? String(r[c]).slice(0, 80) : ''"></td>
+                                </template>
+                              </tr>
+                            </template>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+                <div x-show="tables.length === 0 && !loadingTables" class="text-xs text-slate-500 italic text-center py-6">
+                  No hay tablas todavía. Creá una con "Nueva tabla" arriba.
+                </div>
+                <div x-show="loadingTables" class="text-xs text-slate-500 text-center py-6">
+                  <i class="fa-solid fa-spinner fa-spin mr-1"></i> Cargando…
+                </div>
+              </div>
+
             </div>
           </div>
 
@@ -1068,6 +1188,176 @@
           this.toast = msg
           clearTimeout(this.toastTimer)
           this.toastTimer = setTimeout(() => { this.toast = null }, 3000)
+        },
+      }
+    }
+
+    // ============ Tab Datos (fase 3 v1) ============
+    function dataTab() {
+      const RUNTIME = 'https://htmlbox.dev'
+      return {
+        tables: [],
+        loadingTables: false,
+        showNewTable: false,
+        newTableSlug: '',
+        newTableName: '',
+        creatingTable: false,
+        activeTable: null,
+        uploadStrategy: 'replace',
+        uploadStatus: null,
+        uploadOk: false,
+        previewSlug: null,
+        previewRows: [],
+        previewColumns: [],
+        previewLoading: false,
+
+        async init() {
+          await this.loadTables()
+        },
+
+        async loadTables() {
+          this.loadingTables = true
+          try {
+            const r = await fetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables`, {
+              credentials: 'include',
+            })
+            if (r.ok) {
+              const d = await r.json()
+              this.tables = d.tables || []
+            } else {
+              this.tables = []
+            }
+          } catch (err) {
+            console.error('[dataTab] loadTables:', err)
+            this.tables = []
+          }
+          this.loadingTables = false
+        },
+
+        async createTable() {
+          const slug = this.newTableSlug.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_')
+          if (!slug || !/^[a-z][a-z0-9_]{0,40}$/.test(slug)) {
+            alert('Slug inválido. Use minúsculas y guiones bajos, empezando con letra.')
+            return
+          }
+          this.creatingTable = true
+          try {
+            // Crear la tabla subiendo 1 fila vacía + la metadata se genera en el upload.
+            // Mejor: insertar metadata directo en htmlbox_tables via API.
+            // Por ahora: simular creando con un upsert de 0 filas para registrar metadata.
+            const r = await fetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables/${slug}/upsert`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ rows: [] }),
+            })
+            if (!r.ok) {
+              const err = await r.json().catch(() => ({}))
+              alert(`Error: ${err.error || r.status}`)
+              this.creatingTable = false
+              return
+            }
+            this.newTableSlug = ''
+            this.newTableName = ''
+            this.showNewTable = false
+            await this.loadTables()
+          } catch (err) {
+            console.error('[dataTab] createTable:', err)
+          }
+          this.creatingTable = false
+        },
+
+        selectTable(t) {
+          this.activeTable = t.slug
+          this.uploadStatus = null
+        },
+
+        handleDrop(e) {
+          const file = e.dataTransfer.files?.[0]
+          if (file) this.uploadFile(file)
+        },
+        handleFile(e) {
+          const file = e.target.files?.[0]
+          if (file) this.uploadFile(file)
+        },
+
+        async uploadFile(file) {
+          if (!this.activeTable) return
+          this.uploadStatus = 'Subiendo…'
+          this.uploadOk = false
+          try {
+            const ext = file.name.split('.').pop().toLowerCase()
+            let r
+            if (ext === 'json') {
+              const text = await file.text()
+              const rows = JSON.parse(text)
+              if (!Array.isArray(rows)) throw new Error('JSON debe ser un array de objetos')
+              r = await fetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables/${this.activeTable}/upload?strategy=${this.uploadStrategy}`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rows, filename: file.name }),
+              })
+            } else {
+              // CSV / TXT
+              const text = await file.text()
+              r = await fetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables/${this.activeTable}/upload?strategy=${this.uploadStrategy}`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'text/csv' },
+                body: text,
+              })
+            }
+            if (!r.ok) {
+              const err = await r.json().catch(() => ({}))
+              this.uploadStatus = `Error: ${err.error || r.status}`
+              this.uploadOk = false
+            } else {
+              const data = await r.json()
+              this.uploadStatus = `OK — ${data.inserted} filas insertadas (${data.strategy})`
+              this.uploadOk = true
+              await this.loadTables()
+              this.previewTable({ slug: this.activeTable })
+            }
+          } catch (err) {
+            this.uploadStatus = `Error: ${err.message}`
+            this.uploadOk = false
+          }
+        },
+
+        async previewTable(t) {
+          if (this.previewSlug === t.slug) {
+            this.previewSlug = null
+            this.previewRows = []
+            this.previewColumns = []
+            return
+          }
+          this.previewSlug = t.slug
+          this.previewLoading = true
+          this.previewRows = []
+          this.previewColumns = []
+          try {
+            const r = await fetch(`${RUNTIME}/api/data/${this.$root.currentBox.id}/tables/${t.slug}/rows?limit=10`, {
+              credentials: 'include',
+            })
+            if (r.ok) {
+              const d = await r.json()
+              this.previewRows = d.rows || []
+              if (this.previewRows.length > 0) {
+                const skip = new Set(['id', 'created_at', 'updated_at'])
+                const cols = new Set()
+                for (const row of this.previewRows) {
+                  for (const k of Object.keys(row)) {
+                    if (!skip.has(k)) cols.add(k)
+                  }
+                }
+                this.previewColumns = Array.from(cols)
+              }
+            }
+          } catch (err) {
+            console.error('[dataTab] previewTable:', err)
+          }
+          this.previewLoading = false
         },
       }
     }

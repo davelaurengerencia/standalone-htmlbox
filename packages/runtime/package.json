@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@htmlbox/shared": "*",
-    "@htmlbox/control-plane": "*"
+    "@htmlbox/control-plane": "*",
+    "@tursodatabase/serverless": "^0.1.0"
   },
   "devDependencies": {
     "wrangler": "^3.114.0"
