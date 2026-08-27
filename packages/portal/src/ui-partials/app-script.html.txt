@@ -105,6 +105,23 @@
     // importan via require() del guard de exports al final.
 
     function findEditableBlocks(html) {
+      const { scripts, styles } = _scanEditableBlocks(html)
+      return {
+        script: scripts.length === 1 ? scripts[0] : null,
+        style: styles.length === 1 ? styles[0] : null,
+      }
+    }
+
+    // Solo cuenta cuántos <script>/<style> inline hay (ignora <script src=>).
+    // Sirve para que la UI pueda INFORMAR al usuario por qué JS/CSS no aparece
+    // cuando hay 0 o 2+ bloques (regla deliberada de v1 del spec — no la
+    // cambiamos, solo la mostramos).
+    function countEditableBlocks(html) {
+      const { scripts, styles } = _scanEditableBlocks(html)
+      return { script: scripts.length, style: styles.length }
+    }
+
+    function _scanEditableBlocks(html) {
       const re = /<(script|style)\b([^>]*)>([\s\S]*?)<\/\1>/gid
       const scripts = []
       const styles = []
@@ -118,10 +135,7 @@
         if (tag === 'script') scripts.push(block)
         else styles.push(block)
       }
-      return {
-        script: scripts.length === 1 ? scripts[0] : null,
-        style: styles.length === 1 ? styles[0] : null,
-      }
+      return { scripts, styles }
     }
 
     function spliceBlock(html, block, newContent) {
@@ -774,6 +788,30 @@
           this.toast = msg
           clearTimeout(this.toastTimer)
           this.toastTimer = setTimeout(() => { this.toast = null }, duration)
+        },
+
+        // Subtitle informativo del selector del editor (Todo | HTML | JS | CSS).
+        // Muestra cuántos <script>/<style> inline se detectaron para que el
+        // usuario entienda por qué JS o CSS no aparecen (regla v1: exactamente
+        // 1 bloque). Vacío cuando la detección es 1+1 (caso ideal, sin
+        // confusión). CERO mutaciones, CERO cambios en la lógica de los
+        // botones — solo información visual.
+        get blockCountsLabel() {
+          const html = this._editorFullHtml || ''
+          const c = countEditableBlocks(html)
+          if (c.script === 1 && c.style === 1) return ''
+          const parts = [`${c.script} <script>`, `${c.style} <style>`]
+          let note = ''
+          if (c.script >= 2 || c.style >= 2) {
+            note = ' — las vistas JS/CSS solo se ofrecen con exactamente 1 bloque del tipo.'
+          } else if (c.script === 0 && c.style === 0) {
+            note = ''
+          } else if (c.script === 0) {
+            note = ' — sin <script> inline, JS no se ofrece.'
+          } else if (c.style === 0) {
+            note = ' — sin <style> inline, CSS no se ofrece.'
+          }
+          return `detectado: ${parts.join(', ')}${note}`
         },
 
         // --------- AI (fase 4 v1) ---------

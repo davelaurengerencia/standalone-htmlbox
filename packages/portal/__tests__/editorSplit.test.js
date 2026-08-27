@@ -32,12 +32,12 @@ function loadHelpers() {
   assert.notEqual(endIdx, -1, 'end marker not found in app-script.html.txt')
   const helpersSrc = src.slice(startIdx, endIdx)
   const sandbox = { module: { exports: {} } }
-  const wrapped = `${helpersSrc}\nmodule.exports = { findEditableBlocks, spliceBlock };`
+  const wrapped = `${helpersSrc}\nmodule.exports = { findEditableBlocks, countEditableBlocks, spliceBlock };`
   vm.runInNewContext(wrapped, sandbox)
   return sandbox.module.exports
 }
 
-const { findEditableBlocks, spliceBlock } = loadHelpers()
+const { findEditableBlocks, countEditableBlocks, spliceBlock } = loadHelpers()
 
 test('findEditableBlocks: detecta exactamente un <script> inline', () => {
   const html = '<html><body><script>const x = 1</script></body></html>'
@@ -214,4 +214,51 @@ test('findEditableBlocks: NO matchea tag como substring (regex /gid no se confun
   const r = findEditableBlocks(html)
   assert.ok(r.script, 'debería encontrar 1 <script> y NO contar <noscript>')
   assert.equal(r.script.content, 'bar')
+})
+
+test('countEditableBlocks: cuenta correcta para 0/1/2+ scripts y styles', () => {
+  function check(html, expectedScript, expectedStyle, msg) {
+    const r = countEditableBlocks(html)
+    assert.equal(r.script, expectedScript, `${msg}: scripts=${r.script} esperado=${expectedScript}`)
+    assert.equal(r.style, expectedStyle, `${msg}: styles=${r.style} esperado=${expectedStyle}`)
+  }
+  check('<p>x</p>', 0, 0, 'plain HTML')
+  check('<script>a</script>', 1, 0, '1 inline script')
+  check('<script src="a.js"></script>', 0, 0, 'externo se ignora')
+  check('<script>a</script><script>b</script>', 2, 0, '2 inline scripts')
+  check('<style>x</style>', 0, 1, '1 style')
+  check('<style>a</style><style>b</style>', 0, 2, '2 styles')
+  check('<script>a</script><style>x</style><script src="ext"></script><style>y</style>', 1, 2, 'mixto: ignora externos')
+})
+
+test('countEditableBlocks: no falla con HTML vacío', () => {
+  const r1 = countEditableBlocks('')
+  assert.equal(r1.script, 0)
+  assert.equal(r1.style, 0)
+  const r2 = countEditableBlocks('<html><body></body></html>')
+  assert.equal(r2.script, 0)
+  assert.equal(r2.style, 0)
+})
+
+test('countEditableBlocks: reproduce el caso del bug del usuario (Tailwind config + app)', () => {
+  // Caso de uso real que disparó el bug: 1 src= externo (Tailwind CDN) +
+  // 1 inline de tailwind.config + 1 inline de app = 2 inline scripts.
+  const html = `
+    <head>
+      <script src="https://cdn.tailwindcss.com"></script>
+      <script>tailwind.config = { darkMode: 'class' }</script>
+      <style>::-webkit-scrollbar { width: 6px; }</style>
+    </head>
+    <body>
+      <script>let state = { theme: 'dark' }</script>
+    </body>
+  `
+  const r = countEditableBlocks(html)
+  assert.equal(r.script, 2, 'contamos 2 inline scripts')
+  assert.equal(r.style, 1, 'contamos 1 style')
+  // Y findEditableBlocks devuelve null en script (regla de "exactamente 1")
+  // pero style sigue válido.
+  const fb = findEditableBlocks(html)
+  assert.equal(fb.script, null, '2 inline scripts → null (regla v1 intencional)')
+  assert.ok(fb.style, '1 style → bloque')
 })
