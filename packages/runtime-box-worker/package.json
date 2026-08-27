@@ -1,0 +1,21 @@
+{
+  "name": "@htmlbox/runtime-box-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/box-worker.mjs",
+  "exports": {
+    ".": "./dist/box-worker.mjs",
+    "./source": "./src/wrapper.mjs"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test __tests__/*.test.js"
+  },
+  "dependencies": {
+    "@htmlbox/runtime-core": "*"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}
