@@ -359,18 +359,29 @@ export async function validateTenantAppSession(env, sessionId) {
 // Resuelve si un tenant_app_user tiene acceso a un box puntual, mirando las
 // 3 formas posibles de acceso (tenant entero / workspace / box puntual).
 // box debe traer { id, tenant_id, workspace_id }.
+//
+// Defensa en profundidad (anexo de seguridad hallazgo 3): el JOIN con
+// htmlbox_tenant_app_users acá adentro garantiza que un tenant_app_user de
+// OTRO tenant NO puede acceder a boxes de este tenant aunque tenga una fila
+// con scope_type='tenant' apuntando a otro tenant — si esa fila existiera
+// por bug, simplemente no matchea porque u.tenant_id != box.tenant_id.
+// Antes este check vivía solo en el caller (postTenantAppAccessCheck en
+// internal.js) — si otro caller olvidaba replicarlo, abría un cross-tenant.
+// Ahora es parte de la función.
 export async function checkTenantAppAccess(env, tenantAppUserId, box) {
   const row = await env.DB.prepare(`
-    SELECT role FROM htmlbox_tenant_app_access
-     WHERE tenant_app_user_id = ?1
+    SELECT a.role FROM htmlbox_tenant_app_access a
+      JOIN htmlbox_tenant_app_users u ON u.id = a.tenant_app_user_id
+     WHERE a.tenant_app_user_id = ?1
+       AND u.tenant_id = ?4
        AND (
-         scope_type = 'tenant'
-         OR (scope_type = 'workspace' AND scope_id = ?2)
-         OR (scope_type = 'box' AND scope_id = ?3)
+         a.scope_type = 'tenant'
+         OR (a.scope_type = 'workspace' AND a.scope_id = ?2)
+         OR (a.scope_type = 'box' AND a.scope_id = ?3)
        )
-     ORDER BY CASE scope_type WHEN 'box' THEN 0 WHEN 'workspace' THEN 1 ELSE 2 END
+     ORDER BY CASE a.scope_type WHEN 'box' THEN 0 WHEN 'workspace' THEN 1 ELSE 2 END
      LIMIT 1
-  `).bind(tenantAppUserId, box.workspace_id, box.id).first()
+  `).bind(tenantAppUserId, box.workspace_id, box.id, box.tenant_id).first()
   return row ? { allowed: true, role: row.role } : { allowed: false }
 }
 

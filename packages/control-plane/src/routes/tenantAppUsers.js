@@ -26,6 +26,33 @@ async function requireUser(request, env) {
   return { user: v.user }
 }
 
+// Comprueba que el user tiene rol owner/editor en algún workspace del tenant
+// (no solo ser miembro). Platform owners pasan implícito. Devuelve { error }
+// JSON listo para retornar si falla; { user, role } si pasa. Cubre el
+// hallazgo 1 del anexo de seguridad: un viewer NO debe poder crear ni
+// otorgarse accesos de tenant_app_user.
+async function assertUserCanAdministerTenant(env, user, tenantId) {
+  try { assertTenantScope(user, tenantId, 'administer tenant_app_users') }
+  catch (e) { return { error: json({ error: 'forbidden', message: e.message }, 403) } }
+  if (user.is_platform_owner) return { user, role: 'owner' }
+  const row = await env.DB.prepare(
+    `SELECT MAX(
+       CASE role
+         WHEN 'owner'  THEN 3
+         WHEN 'editor' THEN 2
+         WHEN 'viewer' THEN 1
+         ELSE 0
+       END
+     ) AS role_rank
+       FROM htmlbox_memberships m
+       JOIN htmlbox_workspaces w ON w.id = m.workspace_id
+      WHERE m.user_id = ?1 AND w.tenant_id = ?2`
+  ).bind(user.id, tenantId).first()
+  const rank = row?.role_rank || 0
+  if (rank < 2) return { error: json({ error: 'forbidden' }, 403) }
+  return { user, role: rank >= 3 ? 'owner' : 'editor' }
+}
+
 // Devuelve el tenant_id activo del user — si es platform_owner usa el query
 // ?tenant_id=... o, si no, el primer tenant donde tenga membresía. Si no
 // hay ninguno, error.
@@ -48,47 +75,51 @@ async function resolveTenantForUser(request, env, user) {
   return { tenantId: user.tenant_id }
 }
 
+// Helper: pasame la request + el user ya validado, y resolví tenant + scope +
+// role en una sola pasada. Cada handler del router pasa por acá.
+async function authenticateAndAuthorize(request, env) {
+  const { user, error: userErr } = await requireUser(request, env)
+  if (userErr) return { error: userErr }
+  const tenant = await resolveTenantForUser(request, env, user)
+  if (tenant.error) return { error: tenant.error }
+  const roleCheck = await assertUserCanAdministerTenant(env, user, tenant.tenantId)
+  if (roleCheck.error) return { error: roleCheck.error }
+  return { user, role: roleCheck.role, tenantId: tenant.tenantId }
+}
+
 export async function handleTenantAppUsers(request, env, ctx, path, method) {
   // ─── /api/tenant-app-users ────────────────────────────────────────────────
   if (path === '/api/tenant-app-users' || path === '/api/tenant-app-users/') {
-    const { user, error } = await requireUser(request, env)
-    if (error) return error
-    const tenant = await resolveTenantForUser(request, env, user)
-    if (tenant.error) return tenant.error
+    const auth = await authenticateAndAuthorize(request, env)
+    if (auth.error) return auth.error
 
-    if (method === 'GET') return await listTenantAppUsers(request, env, tenant.tenantId)
-    if (method === 'POST') return await createTenantAppUser(request, env, tenant.tenantId)
+    if (method === 'GET') return await listTenantAppUsers(request, env, auth.tenantId)
+    if (method === 'POST') return await createTenantAppUser(request, env, auth.tenantId)
     return json({ error: 'method_not_allowed' }, 405)
   }
 
   // ─── /api/tenant-app-users/{id}/access ────────────────────────────────────
   const accessM = path.match(/^\/api\/tenant-app-users\/([a-z0-9_]{4,40})\/access$/)
   if (accessM && method === 'POST') {
-    const { user, error } = await requireUser(request, env)
-    if (error) return error
-    const tenant = await resolveTenantForUser(request, env, user)
-    if (tenant.error) return tenant.error
-    return await grantAccess(request, env, tenant.tenantId, accessM[1])
+    const auth = await authenticateAndAuthorize(request, env)
+    if (auth.error) return auth.error
+    return await grantAccess(request, env, auth.tenantId, accessM[1])
   }
 
   // ─── /api/tenant-app-users/{id}/access/{accessId} ────────────────────────
   const revokeM = path.match(/^\/api\/tenant-app-users\/([a-z0-9_]{4,40})\/access\/([a-z0-9_]{4,40})$/)
   if (revokeM && method === 'DELETE') {
-    const { user, error } = await requireUser(request, env)
-    if (error) return error
-    const tenant = await resolveTenantForUser(request, env, user)
-    if (tenant.error) return tenant.error
-    return await revokeAccess(request, env, tenant.tenantId, revokeM[1], revokeM[2])
+    const auth = await authenticateAndAuthorize(request, env)
+    if (auth.error) return auth.error
+    return await revokeAccess(request, env, auth.tenantId, revokeM[1], revokeM[2])
   }
 
   // ─── /api/tenant-app-users/{id}  DELETE ───────────────────────────────────
   const userM = path.match(/^\/api\/tenant-app-users\/([a-z0-9_]{4,40})$/)
   if (userM && method === 'DELETE') {
-    const { user, error } = await requireUser(request, env)
-    if (error) return error
-    const tenant = await resolveTenantForUser(request, env, user)
-    if (tenant.error) return tenant.error
-    return await deleteTenantAppUser(request, env, tenant.tenantId, userM[1])
+    const auth = await authenticateAndAuthorize(request, env)
+    if (auth.error) return auth.error
+    return await deleteTenantAppUser(request, env, auth.tenantId, userM[1])
   }
 
   return json({ error: 'not_found' }, 404)

@@ -92,32 +92,67 @@ test('shouldUseSecureCookie — https real usa Secure', () => {
   assert.equal(shouldUseSecureCookie(req, {}), true)
 })
 
-test('cookiePathForBox — usa Referer cuando matchea boxSlug', () => {
+test('cookiePathForBox — devuelve Path determinístico /api/app-auth/{boxId} (anexo H2)', () => {
+  // La decisión (Anexo de Seguridad hallazgo 2) es NO depender del header
+  // Referer (que en el flujo real nunca vale porque el fetch a /consume sale
+  // de /verify, no de la URL pública del box). Path = /api/app-auth/{boxId}
+  // funciona para los 3 modos de ruteo: los endpoints auth son SIEMPRE ese
+  // path, y boxId es único globalmente (sin colisión entre boxes con mismo
+  // boxSlug).
+  const boxInfo = { boxSlug: 'mybox', tenantSlug: 'acme', visibility: 'private' }
+  const req = { headers: { get: () => null } }
+  assert.equal(cookiePathForBox(boxInfo, 'abc123def456ghij', req), '/api/app-auth/abc123def456ghij')
+})
+
+test('cookiePathForBox — ignora boxSlug del Referer (la cookie NO viaja a la página pública)', () => {
+  // Garantía: el Path NO es /{boxSlug}. Eso evita la colisión con la que el
+  // Anexo de Seguridad llamó la atención — dos boxes con mismo slug bajo
+  // mismo host pisándose la cookie entre sí.
   const boxInfo = { boxSlug: 'mybox', visibility: 'private' }
   const req = {
     headers: { get: (k) => k.toLowerCase() === 'referer' ? 'https://acme.htmlbox.dev/mybox/' : null },
   }
-  assert.equal(cookiePathForBox(boxInfo, 'abc123', req), '/mybox')
+  const path = cookiePathForBox(boxInfo, 'abc123def456ghij', req)
+  assert.notEqual(path, '/mybox', 'nunca devuelve el path público del box')
+  assert.equal(path, '/api/app-auth/abc123def456ghij')
 })
 
-test('cookiePathForBox — usa Referer /t/{tenant}/{boxSlug}', () => {
+test('cookiePathForBox — ignora /t/... del Referer (también funciona en path-based)', () => {
   const boxInfo = { boxSlug: 'mybox', visibility: 'private' }
   const req = {
     headers: { get: (k) => k.toLowerCase() === 'referer' ? 'https://htmlbox.dev/t/acme/mybox' : null },
   }
-  assert.equal(cookiePathForBox(boxInfo, 'abc123', req), '/t/acme/mybox')
+  const path = cookiePathForBox(boxInfo, 'abc123def456ghij', req)
+  assert.notEqual(path, '/t/acme/mybox', 'nunca devuelve el path /t/...')
+  assert.equal(path, '/api/app-auth/abc123def456ghij')
 })
 
-test('cookiePathForBox — fallback a /{boxSlug} sin Referer', () => {
-  const boxInfo = { boxSlug: 'mybox', visibility: 'private' }
-  const req = { headers: { get: () => null } }
-  assert.equal(cookiePathForBox(boxInfo, 'abc123', req), '/mybox')
+test('cookiePathForBox — ignora /s/{shareId}/... del Referer (también funciona en share)', () => {
+  const boxInfo = { boxSlug: 'mybox', shareId: 'shr123', visibility: 'public' }
+  const req = {
+    headers: { get: (k) => k.toLowerCase() === 'referer' ? 'https://htmlbox.dev/s/shr123abc' : null },
+  }
+  const path = cookiePathForBox(boxInfo, 'abc123def456ghij', req)
+  assert.notEqual(path, '/s/shr123abc', 'nunca devuelve el path /s/...')
+  assert.equal(path, '/api/app-auth/abc123def456ghij')
 })
 
-test('cookiePathForBox — Referer malformado no rompe', () => {
-  const boxInfo = { boxSlug: 'mybox', visibility: 'private' }
-  const req = { headers: { get: (k) => k.toLowerCase() === 'referer' ? 'http://[invalid' : null } }
-  assert.equal(cookiePathForBox(boxInfo, 'abc123', req), '/mybox')
+test('cookiePathForBox — boxId con formato inválido cae a "/" (defensa)', () => {
+  // Si alguien logra pasar un boxId que no matchea el formato de 16 chars
+  // alfanuméricos, no emitir una cookie con un path arbitrario. El
+  // llamador (router) ya rechaza boxIds inválidos antes con 400/404;
+  // este fallback es una red de seguridad final.
+  assert.equal(cookiePathForBox({}, 'tooshort', {}), '/')
+  assert.equal(cookiePathForBox({}, 'CON-UPPER-CASE', {}), '/')
+  assert.equal(cookiePathForBox({}, 'has spaces here 123', {}), '/')
+  assert.equal(cookiePathForBox({}, null, {}), '/')
+})
+
+test('cookiePathForBox — funciona sin request (test puro, sin Referer)', () => {
+  // La función ya NO lee el Referer (Anexo de Seguridad). Probamos que se
+  // puede llamar sin un request válido, lo cual rompe el patrón anterior.
+  const path = cookiePathForBox({ boxSlug: 'x', visibility: 'private' }, 'aaaaaaaaaaaaaaaa', null)
+  assert.equal(path, '/api/app-auth/aaaaaaaaaaaaaaaa')
 })
 
 test('verifyConfirmHtml escapa caracteres peligrosos en returnPath', () => {

@@ -64,6 +64,37 @@ function mockControlPlaneAsPlatformUserNoBox({ role = 'editor' } = {}) {
   }
 }
 
+// Mock control-plane donde el box SÍ existe (resolvemos /db a un box válido
+// pero no nos importan las creds Turso — solo necesitamos pasar el gate de
+// role checks antes del getBoxClient).
+function mockControlPlaneAsPlatformUserWithBox({ role = 'editor' } = {}) {
+  globalThis.fetch = async (url) => {
+    const u = String(url)
+    if (u.endsWith('/api/internal/whoami')) {
+      return new Response(JSON.stringify({ userId: 'u1', tenantId: 't1', isPlatformOwner: false }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    if (u.match(/\/api\/internal\/boxes\/[a-z0-9]+\/membership$/)) {
+      return new Response(JSON.stringify({ membership: { role } }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    if (u.match(/\/api\/internal\/boxes\/[a-z0-9]+\/db$/)) {
+      return new Response(JSON.stringify({
+        box: {
+          id: BOX_ID, tenant_id: 't1', workspace_id: 'ws1',
+          turso_db_url: 'libsql://mock', turso_db_token: 'mock',
+          visibility: 'private', box_slug: 'mybox', tenant_slug: 'acme',
+        },
+      }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      })
+    }
+    return new Response('not mocked', { status: 404 })
+  }
+}
+
 // Mock que rechaza con 401 (sin sesión plataforma).
 function mockControlPlaneNoSession() {
   globalThis.fetch = async () => {
@@ -196,6 +227,33 @@ test('POST /admin/settings método GET sí permitido (gate antes de DB)', async 
   const r = await handleAppAuth(req, makeEnv(), url)
   // Llega al gate de "box existe" → 404
   assert.equal(r.status, 404)
+})
+
+// ─── Anexo de Seguridad hallazgo 4: viewer no debe leer admin ─────────────
+
+test('anexo H4 — GET /admin/users con rol viewer → 403 (no lista app_users)', async () => {
+  mockControlPlaneAsPlatformUserWithBox({ role: 'viewer' })
+  const url = new URL(`https://htmlbox.dev/api/app-auth/${BOX_ID}/admin/users`)
+  const req = makeReq('GET', `https://htmlbox.dev/api/app-auth/${BOX_ID}/admin/users`)
+  const r = await handleAppAuth(req, makeEnv(), url)
+  assert.equal(r.status, 403)
+  const body = await r.json()
+  assert.equal(body.error, 'forbidden')
+  // Reset del mock para no contaminar tests siguientes (los que vienen
+  // después no esperan que /db devuelva box válido).
+  mockControlPlaneAsPlatformUserNoBox({ role: 'viewer' })
+})
+
+test('anexo H4 — GET /admin/settings con rol viewer → 403 (no ve signup_mode)', async () => {
+  mockControlPlaneAsPlatformUserWithBox({ role: 'viewer' })
+  const url = new URL(`https://htmlbox.dev/api/app-auth/${BOX_ID}/admin/settings`)
+  const req = makeReq('GET', `https://htmlbox.dev/api/app-auth/${BOX_ID}/admin/settings`)
+  const r = await handleAppAuth(req, makeEnv(), url)
+  assert.equal(r.status, 403)
+  const body = await r.json()
+  assert.equal(body.error, 'forbidden')
+  // Reset.
+  mockControlPlaneAsPlatformUserNoBox({ role: 'viewer' })
 })
 
 // ─── URL parsing ──────────────────────────────────────────────────────────

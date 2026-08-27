@@ -223,49 +223,41 @@ export function shouldUseSecureCookie(request, env) {
   return url.protocol === 'https:'
 }
 
-// Devuelve el Path que la cookie de app-session debe llevar.
+// Devuelve el Path con el que la cookie de app-session se emite.
 //
-// boxInfo viene de resolveBoxDb() (boxSlug, tenantSlug, visibility). boxId es
-// el id crudo de la URL (/api/app-auth/{boxId}/...). Reconstruimos el Path
-// público real del box a partir de cómo llegó el request — mirando el
-// header Referer (la página del box que hizo el fetch) es más confiable que
-// adivinar el modo, porque el mismo boxId puede exponerse por más de una
-// ruta (share vs. path-based vs. subdomain) a lo largo del tiempo.
+// Decisión (anexo de seguridad hallazgo 2): en vez de derivar el Path del
+// header `Referer` (que en el flujo real nunca vale porque el `fetch()`
+// a `/consume` se dispara desde `/api/app-auth/{boxId}/verify`, no desde la
+// URL pública del box), usamos un Path determinístico basado en el `boxId`:
+// la cookie va scoped a `/api/app-auth/{boxId}`, que es el único prefijo
+// bajo el cual se sirven los endpoints auth de ESE box (`/me`, `/logout`,
+// `/consume`, `/request`). Razones:
 //
-// Nota: implementación v1 simplificada. Cubre los 3 modos principales de
-// resolver.js:
+// - `boxId` es globalmente único (16 chars alfanuméricos random). Cero
+//   colisión entre boxes, incluso si dos tenants tienen boxes con el mismo
+//   `boxSlug` o el mismo box accesible por múltiples rutas
+//   (subdomain + share + path-based).
+// - Los endpoints auth son los únicos que necesitan la cookie — la página
+//   pública del box (`/{boxSlug}`, `/s/{shareId}` o `/t/{tenant}/{slug}`)
+//   es HTML estático y cualquier chequeo de sesión del lado del box se
+//   hace desde JS llamando a `/api/app-auth/{boxId}/me`, donde la cookie
+//   sí viaja.
+// - Cero dependencia de headers inyectables por el browser (Referer es
+//   facilmente falsificable o vacío, y según `Referrer-Policy` puede no
+//   llegar al endpoint cross-origin).
+// - Funciona idéntico para los 3 modos de ruteo (subdomain / path-based
+//   / share) sin branching adicional.
 //
-//   1. Subdomain   {tenant}.htmlbox.dev/{boxSlug}        → /{boxSlug}
-//   2. Path-based  htmlbox.dev/t/{tenant}/{boxSlug}      → /t/{tenant}/{boxSlug}
-//   3. Share       htmlbox.dev/s/{shareId}               → /s/{shareId}  (visibility=public, sin auth — caso raro pero completo)
-//
-// Si ninguno matchea el Referer, fallback a /{boxSlug} (modo más común).
+// boxInfo y request ya no son necesarios pero quedan en la firma para
+// compatibilidad con callers/tests existentes — se ignoran.
 export function cookiePathForBox(boxInfo, boxId, request) {
-  // 1) Intentar derivar del Referer — la URL de la página del box que está
-  //    llamando a /api/app-auth/... sale el path exacto que el browser debe
-  //    scoped-ear.
-  const referer = request?.headers?.get?.('Referer') || ''
-  if (referer) {
-    try {
-      const refUrl = new URL(referer)
-      const path = refUrl.pathname || ''
-      if (path.startsWith('/s/')) return `/${path.split('/')[1]}`.slice(0, 200)
-      if (path.startsWith('/t/')) {
-        // /t/{tenant}/{boxSlug}[/resto...]
-        const parts = path.split('/').filter(Boolean)
-        if (parts.length >= 3) return `/t/${parts[1]}/${parts[2]}`.slice(0, 200)
-      }
-      if (path === `/${boxInfo.boxSlug}` || path.startsWith(`/${boxInfo.boxSlug}/`)) {
-        return `/${boxInfo.boxSlug}`
-      }
-    } catch { /* ignore malformed referer */ }
+  if (!boxId || !/^[a-z0-9]{16}$/.test(boxId)) {
+    // Defensa: si el boxId no matchea el formato, no emitir una cookie
+    // scopeada a un path arbitrario. Devolvemos '/' igual para no romper,
+    // pero el llamador debería invalidar el request antes de llegar acá.
+    return '/'
   }
-
-  // 2) Fallback por visibility
-  if (boxInfo.visibility === 'public') return `/${boxInfo.boxSlug}`
-
-  // 3) Default: subdomain privado
-  return `/${boxInfo.boxSlug}`
+  return `/api/app-auth/${boxId}`
 }
 
 // --- Sanity HTML (para /verify, vista de "click acá para entrar" anti-scanner) ---

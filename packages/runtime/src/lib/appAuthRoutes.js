@@ -237,13 +237,16 @@ async function postLogout(request, env, boxId) {
 async function getAdminUsers(request, env, boxId) {
   const auth = await requireBoxAsPlatformUser(env, boxId, request)
   if (auth.error) return json({ error: auth.error }, auth.status)
+  // Solo GET: viewer NO debe poder listar emails de app_users del box.
+  // Mismo criterio que las mutaciones postAdmin* (líneas 254/284/299/314).
+  if (auth.auth.role === 'viewer') return json({ error: 'forbidden' }, 403)
 
   const client = await getBoxClient(env, auth.info)
   await applyAppUsersSchema(client)
   const result = await client.execute(
     `SELECT id, email, display_name, role, created_at, disabled_at
        FROM htmlbox_app_users
-      ORDER BY created_at DESC`,
+       ORDER BY created_at DESC`,
   )
   return json({ users: result.rows })
 }
@@ -326,6 +329,9 @@ async function deleteAdminUser(request, env, boxId, userId) {
 async function getAdminSettings(request, env, boxId) {
   const auth = await requireBoxAsPlatformUser(env, boxId, request)
   if (auth.error) return json({ error: auth.error }, auth.status)
+  // Solo GET: viewer NO debe poder ver el signup_mode configurado del box.
+  // Mismo criterio que postAdminSettings (línea 339).
+  if (auth.auth.role === 'viewer') return json({ error: 'forbidden' }, 403)
 
   const client = await getBoxClient(env, auth.info)
   await applyAppSettingsSchema(client)
