@@ -2,7 +2,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseRuntimePath } from '../src/lib/resolver.js'
+import { parseRuntimePath } from '../src/resolver.js'
 
 const base = (path, host = 'htmlbox.app') => new URL(`https://${host}${path}`)
 

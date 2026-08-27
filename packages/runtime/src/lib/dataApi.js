@@ -16,7 +16,7 @@
 
 import { resolveBoxDb, getBoxClient } from './boxDb.js'
 import { parseCsv } from './csv.js'
-import { controlPlaneHeaders, readSession, checkMembership } from './auth.js'
+import { controlPlaneHeaders, readSession, checkMembership } from '@htmlbox/runtime-core'
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {

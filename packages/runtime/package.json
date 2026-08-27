@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@htmlbox/control-plane": "*",
+    "@htmlbox/runtime-core": "*",
     "@htmlbox/shared": "*",
     "@tursodatabase/serverless": "^0.1.0"
   },

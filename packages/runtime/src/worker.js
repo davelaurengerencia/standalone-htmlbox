@@ -14,8 +14,12 @@
 // (cookie de sesión reenviada). El control-plane valida membresía vía
 // /api/internal/boxes/{boxId}/membership.
 
-import { parseRuntimePath, resolveByShareId, resolveByTenantAndSlug } from './lib/resolver.js'
-import { serveBoxHtml } from './lib/htmlServer.js'
+import {
+  parseRuntimePath,
+  resolveByShareId,
+  resolveByTenantAndSlug,
+  serveBoxHtml,
+} from '@htmlbox/runtime-core'
 import { handleDataApi } from './lib/dataApi.js'
 import { handleAppAuth } from './lib/appAuthRoutes.js'
 import { handleAppDataApi } from './lib/appDataApi.js'

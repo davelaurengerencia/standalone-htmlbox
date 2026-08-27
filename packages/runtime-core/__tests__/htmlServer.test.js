@@ -2,7 +2,7 @@
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { securityHeaders, injectSdk } from '../src/lib/htmlServer.js'
+import { securityHeaders, injectSdk } from '../src/htmlServer.js'
 
 test('securityHeaders caja público tiene CSP + COOP', () => {
   const h = securityHeaders('public')

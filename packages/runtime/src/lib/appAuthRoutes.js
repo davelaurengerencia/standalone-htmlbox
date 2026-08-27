@@ -22,7 +22,7 @@
 //     Así dos boxes bajo el mismo subdominio no se pisan la cookie entre sí.
 
 import { resolveBoxDb, getBoxClient } from './boxDb.js'
-import { readSession, controlPlaneHeaders } from './auth.js'
+import { readSession, controlPlaneHeaders } from '@htmlbox/runtime-core'
 import {
   applyAppUsersSchema, applyAppSettingsSchema,
   ensureTableScopeColumn, ensureOwnerColumn,

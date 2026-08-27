@@ -31,7 +31,8 @@ htmlbox/
 │   ├── shared/         constantes, validadores, schema SQL por box, versioning
 │   ├── control-plane/  Worker D1-bound  — auth plataforma, registry, AI, internal API
 │   ├── portal/         Worker reverse-proxy — SPA Alpine.js del tenant
-│   └── runtime/        Worker box-local   — sirve HTML, Data API, app-auth
+│   ├── runtime-core/   pieza pura de runtime (sirve HTML, resuelve boxes, helpers auth control-plane) — sin bindings propios, sin auth de customer
+│   └── runtime/        Worker box-local   — sirve HTML, Data API, app-auth, consume @htmlbox/runtime-core
 ├── scripts/
 │   ├── dev.sh          lanza los 3 workers en background con colores
 │   └── migrate-remote.sh wrangler d1 migrations apply --remote
@@ -77,8 +78,9 @@ hay que agregar a `/etc/hosts`.
 | `npm test -w <pkg>` | Solo el workspace `<pkg>` |
 
 ### Tests por workspace
-- **`packages/shared`** (`node --test __tests__/*.test.js`): constantes, validadores, schema, versioning
-- **`packages/runtime`** (`node --experimental-test-module-mocks --test __tests__/*.test.js`): routers puros con fetch mockeado
+- **`packages/shared`** (`node --test src/__tests__/*.test.js`): constantes, validadores, schema, versioning
+- **`packages/runtime-core`** (`node --test __tests__/*.test.js`): pieza pura de runtime (htmlServer, resolver, auth helpers, debugPanel gate, contract). Sin bindings propios — todo fetch mockeado.
+- **`packages/runtime`** (`node --experimental-test-module-mocks --test __tests__/*.test.js`): routers puros con fetch mockeado (data API, app-auth, app-data, tenant-app-auth, sdk). Reusa helpers de `@htmlbox/runtime-core`.
 - **`packages/control-plane`**: dos suites:
   - `npm run test:node` → `node --test src/__tests__/*.test.js` (unit tests de dataExtractor, session.js helpers, etc.)
   - `npm run test:e2e` → `vitest run` con `cloudflare:test` (e2e real con D1 en miniflare)
