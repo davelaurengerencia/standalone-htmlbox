@@ -94,52 +94,40 @@
 
     debugLog('boot', window.HTMLBOX_PORTAL_VERSION || window.HTMLBOX_ADMIN_VERSION || 'dev')
 
-    // ============ Editor split-view (htmlbox-spec-editor-split-view.md) ============
+    // ============ Editor (htmlbox-spec-monaco-editor.md) ============
     //
-    // Helper puros que cortan y reensamblan el HTML del editor para soportar
-    // el selector Todo | HTML | JS | CSS — basado en regex con flag 'd' para
-    // obtener match.indices absolutos, así reensamblamos exactamente el mismo
-    // string sin reserializar nada (no usamos DOMParser porque reordena
-    // atributos y mangle entities). Son funciones sueltas globales; en el
-    // browser se usan via window.findEditableBlocks(); en Node tests se
-    // importan via require() del guard de exports al final.
+    // Reemplaza el anterior split-view (Todo | JS | CSS). Monaco entiende
+    // HTML+<script>+<style> embebido nativamente — un único editor, sin
+    // vistas parciales que reensamblar. Helpers puros que viven fuera de
+    // portalApp() para ser testeables en Node vía vm sandbox; el módulo
+    // Monaco en sí se carga vía AMD (jsdelivr) en el browser.
+    //
+    // Por qué no usar x-model con Monaco: Monaco mantiene su propio model
+    // de texto (undo stack, cursor, syntax). Forzarlo a re-renderizar en
+    // cada cambio reactivo resetea el cursor/undo. Lo correcto es empujar
+    // sus cambios a editorHtml vía evento y sincronizar de afuera solo
+    // cuando HTML cambia por fuera (cargar box, IA, formatear).
 
-    function findEditableBlocks(html) {
-      const { scripts, styles } = _scanEditableBlocks(html)
-      return {
-        script: scripts.length === 1 ? scripts[0] : null,
-        style: styles.length === 1 ? styles[0] : null,
+    // Re-indent simple del HTML — fallback defensivo si el CDN está caído
+    // y Monaco no carga. NO es un beautifier completo (no entiende
+    // HTML+JS+CSS embebido; el de Monaco sí). Testeado en __tests__/monacoEditor.test.js.
+    function reindentHtml(html) {
+      let level = 0
+      const out = []
+      const tokens = (html || '')
+        .replace(/></g, '>\n<')
+        .replace(/>\s+</g, '>\n<')
+        .split('\n')
+      for (const t of tokens) {
+        const trimmed = t.trim()
+        if (!trimmed) continue
+        if (/^<\/.+>/.test(trimmed)) level = Math.max(0, level - 1)
+        out.push('  '.repeat(level) + trimmed)
+        if (/^<[^!?\/][^>]*[^/]>$/.test(trimmed) && !/^<(br|hr|img|input|meta|link)/.test(trimmed)) {
+          level++
+        }
       }
-    }
-
-    // Solo cuenta cuántos <script>/<style> inline hay (ignora <script src=>).
-    // Sirve para que la UI pueda INFORMAR al usuario por qué JS/CSS no aparece
-    // cuando hay 0 o 2+ bloques (regla deliberada de v1 del spec — no la
-    // cambiamos, solo la mostramos).
-    function countEditableBlocks(html) {
-      const { scripts, styles } = _scanEditableBlocks(html)
-      return { script: scripts.length, style: styles.length }
-    }
-
-    function _scanEditableBlocks(html) {
-      const re = /<(script|style)\b([^>]*)>([\s\S]*?)<\/\1>/gid
-      const scripts = []
-      const styles = []
-      let m
-      while ((m = re.exec(html))) {
-        const tag = m[1].toLowerCase()
-        const attrs = m[2]
-        if (tag === 'script' && /\bsrc\s*=/i.test(attrs)) continue
-        const [innerStart, innerEnd] = m.indices[3]
-        const block = { innerStart, innerEnd, content: m[3] }
-        if (tag === 'script') scripts.push(block)
-        else styles.push(block)
-      }
-      return { scripts, styles }
-    }
-
-    function spliceBlock(html, block, newContent) {
-      return html.slice(0, block.innerStart) + newContent + html.slice(block.innerEnd)
+      return out.join('\n')
     }
 
     // ============ Constantes de seed ============
@@ -249,15 +237,12 @@
         toast: null,
         toastTimer: null,
 
-        // editor
+        // editor (htmlbox-spec-monaco-editor.md: Monaco maneja su propio
+        // model interno; editorHtml es el snapshot reactivo que se
+        // sincroniza vía onDidChangeModelContent — ver initMonaco abajo)
         editorHtml: '',
-        // editor split-view (Todo | HTML | JS | CSS) — spec editor-split-view.
-        // _editorFullHtml guarda el HTML COMPLETO cuando el textarea está
-        // mostrando solo un fragmento (vista js/css), así spliceBlock()
-        // puede reconstruirlo al cambiar de vista o al guardar.
-        editorView: 'all',       // 'all' | 'js' | 'css'
-        _editorBlocks: null,     // cache de findEditableBlocks(_editorFullHtml)
-        _editorFullHtml: '',     // snapshot del HTML completo antes de entrar a vista parcial
+        _monacoEditor: null,    // instancia de monaco.editor una vez mount() resolvió
+        _monacoReady: null,     // Promesa; resuelve cuando window.monaco existe
 
         // modales
         newBoxModalOpen: false,
@@ -527,11 +512,10 @@
 
         async saveCurrentBox() {
           if (!this.currentBox) return
-          // Si estamos en vista js/css, primero commitear el fragmento
-          // editado al HTML completo — si no, guardaríamos solo el <script>
-          // o el <style> suelto.
-          this._commitEditorView()
-          const fullHtml = this.editorView === 'all' ? this.editorHtml : this._editorFullHtml
+          // Con Monaco no hay "vista parcial" — editorHtml SIEMPRE es el
+          // documento completo (un único editor de HTML con resaltado de
+          // <script>/<style> embebidos; ver htmlbox-spec-monaco-editor.md).
+          const fullHtml = this.editorHtml || ''
           if (!fullHtml.trim()) {
             this.showToast('El HTML está vacío.')
             return
@@ -690,64 +674,64 @@
           return (this.editorHtml || '').length
         },
 
-        // Devuelve SIEMPRE el HTML completo del box, no el fragmento que esté
-        // mostrando el textarea (cuando la vista es 'js' o 'css').
-        // saveCurrentBox / aiAnalyze / aiApply / previewSrcdoc deben leer ESTE
-        // getter, no `this.editorHtml`, para no guardar ni mandar al server
-        // solo un <script> o un <style>.
-        get _fullHtml() {
-          return this.editorView === 'all' ? (this.editorHtml || '') : (this._editorFullHtml || '')
-        },
-
         // Reset unificado cuando se asigna un HTML nuevo al editor (cargar
-        // box, subir archivo, crear box, logout, vaciar lista). Vuelve
-        // automáticamente a vista 'all' con el snapshot completo.
+        // box, subir archivo, crear box, logout, vaciar lista). Si Monaco
+        // ya montó, sincroniza su buffer; si no, no hace nada (el bind
+        // inicial del editor al montar ya lo lee).
         _resetEditorState(html) {
           this.editorHtml = html || ''
-          this.editorView = 'all'
-          this._editorFullHtml = html || ''
-          this._editorBlocks = null
+          this._syncMonacoValue(this.editorHtml)
         },
 
-        // --- Editor split-view (Todo | HTML | JS | CSS) ---
-        // Llamar al click de cada botón del selector. Si estábamos en js/css,
-        // primero reconstruye _editorFullHtml con lo editado, y después
-        // entra a la nueva vista. Si se pide una vista sin un único bloque
-        // disponible (0 o 2+), avisa con un toast y no cambia la vista.
-        setEditorView(view) {
-          if (view === this.editorView) return
-          this._commitEditorView()
-          if (view === 'all') {
-            this.editorView = 'all'
-            this.editorHtml = this._editorFullHtml
+        // --- Editor Monaco (htmlbox-spec-monaco-editor.md) ---
+        //
+        // Llamado UNA vez desde x-init en el <div x-ref="monacoContainer">.
+        // Carga el módulo 'vs/editor/editor.main' vía el loader AMD (cargado
+        // en shell.html.txt desde jsdelivr) y monta el editor sobre el div.
+        // No usar arrow functions en el listener porque Alpine proxy-ea
+        // 'this' — bind explícito al final del callback.
+        initMonaco(container) {
+          if (!window.require) {
+            console.error('Monaco loader no disponible (falló la carga desde CDN).')
             return
           }
-          const blocks = findEditableBlocks(this._editorFullHtml)
-          const block = view === 'js' ? blocks.script : blocks.style
-          if (!block) {
-            this.showToast(view === 'js' ? 'No hay un único <script> para editar por separado.' : 'No hay un único <style> para editar por separado.')
-            return
-          }
-          this._editorBlocks = blocks
-          this.editorView = view
-          this.editorHtml = block.content
+          window.require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs' } })
+          this._monacoReady = new Promise((resolve) => {
+            window.require(['vs/editor/editor.main'], () => {
+              this._monacoEditor = window.monaco.editor.create(container, {
+                value: this.editorHtml || '',
+                language: 'html',
+                theme: 'vs-dark',
+                automaticLayout: true,   // re-mide en cada resize del contenedor, sin listener manual
+                minimap: { enabled: false },
+                fontSize: 13,
+                scrollBeyondLastLine: false,
+                wordWrap: 'off',
+              })
+              // Monaco → Alpine: cada tecleo empuja a editorHtml (mismo rol
+              // que x-model). El bind explícito al final evita problemas
+              // con el proxy de Alpine.
+              this._monacoEditor.onDidChangeModelContent(function () {
+                this.editorHtml = this._monacoEditor.getValue()
+              }.bind(this))
+              resolve()
+            })
+          })
         },
 
-        // Mete de vuelta el contenido del textarea (vista parcial) dentro
-        // del HTML completo guardado en _editorFullHtml. Llamado antes de
-        // cambiar de vista Y antes de saveCurrentBox().
-        _commitEditorView() {
-          if (this.editorView === 'all') {
-            this._editorFullHtml = this.editorHtml
-            return
+        // Alpine → Monaco: llamarlo desde TODO lugar que hoy asigna
+        // editorHtml directamente sin pasar por _resetEditorState (la
+        // carga inicial de una nueva versión, etc.). No-op seguro si
+        // Monaco todavía no montó (primera carga de box antes de que
+        // _monacoReady resuelva).
+        _syncMonacoValue(html) {
+          if (this._monacoEditor && this._monacoEditor.getValue() !== html) {
+            this._monacoEditor.setValue(html || '')
           }
-          const block = this.editorView === 'js' ? (this._editorBlocks && this._editorBlocks.script) : (this._editorBlocks && this._editorBlocks.style)
-          if (!block) return
-          this._editorFullHtml = spliceBlock(this._editorFullHtml, block, this.editorHtml)
         },
 
         get previewSrcdoc() {
-          const html = this._fullHtml
+          const html = this.editorHtml || ''
           if (!html) return ''
           const sdkTag = '<script src="/_sdk/htmlbox.js?boxId=preview&v=public"><\/script>'
           if (/<\/body\s*>/i.test(html)) {
@@ -757,61 +741,33 @@
         },
 
         formatHTML() {
-          // Si el usuario estaba en vista js/css, commitear el fragmento y
-          // volver a 'all' — el re-indent opera sobre el HTML completo, no
-          // sobre un fragmento suelto.
-          this._commitEditorView()
-          this.editorView = 'all'
-          this.editorHtml = this._editorFullHtml
-
-          // Re-indenta simple (no es un beautifier completo, pero ayuda).
-          let level = 0
-          const out = []
-          const tokens = this.editorHtml
-            .replace(/></g, '>\n<')
-            .replace(/>\s+</g, '>\n<')
-            .split('\n')
-          for (const t of tokens) {
-            const trimmed = t.trim()
-            if (!trimmed) continue
-            if (/^<\/.+>/.test(trimmed)) level = Math.max(0, level - 1)
-            out.push('  '.repeat(level) + trimmed)
-            if (/^<[^!?\/][^>]*[^/]>$/.test(trimmed) && !/^<(br|hr|img|input|meta|link)/.test(trimmed)) {
-              level++
-            }
+          // Si Monaco está cargado, usar su formateador nativo (sí entiende
+          // HTML+JS+CSS embebido; el reindentHtml casero no). Si el CDN
+          // está caído y Monaco no montó, usar reindentHtml como fallback.
+          if (this._monacoEditor) {
+            this._monacoReady
+              .then(() => this._monacoEditor.getAction('editor.action.formatDocument').run())
+              .then(() => {
+                this.editorHtml = this._monacoEditor.getValue()
+                this.showToast('HTML formateado.')
+              })
+              .catch((err) => {
+                console.warn('Monaco format falló, usando fallback:', err)
+                this.editorHtml = reindentHtml(this.editorHtml || '')
+                this._syncMonacoValue(this.editorHtml)
+                this.showToast('HTML re-indentado (fallback).')
+              })
+            return
           }
-          this._resetEditorState(out.join('\n'))
-          this.showToast('HTML re-indentado.')
+          // Fallback: Monaco no cargó (CDN caído). reindentHtml es offline.
+          this.editorHtml = reindentHtml(this.editorHtml || '')
+          this.showToast('HTML re-indentado (fallback — Monaco no cargó).')
         },
 
         showToast(msg, duration = 3000) {
           this.toast = msg
           clearTimeout(this.toastTimer)
           this.toastTimer = setTimeout(() => { this.toast = null }, duration)
-        },
-
-        // Subtitle informativo del selector del editor (Todo | HTML | JS | CSS).
-        // Muestra cuántos <script>/<style> inline se detectaron para que el
-        // usuario entienda por qué JS o CSS no aparecen (regla v1: exactamente
-        // 1 bloque). Vacío cuando la detección es 1+1 (caso ideal, sin
-        // confusión). CERO mutaciones, CERO cambios en la lógica de los
-        // botones — solo información visual.
-        get blockCountsLabel() {
-          const html = this._editorFullHtml || ''
-          const c = countEditableBlocks(html)
-          if (c.script === 1 && c.style === 1) return ''
-          const parts = [`${c.script} <script>`, `${c.style} <style>`]
-          let note = ''
-          if (c.script >= 2 || c.style >= 2) {
-            note = ' — las vistas JS/CSS solo se ofrecen con exactamente 1 bloque del tipo.'
-          } else if (c.script === 0 && c.style === 0) {
-            note = ''
-          } else if (c.script === 0) {
-            note = ' — sin <script> inline, JS no se ofrece.'
-          } else if (c.style === 0) {
-            note = ' — sin <style> inline, CSS no se ofrece.'
-          }
-          return `detectado: ${parts.join(', ')}${note}`
         },
 
         // --------- AI (fase 4 v1) ---------
@@ -821,10 +777,9 @@
             if (!silent) this.showToast('Seleccioná un box antes de analizar.')
             return
           }
-          // La IA necesita el HTML completo (no solo el <script> si el
-          // usuario está en vista js). _fullHtml ya devuelve _editorFullHtml
-          // cuando editorView !== 'all' y editorHtml cuando sí.
-          const fullHtml = this._fullHtml
+          // La IA necesita el HTML completo. Con Monaco siempre es
+          // editorHtml directamente — no hay vista parcial.
+          const fullHtml = this.editorHtml || ''
           if (!fullHtml || !fullHtml.trim()) {
             if (!silent) this.showToast('Escribí o pegá HTML antes de analizar.')
             return
@@ -888,11 +843,11 @@
             // el HTML, guarda nueva versión. Por eso mandamos el HTML actual
             // del editor (no el que tenía el server cuando se hizo el
             // análisis): si el tenant editó el box, queremos que el apply
-            // corra sobre lo que está viendo AHORA. _fullHtml garantiza que
-            // mandamos el HTML completo aunque la vista esté en js/css.
+            // corra sobre lo que está viendo AHORA. Con Monaco siempre es
+            // editorHtml directamente.
             const result = await apiFetch(`${CONTROL_PLANE}/api/ai/analyses/${this.aiSchema.analysisId}/apply`, {
               method: 'POST',
-              body: { html: this._fullHtml },
+              body: { html: this.editorHtml || '' },
             })
             const appliedCount = (result.tables || []).length
             const skippedCount = (result.skipped || []).length
