@@ -62,6 +62,7 @@ const MIGRATIONS = [
     user_id TEXT NOT NULL REFERENCES htmlbox_users(id),
     prompt_html_size INTEGER NOT NULL,
     proposal_json TEXT NOT NULL,
+    candidates_json TEXT,
     model TEXT NOT NULL,
     tokens_used INTEGER,
     applied INTEGER NOT NULL DEFAULT 0,
@@ -385,12 +386,18 @@ test('7) PATCH /api/boxes/:id with auto_analyze_on_save persists and is returned
   }
 })
 
-// 8) POST /api/ai/analyses/:id/apply → marca applied=1
-test('8) POST /api/ai/analyses/:id/apply marks applied=1', async () => {
+// 8) POST /api/ai/analyses/:id/apply → valida que sin source_var devuelve 400
+// (htmlbox-spec-ai-apply-schema.md §4 — apply ahora hace trabajo real: necesita
+// al menos una tabla con source_var no nulo + html en el body. Cuando ninguna
+// tabla tiene source_var, devuelve 400 'nothing_to_apply' en vez de marcar
+// applied=1 a ciegas.)
+test('8) POST /api/ai/analyses/:id/apply sin source_var devuelve 400 nothing_to_apply', async () => {
   const restore = mockGeminiFetch(OK_GEMINI)
   try {
     const { sid, boxId } = await bootstrapBox('ai-user-8@test.local', { role: 'owner' })
 
+    // HTML sin <script> → extractArrayCandidates devuelve [] → la IA
+    // propone tablas pero todas con source_var=null.
     const ar = await jsonReq('http://example.com/api/ai/analyze-html', {
       method: 'POST',
       body: { boxId, html: '<html/>' },
@@ -400,18 +407,43 @@ test('8) POST /api/ai/analyses/:id/apply marks applied=1', async () => {
 
     const applyRes = await jsonReq(
       `http://example.com/api/ai/analyses/${analysisId}/apply`,
-      { method: 'POST', headers: { Cookie: `sid=${sid}` } },
+      { method: 'POST', body: { html: '<html/>' }, headers: { Cookie: `sid=${sid}` } },
     )
-    expect(applyRes.status).toBe(200)
+    expect(applyRes.status).toBe(400)
     const data = await applyRes.json()
-    expect(data.ok).toBe(true)
-    expect(data.applied).toBe(1)
+    expect(data.error).toBe('nothing_to_apply')
 
-    // verificamos en DB
+    // applied sigue en 0 — no se marcó porque no había nada que aplicar.
     const row = await env.DB.prepare(
       `SELECT applied FROM htmlbox_ai_analyses WHERE id = ?1`
     ).bind(analysisId).first()
-    expect(row.applied).toBe(1)
+    expect(row.applied).toBe(0)
+  } finally {
+    restore()
+  }
+})
+
+// 8b) POST /api/ai/analyses/:id/apply con body {} (sin html) → 400 missing_current_html
+test('8b) POST /api/ai/analyses/:id/apply sin html en body → 400 missing_current_html', async () => {
+  const restore = mockGeminiFetch(OK_GEMINI)
+  try {
+    const { sid, boxId } = await bootstrapBox('ai-user-8b@test.local', { role: 'owner' })
+
+    const ar = await jsonReq('http://example.com/api/ai/analyze-html', {
+      method: 'POST',
+      body: { boxId, html: '<html/>' },
+      headers: { Cookie: `sid=${sid}` },
+    })
+    const { analysisId } = await ar.json()
+
+    // POST con body {} pero sin html — server valida y devuelve missing_current_html.
+    const applyRes = await jsonReq(
+      `http://example.com/api/ai/analyses/${analysisId}/apply`,
+      { method: 'POST', body: {}, headers: { Cookie: `sid=${sid}` } },
+    )
+    expect(applyRes.status).toBe(400)
+    const data = await applyRes.json()
+    expect(data.error).toBe('missing_current_html')
   } finally {
     restore()
   }

@@ -16,8 +16,16 @@
           <div class="flex-1 overflow-y-auto p-6 space-y-6">
             <template x-for="(t, ti) in aiModalEdited" :key="ti">
               <div class="rounded-2xl bg-slate-950/60 border border-slate-800 p-4 space-y-4">
-                <div class="flex items-center justify-between">
-                  <span class="text-[10px] uppercase tracking-wider font-bold text-purple-400">Tabla <span x-text="ti + 1"></span></span>
+                <div class="flex items-center justify-between gap-2 flex-wrap">
+                  <div class="flex items-center gap-2">
+                    <span class="text-[10px] uppercase tracking-wider font-bold text-purple-400">Tabla <span x-text="ti + 1"></span></span>
+                    <span class="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                          :class="t.source_var ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                                               : 'bg-amber-500/10 text-amber-400 border border-amber-500/30'"
+                          x-text="t.source_var
+                            ? 'Aplicar migra datos — ' + (t._candidateRowCount || 0) + ' filas detectadas'
+                            : 'Solo propuesta de schema — no hay datos que migrar'"></span>
+                  </div>
                   <button @click="aiModalEdited.splice(ti, 1)" class="text-xs text-rose-400 hover:text-rose-300 flex items-center gap-1">
                     <i class="fa-solid fa-trash-can"></i> Quitar tabla
                   </button>

@@ -690,7 +690,21 @@
               return
             }
             this.aiSchema = data
-            this.aiModalEdited = JSON.parse(JSON.stringify(data.tables))
+            // Decoramos cada tabla con _candidateRowCount — la cantidad de
+            // filas REALES que detectamos en el HTML (no las sample_rows de la
+            // IA). El modal usa esto para mostrar el badge "Aplicar migra
+            // datos — N filas" vs "Solo propuesta de schema".
+            const candidatesByName = new Map((data.candidates || []).map((c) => [c.varName, c]))
+            const edited = JSON.parse(JSON.stringify(data.tables))
+            for (const t of edited) {
+              if (t.source_var && candidatesByName.has(t.source_var)) {
+                t._candidateRowCount = candidatesByName.get(t.source_var).rowCount
+              } else {
+                t.source_var = null  // defensivo: si el server no mandó source_var, lo limpiamos
+                t._candidateRowCount = 0
+              }
+            }
+            this.aiModalEdited = edited
             if (silent) {
               this.aiPendingReview = true
               this.showToast(`IA propuso ${data.tables.length} tabla(s).`, 15000)
@@ -714,19 +728,36 @@
           }
           this.aiApplying = true
           try {
-            if (this.aiSchema && this.aiSchema.analysisId) {
-              await apiFetch(`${CONTROL_PLANE}/api/ai/analyses/${this.aiSchema.analysisId}/apply`, {
-                method: 'POST',
-              })
+            if (!this.aiSchema || !this.aiSchema.analysisId) {
+              this.showToast('No hay análisis de IA cargado.')
+              return
             }
-            const result = await apiFetch(`${RUNTIME}/api/data/${this.currentBox.id}/tables/bulk-create`, {
+            // htmlbox-spec-ai-apply-schema.md: apply hace el trabajo real —
+            // crea tablas, inserta TODAS las filas reales del HTML, reescribe
+            // el HTML, guarda nueva versión. Por eso mandamos el HTML actual
+            // del editor (no el que tenía el server cuando se hizo el
+            // análisis): si el tenant editó el box, queremos que el apply
+            // corra sobre lo que está viendo AHORA.
+            const result = await apiFetch(`${CONTROL_PLANE}/api/ai/analyses/${this.aiSchema.analysisId}/apply`, {
               method: 'POST',
-              body: { tables: this.aiModalEdited },
+              body: { html: this.editorHtml || '' },
             })
-            const created = result.created?.length || 0
-            const errors = result.errors?.length || 0
-            this.showToast(`Creadas ${created} tabla(s)${errors ? `, ${errors} error(es)` : ''}.`)
+            const appliedCount = (result.tables || []).length
+            const skippedCount = (result.skipped || []).length
+            this.showToast(`Aplicado: ${appliedCount} tabla(s)${skippedCount ? `, ${skippedCount} skipped` : ''} (v${result.newVersion}).`)
             this.closeAiModal()
+
+            // El HTML cambió del lado del servidor (se reemplazaron las
+            // declaraciones `const X = [...]` por `await HTMLBox.table(...)` y
+            // el <script> ahora tiene type="module"). Refrescamos el editor
+            // con el HTML NUEVO y reseleccionamos el box para que preview
+            // muestre el cambio.
+            await this.loadActiveHtml()
+            if (this.currentBox && result.newVersion) {
+              // Actualizar la versión local para que coincida con el server.
+              this.currentBox = { ...this.currentBox, htmlbox_version: result.newVersion }
+            }
+            // Refrescar dataTab si está abierta (las tablas nuevas aparecen ahí).
             if (this.activeTab === 'data' && this.$refs.dataTabRef && typeof this.$refs.dataTabRef.loadTables === 'function') {
               await this.$refs.dataTabRef.loadTables()
             }
