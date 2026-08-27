@@ -14,7 +14,9 @@ import { boxVersionKey, SDK_URL } from '@htmlbox/shared'
 export function securityHeaders(visibility) {
   const csp = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net",
+    // CDNs populares que el HTML de usuario suele usar.
+    // Mantener lista corta y curada — añadir solo CDNs confiables bajo review.
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com",
     "style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://fonts.googleapis.com https://cdnjs.cloudflare.com",
     "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com data:",
     "img-src 'self' data: https:",

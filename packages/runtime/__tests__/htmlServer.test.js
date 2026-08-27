@@ -13,6 +13,23 @@ test('securityHeaders caja público tiene CSP + COOP', () => {
   assert.equal(h['Cache-Control'], 'no-store')
 })
 
+test('securityHeaders whitelist de CDNs populares en script-src', () => {
+  const h = securityHeaders('public')
+  const csp = h['Content-Security-Policy']
+  // CDNs que el HTML de usuario típicamente usa.
+  // Si bajamos uno, rompemos apps que los necesitan.
+  assert.match(csp, /https:\/\/cdn\.tailwindcss\.com/, 'tailwind CDN')
+  assert.match(csp, /https:\/\/cdn\.jsdelivr\.net/, 'jsdelivr')
+  assert.match(csp, /https:\/\/unpkg\.com/, 'unpkg')
+  assert.match(csp, /https:\/\/cdnjs\.cloudflare\.com/, 'cdnjs')
+})
+
+test('securityHeaders caja privado también recibe headers equivalentes', () => {
+  const h = securityHeaders('private')
+  assert.equal(h['Cross-Origin-Opener-Policy'], 'same-origin')
+  assert.equal(h['Cache-Control'], 'no-store')
+})
+
 test('securityHeaders caja privado también recibe headers equivalentes', () => {
   const h = securityHeaders('private')
   assert.equal(h['Cross-Origin-Opener-Policy'], 'same-origin')
