@@ -32,10 +32,13 @@ htmlbox/
 │   ├── control-plane/  Worker D1-bound  — auth plataforma, registry, AI, internal API
 │   ├── portal/         Worker reverse-proxy — SPA Alpine.js del tenant
 │   ├── runtime-core/   pieza pura de runtime (sirve HTML, resuelve boxes, helpers auth control-plane) — sin bindings propios, sin auth de customer
+│   ├── runtime-box-worker/  per-box script WFP (bundle ESM, deploya al dispatch namespace)
 │   └── runtime/        Worker box-local   — sirve HTML, Data API, app-auth, consume @htmlbox/runtime-core
 ├── scripts/
 │   ├── dev.sh          lanza los 3 workers en background con colores
-│   └── migrate-remote.sh wrangler d1 migrations apply --remote
+│   ├── migrate-remote.sh wrangler d1 migrations apply --remote
+│   ├── setup-wfp.sh    prepara Workers for Platforms (crea namespace + guía para token)
+│   └── wipe-demo.sh    borra TODO el contenido de demo (D1 + R2 + WFP) — usar solo en dev
 ├── package.json        workspaces npm (packages/*)
 └── htmlbox-spec-*.md   specs (las -IMPLEMENTED ya están implementadas)
 ```
@@ -61,8 +64,27 @@ cp packages/portal/.dev.vars.example          packages/portal/.dev.vars
 cp packages/runtime/.dev.vars.example         packages/runtime/.dev.vars
 # editarlos con los secretos (HTMLBOX_INTERNAL_SECRET tiene que matchear en los 3)
 npm run migrate:remote                        # aplica migrations D1 al control-plane
+npm run build -w @htmlbox/runtime-box-worker # bundle del per-box script (sync a control-plane)
 npm run dev                                   # levanta los 3 workers
 ```
+
+### Workers for Platforms (WFP) — primer setup
+
+Después del primer deploy a Cloudflare, hay que correr `./scripts/setup-wfp.sh`
+UNA VEZ por ambiente para:
+
+1. Crear el dispatch namespace `htmlbox-boxes`.
+2. Guiar al usuario para generar un **Scoped API Token** en dashboard
+   (scope: `Workers Scripts: Edit/Read` + resource restringido al
+   namespace — esto es lo que evita el peor escenario de filtración
+   del token, ver `htmlbox-spec-workers-for-platforms.md`).
+3. Guardar el token como secret en control-plane:
+   `cd packages/control-plane && wrangler secret put WFP_DEPLOY_TOKEN`.
+4. Agregar `HTMLBOX_CLOUDFLARE_ACCOUNT_ID` como var (Cloudflare Account ID).
+
+Sin esos 4 pasos, `htmlbox_boxes.wfp_status` queda en `'failed'` para
+todo box nuevo y el dispatcher cae al path viejo (fetchActiveHtml +
+serveBoxHtml, comportamiento idéntico al pre-WFP).
 
 Subdominios `*.localhost`: en macOS resuelven solos a 127.0.0.1. En Linux
 hay que agregar a `/etc/hosts`.
@@ -80,9 +102,10 @@ hay que agregar a `/etc/hosts`.
 ### Tests por workspace
 - **`packages/shared`** (`node --test src/__tests__/*.test.js`): constantes, validadores, schema, versioning
 - **`packages/runtime-core`** (`node --test __tests__/*.test.js`): pieza pura de runtime (htmlServer, resolver, auth helpers, debugPanel gate, contract). Sin bindings propios — todo fetch mockeado.
+- **`packages/runtime-box-worker`** (`node --test __tests__/*.test.js`): tests del bundle (parsea, exporta default, fetch handler, errores del upstream).
 - **`packages/runtime`** (`node --experimental-test-module-mocks --test __tests__/*.test.js`): routers puros con fetch mockeado (data API, app-auth, app-data, tenant-app-auth, sdk). Reusa helpers de `@htmlbox/runtime-core`.
 - **`packages/control-plane`**: dos suites:
-  - `npm run test:node` → `node --test src/__tests__/*.test.js` (unit tests de dataExtractor, session.js helpers, etc.)
+  - `npm run test:node` → `node --test src/__tests__/*.test.js` (unit tests de dataExtractor, session.js, wfpDeployer, dbMigrations, etc.)
   - `npm run test:e2e` → `vitest run` con `cloudflare:test` (e2e real con D1 en miniflare)
 
 ## 5. Convenciones
