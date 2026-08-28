@@ -85,16 +85,96 @@ Si no pediste este link, ignorá este mail.`
 
 // Devuelve { sent, previewLink? }. previewLink SOLO en modo dev o si falla prod.
 export async function sendMagicLinkEmail(env, request, { toEmail, tokenId, tenantName }) {
-  // El magic link apunta al PORTAL (no al controlplane). Razón: el consume
-  // ocurre vía fetch desde el browser, y queremos que la Set-Cookie quede
-  // atada al origin del portal. En dev `*.localhost` no tiene dominio padre
-  // registrable, así que `Domain=localhost` se trata como host-only — el
-  // cookie sólo viaja si el origin del Set-Cookie coincide con el del consumer.
-  // En prod sigue funcionando: HTMLBOX_PORTAL_ORIGIN = https://portal.htmlbox.dev,
-  // y la cookie se setea con Domain=.htmlbox.dev (cross-subdomain real).
   const reqUrl = new URL(request.url)
+  // Determinar el origen del magic link:
+  //   - PROD: apunta al PORTAL. El consume ocurre via portal proxy al
+  //     control-plane. La Set-Cookie usa Domain=.htmlbox.dev (cross-subdomain)
+  //     y queda accesible desde cualquier *.htmlbox.dev, incluido el portal
+  //     que la necesita para sus requests autenticados.
+  //   - DEV (host-only cookies): apunta al CONTROL-PLANE mismo. Si
+  //     apuntara al portal, la Set-Cookie del consume quedaría atada al
+  //     host del portal (porque el browser recibe la response via portal
+  //     proxy) y NO se vería cuando el user navega a /admin/ (otro host).
+  //     Apuntando directo al control-plane, el consume corre en el origin
+  //     correcto y la cookie queda atada a controlplane.localhost, que es
+  //     exactamente donde la vamos a necesitar.
+  // Detección de dev: el control-plane corre con --remote en dev (porque su
+  // D1 está en Cloudflare), pero wrangler inyecta las vars de .dev.vars.
+  // Cuando el portal origin tiene 'localhost' en la URL sabemos que estamos
+  // en dev — prod usa 'htmlbox.dev'. El hostname del request (cuando
+  // wrangler forward-ea al Worker remoto) es 'htmlbox-control-plane.sivocloud-
+  // latam.workers.dev', que NO termina en '.localhost', así que NO podemos
+  // detectar dev por hostname.
+  //
+  // En dev queremos que el magic link apunte al HOST DEL BROWSER (no al Worker
+  // remoto) — el dev proxy de wrangler monta localmente un server en
+  // 'controlplane.localhost:8781' y reenvía al Worker. El browser hace click
+  // en el magic link esperando ir a 'controlplane.localhost:8781', no a
+  // 'htmlbox-control-plane.sivocloud-latam.workers.dev'.
+  //
+  // Detección del host del browser (en orden de prioridad):
+  //   1. X-Forwarded-Host: header estándar de proxy reverso. El dev proxy
+  //      de wrangler NO lo inyecta automáticamente, pero si en algún momento
+  //      lo hace, lo respetamos.
+  //   2. Origin: el browser lo envía en requests cross-origin con
+  //      credentials. La SPA del admin/portal llama con `credentials: include`
+  //      en apiFetch, así que Origin debería estar presente. NO incluye
+  //      path (solo `http://host:port`).
+  //   3. Fallback: control-plane remoto (que en dev requiere que el user
+  //      copie el link y reemplace el host manualmente — feo pero funcional).
+  // En dev (control-plane con --remote) el Worker corre en
+  // 'htmlbox-control-plane.sivocloud-latam.workers.dev'. El dev proxy de
+  // wrangler monta localmente un server en 'controlplane.localhost:8781'
+  // y reenvía. El browser hace click esperando ir a su host local,
+  // no al Worker remoto.
+  //
+  // El host del browser se obtiene (en orden de prioridad):
+  //   1. X-Forwarded-Host — header estándar de proxy reverso. El dev proxy
+  //      de wrangler NO lo inyecta automáticamente, pero si en algún momento
+  //      lo hace, lo respetamos. Acepta scheme incluido o solo host.
+  //   2. Origin — header cross-origin. El browser lo envía en fetch()
+  //      cross-origin con credentials. NO se envía en same-origin.
+  //   3. Referer — el browser lo envía en fetch() desde una página. Same-
+  //      origin SÍ lo incluye (con el path completo), por lo que es la
+  //      fuente más confiable para el caso same-origin del admin SPA.
+  //   4. Fallback: control-plane remoto. En dev el user tendrá que editar
+  //      el host del link manualmente, pero al menos no rompe.
+  //
+  // El scheme se toma del header elegido (XFH/Origin/Referer) para que
+  // coincida con el que el browser espera. Si el header no tiene scheme
+  // (X-Forwarded-Host típico), usamos el de reqUrl como fallback.
   const portalOrigin = (env.HTMLBOX_PORTAL_ORIGIN || `${reqUrl.protocol}//${reqUrl.host}`).replace(/\/+$/, '')
-  const magicLink = `${portalOrigin}/api/auth/verify?token=${tokenId}`
+  const isDev = portalOrigin.includes('localhost') || portalOrigin.includes('127.0.0.1')
+  const reqProto = reqUrl.protocol.replace(':', '')
+
+  let browserHost = ''
+  let browserProto = ''
+  const xfh = request.headers.get('X-Forwarded-Host') || ''
+  const origin = request.headers.get('Origin') || ''
+  const referer = request.headers.get('Referer') || ''
+  if (xfh) {
+    if (xfh.startsWith('http://') || xfh.startsWith('https://')) {
+      browserHost = new URL(xfh).host
+      browserProto = new URL(xfh).protocol.replace(':', '')
+    } else {
+      browserHost = xfh
+      browserProto = reqProto
+    }
+  } else if (origin) {
+    browserHost = new URL(origin).host
+    browserProto = new URL(origin).protocol.replace(':', '')
+  } else if (referer) {
+    try {
+      const u = new URL(referer)
+      browserHost = u.host
+      browserProto = u.protocol.replace(':', '')
+    } catch { /* ignore */ }
+  }
+
+  const magicLinkOrigin = isDev && browserHost
+    ? `${browserProto}://${browserHost}`
+    : (isDev ? `${reqUrl.protocol}//${reqUrl.host}` : portalOrigin)
+  const magicLink = `${magicLinkOrigin}/api/auth/verify?token=${tokenId}`
   return await deliver(env, renderMagicLinkEmail, { toEmail, magicLink, tenantName }, '[email][dev]')
 }
 
