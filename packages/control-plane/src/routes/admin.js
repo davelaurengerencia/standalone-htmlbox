@@ -26,6 +26,7 @@
 //   3. El día que aparezca info sensible, agregamos el check.
 //
 import { getSessionIdFromRequest, validateSession } from '../lib/session.js'
+import { applyWfpSchema } from '../lib/dbMigrations.js'
 
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -52,6 +53,12 @@ export async function handleAdmin(request, env, path, method) {
 
 // GET /api/admin/stats — agregados cross-tenant.
 async function getStats(env) {
+  // Idempotente — la columna wfp_status la crea createBox la primera vez
+  // que se inserta un box, pero los endpoints admin se llaman antes de que
+  // exista ningún box (caso del platform_owner que crea su primer tenant y
+  // refresca el dashboard). Sin esta llamada, el SELECT tira
+  // 'no such column: wfp_status' y el dashboard falla con 500.
+  await applyWfpSchema(env)
   // 14 queries en paralelo (D1 no tiene JOIN agregado cross-table, así
   // que cada breakdown es su propio SELECT). Usamos Promise.all para
   // minimizar la latencia total. D1 acepta promesas concurrentes.
@@ -111,6 +118,9 @@ async function getStats(env) {
 // dashboard). Platform owner ve TODOS; miembros regulares solo ven los
 // suyos — mismo criterio que /api/me/tenants.
 async function listAdminTenants(env, user) {
+  // Idempotente — ver getStats() arriba. El SELECT por tenant también
+  // toca wfp_status, así que necesita la columna.
+  await applyWfpSchema(env)
   let tenants
   if (user.is_platform_owner) {
     tenants = await env.DB.prepare(`

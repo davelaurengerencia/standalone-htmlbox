@@ -86,6 +86,54 @@ test('ensureColumnD1: múltiples columnas se agregan independientes', async () =
   assert.ok(cols.includes('wfp_error'))
 })
 
+test('applyWfpSchema: agrega columnas a htmlbox_boxes que ya existe sin wfp_*', async () => {
+  // Caso real del bug: el control-plane se deploya antes de que se cree
+  // cualquier box, así que la tabla existe pero sin wfp_status / wfp_error.
+  // applyWfpSchema() debe agregarlas sin tocar las columnas que ya están.
+  const d1 = makeD1()
+  d1._seedTable('htmlbox_boxes', {
+    id: { type: 'TEXT' },
+    slug: { type: 'TEXT' },
+    workspace_id: { type: 'TEXT' },
+    tenant_id: { type: 'TEXT' },
+    visibility: { type: 'TEXT' },
+    htmlbox_version: { type: 'INTEGER' },
+    turso_status: { type: 'TEXT' },
+    share_id: { type: 'TEXT' },
+    name: { type: 'TEXT' },
+    template: { type: 'TEXT' },
+    created_by: { type: 'TEXT' },
+  })
+  await applyWfpSchema(asEnv(d1))
+  const info = await d1.prepare(`PRAGMA table_info(htmlbox_boxes)`).all()
+  const cols = info.results.map(r => r.name)
+  assert.ok(cols.includes('wfp_status'), `wfp_status debe estar. cols: ${cols.join(',')}`)
+  assert.ok(cols.includes('wfp_error'), `wfp_error debe estar. cols: ${cols.join(',')}`)
+  // Las columnas preexistentes siguen intactas.
+  assert.ok(cols.includes('id'))
+  assert.ok(cols.includes('slug'))
+})
+
+test('applyWfpSchema: no-op si las columnas ya existen (idempotente en cualquier estado)', async () => {
+  // El admin endpoint llama applyWfpSchema en CADA request. Verifico
+  // que múltiples llamadas no fallen ni dupliquen columnas.
+  const d1 = makeD1()
+  d1._seedTable('htmlbox_boxes', {
+    id: { type: 'TEXT' },
+    wfp_status: { type: 'TEXT' },
+    wfp_error: { type: 'TEXT' },
+  })
+  await applyWfpSchema(asEnv(d1))
+  await applyWfpSchema(asEnv(d1))
+  await applyWfpSchema(asEnv(d1))
+  const info = await d1.prepare(`PRAGMA table_info(htmlbox_boxes)`).all()
+  const cols = info.results.map(r => r.name)
+  const wfpCount = cols.filter(c => c === 'wfp_status').length
+  const errCount = cols.filter(c => c === 'wfp_error').length
+  assert.equal(wfpCount, 1, 'wfp_status exactamente 1 vez')
+  assert.equal(errCount, 1, 'wfp_error exactamente 1 vez')
+})
+
 test('ensureColumnD1: rechaza nombres de tabla/columna con SQL injection', async () => {
   const d1 = makeD1()
   await assert.rejects(
