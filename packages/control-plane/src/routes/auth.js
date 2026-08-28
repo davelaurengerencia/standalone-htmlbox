@@ -123,13 +123,30 @@ async function postConsume(request, env) {
   ).bind(email).first()
 
   if (!user) {
-    // Auto-provisionar user. tenant_id queda NULL (no sabemos a qué tenant pertenece todavía);
-    // el platform owner tiene tenant_id NULL por diseño.
+    // Auto-provisionar user. ¿Es el primero de la plataforma? Si htmlbox_users
+    // está vacía, este user es el platform owner. Después de eso, todos los
+    // nuevos son members (is_platform_owner=0) y necesitan invitación
+    // explícita vía tenants/:id/workspaces/:id/memberships.
+    //
+    // tenant_id queda NULL (no sabemos a qué tenant pertenece todavía).
+    // El platform owner típico no tiene tenant_id — recién lo adquiere
+    // cuando crea su primer tenant (que se auto-asigna como owner del
+    // workspace "Default").
+    //
+    // Race: dos signups simultáneos podrían ver count=0 ambos. Aceptable
+    // porque (1) la ventana es milisegundos, (2) dos platform owners no
+    // rompe nada — solo el badge "Platform Owner" del header aparece para
+    // ambos. Un futuro UNIQUE INDEX en una singleton table podría
+    // garantizar un único platform owner si llega a ser un problema.
+    const countRow = await env.DB.prepare(
+      `SELECT count(*) AS n FROM htmlbox_users`
+    ).first()
+    const isFirstUser = (countRow?.n ?? 0) === 0
     const newId = `user_${crypto.randomUUID().replace(/-/g, '').slice(0, 20)}`
     await env.DB.prepare(
-      `INSERT INTO htmlbox_users (id, email) VALUES (?1, ?2)`
-    ).bind(newId, email).run()
-    user = { id: newId, email, display_name: null, tenant_id: null, is_platform_owner: 0 }
+      `INSERT INTO htmlbox_users (id, email, is_platform_owner) VALUES (?1, ?2, ?3)`
+    ).bind(newId, email, isFirstUser ? 1 : 0).run()
+    user = { id: newId, email, display_name: null, tenant_id: null, is_platform_owner: isFirstUser ? 1 : 0 }
   }
 
   // Crear sesión
