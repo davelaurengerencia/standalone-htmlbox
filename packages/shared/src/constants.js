@@ -38,7 +38,7 @@ export const VERSION_SOURCE_ROLLBACK = 'rollback'
 
 // Cookie de sesión
 export const SESSION_COOKIE_NAME = 'sid'
-export const SESSION_COOKIE_DOMAIN = '.htmlbox.dev'   // en dev se sobreescribe por var
+export const SESSION_COOKIE_DOMAIN = '.sivocloud.dev'   // en dev se sobreescribe por var
 
 // Límite de rate-limit del magic-link §3 (port de sivocloud)
 export const AUTH_REQUEST_WINDOW_SEC = 60

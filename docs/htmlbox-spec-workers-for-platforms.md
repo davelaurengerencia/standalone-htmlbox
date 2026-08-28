@@ -6,7 +6,7 @@ Decisión explícita de David: adoptar WFP ahora, no cuando aparezca la primera 
 
 **Hoy** (`packages/runtime/src/worker.js`): un único Worker (`htmlbox-runtime`) atiende TODOS los boxes de TODOS los tenants. Por cada request, resuelve el `boxId` (`resolver.js`, cacheado en KV), pide el HTML activo al control-plane (`fetchActiveHtml` → `GET {controlplane}/api/boxes/{boxId}/active-html`, que a su vez lee de R2 vía `readVersion`), y lo sirve con `serveBoxHtml`. La data API (`handleDataApi`, `handleAppDataApi`, etc.) también corre en ese mismo Worker/isolate compartido por todos los boxes.
 
-**Con WFP**: `htmlbox-runtime` deja de servir el contenido directamente y pasa a ser el **Worker dispatcher** — sigue siendo el único que tiene las `routes` reales (`*.htmlbox.dev` / futuro `*.sivocloud.dev`), pero por cada box resuelto, en vez de pedir el HTML a control-plane, invoca al **Worker propio de ese box** (`env.BOX_DISPATCH.get('box-' + boxId)`) y le reenvía el `fetch()`. Cada box pasa a tener su propio script desplegado dentro de un **dispatch namespace** de Cloudflare — aislado en su propio isolate V8, no comparte memoria/CPU con otros boxes.
+**Con WFP**: `htmlbox-runtime` deja de servir el contenido directamente y pasa a ser el **Worker dispatcher** — sigue siendo el único que tiene las `routes` reales (`*.sivocloud.dev` / futuro `*.sivocloud.dev`), pero por cada box resuelto, en vez de pedir el HTML a control-plane, invoca al **Worker propio de ese box** (`env.BOX_DISPATCH.get('box-' + boxId)`) y le reenvía el `fetch()`. Cada box pasa a tener su propio script desplegado dentro de un **dispatch namespace** de Cloudflare — aislado en su propio isolate V8, no comparte memoria/CPU con otros boxes.
 
 En v1 el script por-box **no tiene lógica custom todavía** — es un wrapper delgado que hace exactamente lo mismo que hace `serveBoxHtml`/`handleAppDataApi` hoy, solo que corriendo aislado. Es infraestructura, no una feature nueva para el tenant. El día que un box necesite código propio (webhook, transformación previa a servir, integración con terceros), ese script deja de ser el wrapper genérico y pasa a ser generado/editado — sin tocar el dispatcher ni los demás boxes.
 
@@ -21,6 +21,15 @@ En v1 el script por-box **no tiene lógica custom todavía** — es un wrapper d
   ```
 - **API token nuevo para control-plane** (no lo tiene hoy): permiso `Workers Scripts:Edit` sobre la cuenta, para poder hacer `PUT /accounts/{account_id}/workers/dispatch/namespaces/htmlbox-boxes/scripts/{script_name}` cada vez que se publica una versión. Se guarda como secret nuevo (`WFP_DEPLOY_TOKEN` o similar) en `control-plane` — nunca en `runtime` (runtime solo necesita *leer* del namespace vía el binding, no escribir scripts).
 - **Nombre de script por box**: `box-{boxId}`. `boxId` ya se valida hoy contra `/^[a-z0-9]{16}$/` (confirmado en el fix de seguridad de `cookiePathForBox`, hallazgo H2 del anexo) — mismo patrón, reutilizable tal cual como nombre de script sin sanitizar nada nuevo.
+- **Tags legibles en el metadata del script** (parte del body del PUT, NO del nombre). Permiten filtrar en el dashboard de Cloudflare sin exponer el `boxId`:
+  - `tenant:{tenantSlug}` — slug del tenant dueño del box
+  - `box:{boxSlug}` — slug del box dentro del tenant
+  - `tenant-id:{tenantId}` — ID interno del tenant (12 chars `[a-z0-9]`)
+  - `box-id:{boxId}` — ID interno del box (16 chars `[a-z0-9]`)
+  - `visibility:{public|private}` — visibilidad del box
+  - `template:{t}` — template con el que se creó el box (`empty`, `custom`, etc.)
+  - Validación: max 32 tags, cada uno max 64 chars, charset `[a-zA-Z0-9_:.-]`. Si una tag viola, `deployBoxWorker` lanza error antes de gastar el PUT.
+  - Tags stale: si un tenant renombra su slug o un box se le cambia el slug, el script NO se re-deploya automáticamente (los renames son raros). El operador puede re-disparar el deploy vía `POST /api/internal/wfp/migrate-tags` (one-off endpoint, gateado por `HTMLBOX_INTERNAL_SECRET`), que re-PUTea todos los boxes `wfp_status='ready'` con tags frescos.
 
 ## 3. El script por-box (v1, genérico)
 
@@ -52,7 +61,7 @@ Nuevo paso en `routes/boxes.js` (creación de box): después de insertar la fila
 - No se define todavía CÓMO un tenant pediría/subiría código custom para su box (eso es la feature futura que esta spec habilita, no la que implementa).
 - No se migra la data API (`handleDataApi`/`handleAppDataApi`/`handleTenantAppAuth`) a scripts por-box en esta pasada — quedan en el dispatcher como hoy. Migrarlas es un paso 2 razonable (mismo patrón), pero no bloquea el objetivo de esta spec (aislar el *serving* de HTML).
 - No se resuelve billing/cuotas por-tenant a nivel de CPU de Workers — WFP lo expone (`cpuMs` por script en los logs), pero usarlo para facturar no es parte de esto.
-- No se toca nada de la migración de dominio (`htmlbox.dev` → `sivocloud.dev`, conversación aparte) — son independientes, se pueden hacer en cualquier orden.
+- No se toca nada de la migración de dominio — son independientes, se pueden hacer en cualquier orden.
 
 ## 6. Checklist de implementación
 

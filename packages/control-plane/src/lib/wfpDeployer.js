@@ -35,6 +35,39 @@ import BOX_WORKER_BUNDLE_SOURCE from '../ui-partials/box-worker.mjs.js'
 const BOX_ID_PATTERN = /^[a-z0-9]{16}$/
 const SCRIPT_NAME_PREFIX = 'box-'
 
+// Límites de Cloudflare para tags de Worker scripts (REST API 2026).
+// Verificado contra https://developers.cloudflare.com/api/operations/workers-script-put-content
+const TAGS_MAX_COUNT = 32
+const TAGS_MAX_LENGTH = 64
+const TAGS_CHARSET = /^[a-zA-Z0-9_:.-]+$/
+
+// Valida el array de tags. Lanza Error claro si viola cualquier límite.
+// Tags son optativos: undefined o [] se omiten del metadata (backwards compat).
+function assertValidTags(tags) {
+  if (tags == null) return
+  if (!Array.isArray(tags)) {
+    throw new Error(`wfpDeployer: tags debe ser array, recibí ${typeof tags}`)
+  }
+  if (tags.length > TAGS_MAX_COUNT) {
+    throw new Error(`wfpDeployer: tags excede el máximo (${tags.length} > ${TAGS_MAX_COUNT})`)
+  }
+  for (let i = 0; i < tags.length; i++) {
+    const t = tags[i]
+    if (typeof t !== 'string') {
+      throw new Error(`wfpDeployer: tags[${i}] debe ser string, recibí ${typeof t}`)
+    }
+    if (t.length === 0) {
+      throw new Error(`wfpDeployer: tags[${i}] está vacía`)
+    }
+    if (t.length > TAGS_MAX_LENGTH) {
+      throw new Error(`wfpDeployer: tags[${i}] excede ${TAGS_MAX_LENGTH} chars (${t.length})`)
+    }
+    if (!TAGS_CHARSET.test(t)) {
+      throw new Error(`wfpDeployer: tags[${i}] "${t}" tiene caracteres fuera de [a-zA-Z0-9_:.-]`)
+    }
+  }
+}
+
 // Mapea bindings que el per-box script necesita:
 //   - BUCKET (R2) para leer el HTML del box
 //   - HTMLBOX_CONTROL_PLANE_ORIGIN (var) para construir URLs a control-plane
@@ -59,13 +92,20 @@ function assertValid(boxId, namespace) {
 // Arma el metadata JSON que va como part 'metadata' del multipart.
 // main_module tiene que matchear el nombre del archivo que vamos a
 // subir (box-{boxId}.mjs) — Cloudflare resuelve el módulo por ese path.
-function buildMetadataJson(env, fileName) {
-  return JSON.stringify({
+// Si `tags` se pasa (no vacío), se incluye en el metadata para permitir
+// filtrar por tenant/box/visibility en el dashboard de Cloudflare.
+// Si no se pasa, el campo se omite (backwards compat con deploys viejos).
+function buildMetadataJson(env, fileName, tags) {
+  const meta = {
     main_module: fileName,
     bindings: buildBindings(env),
     compatibility_date: env.HTMLBOX_WFP_COMPAT_DATE || '2026-08-01',
     compatibility_flags: ['nodejs_compat'],
-  })
+  }
+  if (Array.isArray(tags) && tags.length > 0) {
+    meta.tags = tags
+  }
+  return JSON.stringify(meta)
 }
 
 // deployBoxWorker — deploya el per-box script al namespace WFP.
@@ -78,9 +118,12 @@ function buildMetadataJson(env, fileName) {
 //   accountId   — Cloudflare account ID (bbd6bb71... en prod).
 //   namespace   — nombre del dispatch namespace ('htmlbox-boxes').
 //   boxId       — ID del box (16 chars [a-z0-9]).
-//   opts        — { bundleSource }: override del source del bundle (tests).
+//   opts        — { bundleSource, tags }: override del bundle (tests)
+//                 y tags legibles (dashboard filtering). tags es optativo;
+//                 si se pasa, debe cumplir TAGS_MAX_COUNT/TAGS_MAX_LENGTH.
 export async function deployBoxWorker(env, accountId, namespace, boxId, opts = {}) {
   assertValid(boxId, namespace)
+  assertValidTags(opts.tags)
 
   const token = env.WFP_DEPLOY_TOKEN
   if (!token) {
@@ -100,7 +143,7 @@ export async function deployBoxWorker(env, accountId, namespace, boxId, opts = {
   const form = new FormData()
   form.append(
     'metadata',
-    new Blob([buildMetadataJson(env, fileName)], { type: 'application/json' })
+    new Blob([buildMetadataJson(env, fileName, opts.tags)], { type: 'application/json' })
   )
   form.append(
     fileName,
@@ -159,4 +202,4 @@ export async function deleteBoxWorker(env, accountId, namespace, boxId) {
 }
 
 // Hooks para tests (mockear inputs).
-export const _internal = { buildBindings, assertValid, buildMetadataJson }
+export const _internal = { buildBindings, assertValid, assertValidTags, buildMetadataJson }

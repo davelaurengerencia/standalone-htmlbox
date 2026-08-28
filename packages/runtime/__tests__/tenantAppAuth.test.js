@@ -31,7 +31,7 @@ function makeReq(method, url, headers = {}, body = null) {
 
 function makeEnv(overrides = {}) {
   return {
-    HTMLBOX_CONTROL_PLANE_ORIGIN: 'https://controlplane.htmlbox.dev',
+    HTMLBOX_CONTROL_PLANE_ORIGIN: 'https://controlplane.sivocloud.dev',
     HTMLBOX_INTERNAL_SECRET: 'test-secret',
     HTMLBOX_ENV: 'production',
     ...overrides,
@@ -41,13 +41,13 @@ function makeEnv(overrides = {}) {
 // ─── Router ──────────────────────────────────────────────────────────────
 
 test('router devuelve null para URL que no matchea', async () => {
-  const url = new URL('https://htmlbox.dev/api/other/x')
-  const r = await handleTenantAppAuth(makeReq('GET', 'https://htmlbox.dev/api/other/x'), makeEnv(), url)
+  const url = new URL('https://sivocloud.dev/api/other/x')
+  const r = await handleTenantAppAuth(makeReq('GET', 'https://sivocloud.dev/api/other/x'), makeEnv(), url)
   assert.equal(r, null)
 })
 
 test('router devuelve null para boxId con formato inválido', async () => {
-  const url = new URL('https://htmlbox.dev/api/tenant-app-auth/INVALID/me')
+  const url = new URL('https://sivocloud.dev/api/tenant-app-auth/INVALID/me')
   const r = await handleTenantAppAuth(makeReq('GET', url.toString()), makeEnv(), url)
   assert.equal(r, null)
 })
@@ -68,14 +68,14 @@ test('router matchea las 5 operaciones', async () => {
   }
   for (const op of ['request', 'verify', 'consume', 'me', 'logout']) {
     const method = op === 'request' || op === 'consume' || op === 'logout' ? 'POST' : 'GET'
-    const url = new URL(`https://htmlbox.dev/api/tenant-app-auth/${BOX_ID}/${op}`)
+    const url = new URL(`https://sivocloud.dev/api/tenant-app-auth/${BOX_ID}/${op}`)
     const r = await handleTenantAppAuth(makeReq(method, url.toString()), makeEnv(), url)
     assert.notEqual(r, null, `op ${op} debería matchear`)
   }
 })
 
 test('método incorrecto → 405', async () => {
-  const url = new URL(`https://htmlbox.dev/api/tenant-app-auth/${BOX_ID}/me`)
+  const url = new URL(`https://sivocloud.dev/api/tenant-app-auth/${BOX_ID}/me`)
   const r = await handleTenantAppAuth(makeReq('POST', url.toString()), makeEnv(), url)
   assert.equal(r.status, 405)
 })
@@ -90,7 +90,7 @@ test('POST /request — body no es JSON → respuesta genérica', async () => {
     }
     return new Response('not mocked', { status: 404 })
   }
-  const url = new URL(`https://htmlbox.dev/api/tenant-app-auth/${BOX_ID}/request`)
+  const url = new URL(`https://sivocloud.dev/api/tenant-app-auth/${BOX_ID}/request`)
   const req = makeReq('POST', url.toString(), {}, null)
   req.json = async () => { throw new Error('parse error') }
   const r = await handleTenantAppAuth(req, makeEnv(), url)
@@ -112,7 +112,7 @@ test('POST /request — box existe + email inválido → respuesta genérica', a
     }
     return new Response('not mocked', { status: 404 })
   }
-  const url = new URL(`https://htmlbox.dev/api/tenant-app-auth/${BOX_ID}/request`)
+  const url = new URL(`https://sivocloud.dev/api/tenant-app-auth/${BOX_ID}/request`)
   const req = makeReq('POST', url.toString(), {}, { email: 'no-email' })
   const r = await handleTenantAppAuth(req, makeEnv(), url)
   assert.equal(r.status, 200)
@@ -134,7 +134,7 @@ test('POST /request — en production, strip _dev_preview del response', async (
     }
     return new Response('not mocked', { status: 404 })
   }
-  const url = new URL(`https://htmlbox.dev/api/tenant-app-auth/${BOX_ID}/request`)
+  const url = new URL(`https://sivocloud.dev/api/tenant-app-auth/${BOX_ID}/request`)
   const req = makeReq('POST', url.toString(), {}, { email: 'x@y.com' })
   const r = await handleTenantAppAuth(req, makeEnv({ HTMLBOX_ENV: 'production' }), url)
   assert.equal(r.status, 200)
@@ -156,7 +156,7 @@ test('POST /request — en dev, conserva _dev_preview', async () => {
     }
     return new Response('not mocked', { status: 404 })
   }
-  const url = new URL(`https://htmlbox.dev/api/tenant-app-auth/${BOX_ID}/request`)
+  const url = new URL(`https://sivocloud.dev/api/tenant-app-auth/${BOX_ID}/request`)
   const req = makeReq('POST', url.toString(), {}, { email: 'x@y.com' })
   const r = await handleTenantAppAuth(req, makeEnv({ HTMLBOX_ENV: 'development' }), url)
   const body = await r.json()
@@ -166,7 +166,7 @@ test('POST /request — en dev, conserva _dev_preview', async () => {
 // ─── GET /me ─────────────────────────────────────────────────────────────
 
 test('GET /me — sin cookie hbx_tapp_sid → tenantAppUser: null', async () => {
-  const url = new URL(`https://htmlbox.dev/api/tenant-app-auth/${BOX_ID}/me`)
+  const url = new URL(`https://sivocloud.dev/api/tenant-app-auth/${BOX_ID}/me`)
   const r = await handleTenantAppAuth(makeReq('GET', url.toString()), makeEnv(), url)
   assert.equal(r.status, 200)
   const body = await r.json()
@@ -180,7 +180,7 @@ test('GET /me — con cookie + access denied → tenantAppUser: null', async () 
     }
     return new Response('not mocked', { status: 404 })
   }
-  const url = new URL(`https://htmlbox.dev/api/tenant-app-auth/${BOX_ID}/me`)
+  const url = new URL(`https://sivocloud.dev/api/tenant-app-auth/${BOX_ID}/me`)
   const req = makeReq('GET', url.toString(), { Cookie: 'hbx_tapp_sid=abc' })
   const r = await handleTenantAppAuth(req, makeEnv(), url)
   assert.equal(r.status, 200)
@@ -199,7 +199,7 @@ test('GET /me — con cookie + access granted → devuelve tenantAppUser', async
     }
     return new Response('not mocked', { status: 404 })
   }
-  const url = new URL(`https://htmlbox.dev/api/tenant-app-auth/${BOX_ID}/me`)
+  const url = new URL(`https://sivocloud.dev/api/tenant-app-auth/${BOX_ID}/me`)
   const req = makeReq('GET', url.toString(), { Cookie: 'hbx_tapp_sid=abc' })
   const r = await handleTenantAppAuth(req, makeEnv(), url)
   const body = await r.json()
@@ -210,7 +210,7 @@ test('GET /me — con cookie + access granted → devuelve tenantAppUser', async
 // ─── POST /logout ────────────────────────────────────────────────────────
 
 test('POST /logout devuelve Set-Cookie Max-Age=0', async () => {
-  const url = new URL(`https://htmlbox.dev/api/tenant-app-auth/${BOX_ID}/logout`)
+  const url = new URL(`https://sivocloud.dev/api/tenant-app-auth/${BOX_ID}/logout`)
   const r = await handleTenantAppAuth(makeReq('POST', url.toString()), makeEnv(), url)
   assert.equal(r.status, 200)
   assert.match(r.headers.get('Set-Cookie') || '', /Max-Age=0/)

@@ -54,55 +54,73 @@ function corsHeaders(origin) {
 
 // Proxy de /api/* al control-plane.
 // Reenvía método, headers, body y devuelve la respuesta (incluyendo Set-Cookie).
-async function proxyToControlPlane(request, env, path, search) {
+//
+// Implementación: SERVICE BINDING preferentemente, HTTP fetch como fallback.
+// Por qué service binding: en wrangler 4.127+, los fetches worker-to-worker
+// via custom domain en la misma zona cuelgan en 20s (522). El service
+// binding es interno (no sale al edge público), zero-latency, y bypassa
+// ese bug. Mismo patrón que `landing → runtime` (env.RUNTIME.fetch).
+//
+// Fallback HTTP: cuando wrangler dev corre el portal en --local y el
+// control-plane en --remote, el service binding no se resuelve (wrangler
+// 4 no bridge bindings local→remote). En ese caso caemos a fetch HTTP
+// al origin configurado en HTMLBOX_CONTROL_PLANE_ORIGIN.
+async function proxyToControlPlane(request, env) {
+  // (1) Preferir service binding — funciona en prod y cuando ambos workers
+  // corren local. Si el binding existe pero falla, devolvemos 502.
+  if (env.CONTROL_PLANE) {
+    try {
+      return await env.CONTROL_PLANE.fetch(request)
+    } catch (e) {
+      return new Response(JSON.stringify({ error: 'control_plane_proxy_failed', detail: String(e?.message || e) }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders(request.headers.get('Origin')) },
+      })
+    }
+  }
+
+  // (2) Fallback HTTP al origin configurado (dev con portal --local y
+  // control-plane --remote, donde el service binding no se resuelve).
   const origin = env.HTMLBOX_CONTROL_PLANE_ORIGIN
-  if (!origin) {
-    return new Response(JSON.stringify({ error: 'control_plane_unconfigured' }), {
-      status: 503,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders(request.headers.get('Origin')) },
-    })
+  if (origin) {
+    const url = new URL(request.url)
+    const upstreamUrl = `${origin}${url.pathname}${url.search}`
+    const headers = new Headers()
+    for (const [k, v] of request.headers.entries()) {
+      if (k.toLowerCase() === 'host') continue
+      headers.set(k, v)
+    }
+    const init = { method: request.method, headers }
+    if (!['GET', 'HEAD'].includes(request.method.toUpperCase())) {
+      init.body = request.body
+    }
+    try {
+      const res = await fetch(upstreamUrl, init)
+      const resHeaders = new Headers(res.headers)
+      resHeaders.delete('access-control-allow-origin')
+      resHeaders.delete('access-control-allow-credentials')
+      resHeaders.delete('vary')
+      resHeaders.delete('content-encoding')
+      resHeaders.delete('content-length')
+      const body = await res.arrayBuffer()
+      return new Response(body, {
+        status: res.status,
+        statusText: res.statusText,
+        headers: resHeaders,
+      })
+    } catch (e) {
+      return new Response(JSON.stringify({ error: 'control_plane_fetch_failed', detail: String(e?.message || e) }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders(request.headers.get('Origin')) },
+      })
+    }
   }
-  const upstreamUrl = `${origin}${path}${search || ''}`
-  // Reenviar headers, pero filtrar los específicos del hop (Host).
-  const headers = new Headers()
-  for (const [k, v] of request.headers.entries()) {
-    if (k.toLowerCase() === 'host') continue
-    headers.set(k, v)
-  }
-  const init = {
-    method: request.method,
-    headers,
-  }
-  // Solo leer body para métodos que lo tienen.
-  if (!['GET', 'HEAD'].includes(request.method.toUpperCase())) {
-    init.body = request.body
-  }
-  try {
-    const res = await fetch(upstreamUrl, init)
-    // Copiar todos los headers (incluyendo Set-Cookie, que Workers preserva
-    // en `new Headers(res.headers)`) y status.
-    const resHeaders = new Headers(res.headers)
-    // No propagar headers CORS del upstream — el browser está hablando con el
-    // portal (mismo origen), no con el control-plane.
-    resHeaders.delete('access-control-allow-origin')
-    resHeaders.delete('access-control-allow-credentials')
-    resHeaders.delete('vary')
-    resHeaders.delete('content-encoding')
-    resHeaders.delete('content-length')
-    // Leer el body completo como ArrayBuffer para evitar problemas con
-    // compression/stream re-serving.
-    const body = await res.arrayBuffer()
-    return new Response(body, {
-      status: res.status,
-      statusText: res.statusText,
-      headers: resHeaders,
-    })
-  } catch (err) {
-    return new Response(JSON.stringify({ error: 'control_plane_unreachable', detail: err?.message || 'unknown' }), {
-      status: 502,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders(request.headers.get('Origin')) },
-    })
-  }
+
+  // (3) Sin binding ni origin — solo posible en tests sin wrangler.
+  return new Response(
+    'Portal: ni service binding CONTROL_PLANE ni HTMLBOX_CONTROL_PLANE_ORIGIN configurados.',
+    { status: 502, headers: { 'Content-Type': 'text/plain' } }
+  )
 }
 
 export default {
@@ -123,7 +141,7 @@ export default {
 
     // Proxy de /api/* al control-plane.
     if (path.startsWith('/api/')) {
-      return await proxyToControlPlane(request, env, path, url.search)
+      return await proxyToControlPlane(request, env)
     }
 
     // Sirve la SPA desde el bundle (importado como texto). No depende del cache
@@ -132,7 +150,7 @@ export default {
       // Inyectamos las env vars como window.HTMLBOX_* antes del HTML para que el
       // JS de la SPA pueda hablar con el runtime directamente (cross-origin desde
       // portal). En dev .dev.vars del portal apunta a runtime.localhost:8783; en
-      // prod wrangler.jsonc#vars apunta a htmlbox.dev. Se inyecta con
+      // prod wrangler.jsonc#vars apunta a sivocloud.dev. Se inyecta con
       // HTMLRewriter (ver renderShell) en vez de un regex sobre el string.
       const runtimeOrigin = env.HTMLBOX_RUNTIME_ORIGIN || ''
       const safeOrigin = JSON.stringify(runtimeOrigin).replace(/</g, '\\u003c')

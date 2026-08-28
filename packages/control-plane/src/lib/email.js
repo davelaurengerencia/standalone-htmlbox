@@ -13,7 +13,7 @@
 //     El link ya viene armado por runtime apuntando a sí mismo — esta función
 //     solo renderiza y envía.
 
-const FROM_ADDRESS_DEFAULT = 'no-reply@htmlbox.dev'
+const FROM_ADDRESS_DEFAULT = 'no-reply@sivocloud.dev'
 const FROM_NAME_DEFAULT = 'HTMLBox'
 
 function escapeHtml(s) {
@@ -88,8 +88,8 @@ export async function sendMagicLinkEmail(env, request, { toEmail, tokenId, tenan
   const reqUrl = new URL(request.url)
   // Determinar el origen del magic link:
   //   - PROD: apunta al PORTAL. El consume ocurre via portal proxy al
-  //     control-plane. La Set-Cookie usa Domain=.htmlbox.dev (cross-subdomain)
-  //     y queda accesible desde cualquier *.htmlbox.dev, incluido el portal
+  //     control-plane. La Set-Cookie usa Domain=.sivocloud.dev (cross-subdomain)
+  //     y queda accesible desde cualquier *.sivocloud.dev, incluido el portal
   //     que la necesita para sus requests autenticados.
   //   - DEV (host-only cookies): apunta al CONTROL-PLANE mismo. Si
   //     apuntara al portal, la Set-Cookie del consume quedaría atada al
@@ -101,7 +101,7 @@ export async function sendMagicLinkEmail(env, request, { toEmail, tokenId, tenan
   // Detección de dev: el control-plane corre con --remote en dev (porque su
   // D1 está en Cloudflare), pero wrangler inyecta las vars de .dev.vars.
   // Cuando el portal origin tiene 'localhost' en la URL sabemos que estamos
-  // en dev — prod usa 'htmlbox.dev'. El hostname del request (cuando
+  // en dev — prod usa 'sivocloud.dev'. El hostname del request (cuando
   // wrangler forward-ea al Worker remoto) es 'htmlbox-control-plane.sivocloud-
   // latam.workers.dev', que NO termina en '.localhost', así que NO podemos
   // detectar dev por hostname.

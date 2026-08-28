@@ -88,7 +88,7 @@ test('shouldUseSecureCookie — localhost no usa Secure', () => {
 })
 
 test('shouldUseSecureCookie — https real usa Secure', () => {
-  const req = { url: 'https://portal.htmlbox.dev/x' }
+  const req = { url: 'https://studio.sivocloud.dev/x' }
   assert.equal(shouldUseSecureCookie(req, {}), true)
 })
 
@@ -110,7 +110,7 @@ test('cookiePathForBox — ignora boxSlug del Referer (la cookie NO viaja a la p
   // mismo host pisándose la cookie entre sí.
   const boxInfo = { boxSlug: 'mybox', visibility: 'private' }
   const req = {
-    headers: { get: (k) => k.toLowerCase() === 'referer' ? 'https://acme.htmlbox.dev/mybox/' : null },
+    headers: { get: (k) => k.toLowerCase() === 'referer' ? 'https://acme.sivocloud.dev/mybox/' : null },
   }
   const path = cookiePathForBox(boxInfo, 'abc123def456ghij', req)
   assert.notEqual(path, '/mybox', 'nunca devuelve el path público del box')
@@ -120,7 +120,7 @@ test('cookiePathForBox — ignora boxSlug del Referer (la cookie NO viaja a la p
 test('cookiePathForBox — ignora /t/... del Referer (también funciona en path-based)', () => {
   const boxInfo = { boxSlug: 'mybox', visibility: 'private' }
   const req = {
-    headers: { get: (k) => k.toLowerCase() === 'referer' ? 'https://htmlbox.dev/t/acme/mybox' : null },
+    headers: { get: (k) => k.toLowerCase() === 'referer' ? 'https://sivocloud.dev/t/acme/mybox' : null },
   }
   const path = cookiePathForBox(boxInfo, 'abc123def456ghij', req)
   assert.notEqual(path, '/t/acme/mybox', 'nunca devuelve el path /t/...')
@@ -130,7 +130,7 @@ test('cookiePathForBox — ignora /t/... del Referer (también funciona en path-
 test('cookiePathForBox — ignora /s/{shareId}/... del Referer (también funciona en share)', () => {
   const boxInfo = { boxSlug: 'mybox', shareId: 'shr123', visibility: 'public' }
   const req = {
-    headers: { get: (k) => k.toLowerCase() === 'referer' ? 'https://htmlbox.dev/s/shr123abc' : null },
+    headers: { get: (k) => k.toLowerCase() === 'referer' ? 'https://sivocloud.dev/s/shr123abc' : null },
   }
   const path = cookiePathForBox(boxInfo, 'abc123def456ghij', req)
   assert.notEqual(path, '/s/shr123abc', 'nunca devuelve el path /s/...')

@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS htmlbox_boxes (
 
   -- Versionado
   htmlbox_version INTEGER NOT NULL DEFAULT 0,
-  share_id TEXT,                                        -- para URL pública tipo https://htmlbox.app/s/{shareId}
+  share_id TEXT,                                        -- para URL pública tipo https://sivocloud.dev/s/{shareId}
 
   created_by TEXT REFERENCES htmlbox_users(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),

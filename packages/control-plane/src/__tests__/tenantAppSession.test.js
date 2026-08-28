@@ -28,15 +28,15 @@ test('buildTenantAppSessionCookie usa Path=/ (no scope por box)', () => {
 })
 
 test('buildTenantAppSessionCookie agrega Domain en prod', () => {
-  const req = { url: 'https://acme.htmlbox.dev/mybox', headers: { get: () => null } }
-  const env = { HTMLBOX_SESSION_DOMAIN: '.htmlbox.dev' }
+  const req = { url: 'https://acme.sivocloud.dev/mybox', headers: { get: () => null } }
+  const env = { HTMLBOX_SESSION_DOMAIN: '.sivocloud.dev' }
   const c = buildTenantAppSessionCookie(req, 'abc', env)
-  assert.match(c, /Domain=\.htmlbox\.dev/)
+  assert.match(c, /Domain=\.sivocloud\.dev/)
 })
 
 test('buildTenantAppSessionCookie agrega Secure cuando secure=true', () => {
-  const req = { url: 'https://acme.htmlbox.dev/mybox', headers: { get: () => null } }
-  const env = { HTMLBOX_SESSION_DOMAIN: '.htmlbox.dev' }
+  const req = { url: 'https://acme.sivocloud.dev/mybox', headers: { get: () => null } }
+  const env = { HTMLBOX_SESSION_DOMAIN: '.sivocloud.dev' }
   const c = buildTenantAppSessionCookie(req, 'abc', env)
   assert.match(c, /Secure/)
 })

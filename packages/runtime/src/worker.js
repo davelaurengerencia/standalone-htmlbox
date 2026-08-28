@@ -7,7 +7,7 @@
 //   GET  /api/data/{boxId}/tables...                → data API (lectura/escritura de tablas del box)
 //   GET  /s/{shareId}                               → box público (sin auth)
 //   GET  /t/{tenantSlug}/{boxSlug}                  → box privado path-based
-//   GET  /{boxSlug}                                 → box privado (host *.htmlbox.dev, con sesión)
+//   GET  /{boxSlug}                                 → box privado (host *.sivocloud.dev, con sesión)
 //
 // La data API es servida por el mismo runtime que sirve HTML: la URL pública
 // es /api/data/{boxId}/... y el SDK del box la consume con credentials=include

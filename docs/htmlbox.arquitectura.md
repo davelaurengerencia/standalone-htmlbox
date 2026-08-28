@@ -23,7 +23,7 @@ Ningún dato de negocio del usuario vive en D1 — D1 es puro "directorio" (qui�
 
 D1 es una sola base SQLite gestionada por Cloudflare, **compartida por todos los tenants** (no hay un D1 por tenant). El aislamiento entre tenants es lógico, vía columnas, no físico:
 
-- `htmlbox_tenants` — un row por tenant (cliente). `slug` es el subdominio (`acme` → `acme.htmlbox.dev`).
+- `htmlbox_tenants` — un row por tenant (cliente). `slug` es el subdominio (`acme` → `acme.sivocloud.dev`).
 - `htmlbox_users` — usuarios de la plataforma. `tenant_id` puede ser `NULL`: eso marca al **platform owner** (el operador de HTMLBox, no un cliente — puede ver/crear cualquier tenant).
 - `htmlbox_workspaces` — cada tenant puede tener varios workspaces (agrupan boxes). `tenant_id NOT NULL`.
 - `htmlbox_memberships` — tabla puente `(user_id, workspace_id) → role`. El rol (`owner`/`editor`/`viewer`) se resuelve **por workspace**, no por tenant — un usuario puede tener roles distintos en distintos workspaces del mismo tenant.
@@ -108,7 +108,7 @@ Como el token no distingue esto a nivel de Turso, cualquier código que llegue a
 
 | Token / secreto | Dónde vive | Formato | TTL | Para qué |
 |---|---|---|---|---|
-| **Cookie de sesión `sid`** | Cliente (HttpOnly cookie) + `htmlbox_sessions` en D1 | 32 bytes random, hex | 30 días (`AUTH_SESSION_TTL_DAYS`) | Identifica al usuario logueado en portal/runtime. `HttpOnly; SameSite=Lax; Secure` (en https); `Domain=.htmlbox.dev` en prod para compartirla entre los 3 Workers. |
+| **Cookie de sesión `sid`** | Cliente (HttpOnly cookie) + `htmlbox_sessions` en D1 | 32 bytes random, hex | 30 días (`AUTH_SESSION_TTL_DAYS`) | Identifica al usuario logueado en portal/runtime. `HttpOnly; SameSite=Lax; Secure` (en https); `Domain=.sivocloud.dev` en prod para compartirla entre los 3 Workers. |
 | **Magic link token** | URL de email + `htmlbox_magic_links` en D1 | 32 bytes random, hex | 15 min (`AUTH_MAGICLINK_TTL_SEC`), un solo uso (`used_at`) | Login sin password. Rate-limit: máx 3 pedidos por email cada 60s (`AUTH_REQUEST_MAX_PER_EMAIL` / `AUTH_REQUEST_WINDOW_SEC`). |
 | **`HTMLBOX_SESSION_SECRET`** | Secret de Worker (`wrangler secret put`) | string | — | Clave HMAC-SHA256 para firmar las URLs de upload a R2 (§3) — NO firma las cookies de sesión (esas son solo un ID random validado contra D1, no un JWT). |
 | **API token de box (`hbx_...`)** | Se muestra una sola vez al crearlo; se guarda el HASH (SHA-256) en `htmlbox_api_tokens` | prefijo `hbx_` + random | opcional `expires_at` | Acceso externo de solo-lectura (o más, según `scope`: `read`, `write_html`, `write_data`, `execute`) a UN box específico, sin necesitar sesión de usuario — pensado para integraciones (ver uso en `getActiveHtml()` de `uploads.js`, que acepta `Authorization: Bearer hbx_...` con scope `read` para servir el HTML activo de un box privado sin cookie). |
@@ -133,6 +133,6 @@ El punto más débil de esta cadena hoy es que el paso 3 depende de que el `turs
 
 ## 7. Dominios y cómo cada Worker sabe con qué tenant/box está hablando
 
-- `controlplane.htmlbox.dev` → Worker `control-plane` — el único que toca D1 y Turso Platform API directamente, y el único que puede escribir en R2 (todas las escrituras de HTML pasan por acá, aunque sea vía la URL firmada).
-- `portal.htmlbox.dev` → Worker `portal` — SPA Alpine.js del tenant, actúa como proxy transparente de `/api/*` hacia `control-plane` (para evitar CORS) y sirve estáticos. No toca D1/R2/Turso directamente.
-- `*.htmlbox.dev` → Worker `runtime` — sirve el HTML publicado de cada box y expone la Data API. Resuelve `{tenantSlug}.htmlbox.dev/{boxSlug}` (privado, con sesión) o `/s/{shareId}` (público, sin sesión) contra el control-plane (`resolveByTenantAndSlug`/`resolveByShareId` en `resolver.js`), cachea esa resolución en KV 5 min, y lee el HTML directamente de R2. Para datos, en cambio, pide credenciales Turso al control-plane por cada box la primera vez (cacheado 60s) y luego habla directo con Turso.
+- `controlplane.sivocloud.dev` → Worker `control-plane` — el único que toca D1 y Turso Platform API directamente, y el único que puede escribir en R2 (todas las escrituras de HTML pasan por acá, aunque sea vía la URL firmada).
+- `portal.sivocloud.dev` → Worker `portal` — SPA Alpine.js del tenant, actúa como proxy transparente de `/api/*` hacia `control-plane` (para evitar CORS) y sirve estáticos. No toca D1/R2/Turso directamente.
+- `*.sivocloud.dev` → Worker `runtime` — sirve el HTML publicado de cada box y expone la Data API. Resuelve `{tenantSlug}.sivocloud.dev/{boxSlug}` (privado, con sesión) o `/s/{shareId}` (público, sin sesión) contra el control-plane (`resolveByTenantAndSlug`/`resolveByShareId` en `resolver.js`), cachea esa resolución en KV 5 min, y lee el HTML directamente de R2. Para datos, en cambio, pide credenciales Turso al control-plane por cada box la primera vez (cacheado 60s) y luego habla directo con Turso.

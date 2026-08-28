@@ -5,8 +5,8 @@
 //   - dispatch_namespaces.remote=true es REQUERIDO en dev local — wrangler
 //     NO emula dispatch namespaces, sin este flag cada boot escupe un
 //     warning y el BOX_DISPATCH binding queda inerte.
-//   - routes *.htmlbox.dev + htmlbox.dev son las URLs públicas — sin
-//     ellas el Worker no responde a subdominios reales.
+//   - routes *.sivocloud.dev son las URLs públicas — sin ellas el Worker
+//     no responde a subdominios reales.
 //
 // Si alguno de estos tests falla, alguien cambió el config sin entender
 // el blast radius. Reversión: leer el git log del archivo.
@@ -45,17 +45,18 @@ test('runtime/wrangler.jsonc tiene BOX_DISPATCH binding con remote=true', async 
   )
 })
 
-test('runtime/wrangler.jsonc sigue publicando *.htmlbox.dev + htmlbox.dev', async () => {
+test('runtime/wrangler.jsonc sigue publicando *.sivocloud.dev/*', async () => {
   const raw = await fs.readFile(runtimeWrangler, 'utf8')
   const stripped = raw.replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '')
   const cfg = JSON.parse(stripped)
   const routes = cfg.routes || []
-  const htmlbox = routes.filter(r => r.zone_name === 'htmlbox.dev')
-  assert.ok(htmlbox.length >= 2, 'debe haber al menos routes htmlbox.dev + *.htmlbox.dev')
-  const hasApex = htmlbox.some(r => r.pattern === 'htmlbox.dev')
-  const hasWild = htmlbox.some(r => r.pattern === '*.htmlbox.dev')
-  assert.ok(hasApex, 'ruta htmlbox.dev apex debe existir')
-  assert.ok(hasWild, 'ruta *.htmlbox.dev (wildcard subdomains) debe existir')
+  const sivo = routes.filter(r => r.zone_name === 'sivocloud.dev')
+  assert.ok(sivo.length >= 1, 'debe haber al menos una ruta en zone sivocloud.dev')
+  // El patrón DEBE terminar en `/*` para matchear subpaths — sin el `/*`,
+  // Cloudflare solo matchea el path raíz `/` y todo lo demás se queda en
+  // el limbo (522 en 20s). Bug confirmado en wrangler 4.127+.
+  const hasWild = sivo.some(r => r.pattern === '*.sivocloud.dev/*')
+  assert.ok(hasWild, 'ruta *.sivocloud.dev/* (wildcard subdomains para tenant boxes) debe existir')
 })
 
 test('runtime/wrangler.jsonc NO tiene BOX_DISPATCH comentado (debe estar activo)', async () => {

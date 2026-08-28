@@ -14,7 +14,7 @@ import path from 'node:path'
 const SDK_PATH = new URL('../src/sdk/htmlbox-sdk.txt', import.meta.url)
 const SDK_SOURCE = fs.readFileSync(SDK_PATH, 'utf8')
 
-function loadSdk({ boxId = '', v = 'public', origin = 'https://htmlbox.dev' } = {}) {
+function loadSdk({ boxId = '', v = 'public', origin = 'https://sivocloud.dev' } = {}) {
   const sandbox = {
     location: { origin, search: `?boxId=${boxId}&v=${v}` },
     URLSearchParams,
@@ -40,10 +40,10 @@ const fakeFetch = (url, init) => {
 // Reemplazamos fetch para todas las pruebas
 test('SDK expone metadata', () => {
   globalThis.fetch = fakeFetch
-  const sdk = loadSdk({ boxId: 'lf6l61etomwk9fdl', v: 'public', origin: 'https://htmlbox.dev' })
+  const sdk = loadSdk({ boxId: 'lf6l61etomwk9fdl', v: 'public', origin: 'https://sivocloud.dev' })
   assert.equal(sdk.boxId, 'lf6l61etomwk9fdl')
   assert.equal(sdk.visibility, 'public')
-  assert.equal(sdk.runtimeOrigin, 'https://htmlbox.dev')
+  assert.equal(sdk.runtimeOrigin, 'https://sivocloud.dev')
   assert.match(sdk.sdkVersion, /^0\./)
   assert.equal(typeof sdk.table, 'function')
   assert.equal(typeof sdk.flow, 'function')
@@ -57,9 +57,9 @@ test('table().rows() hace fetch a /api/data/{boxId}/tables/{slug}/rows', async (
       status: 200, headers: { 'Content-Type': 'application/json' },
     })
   }
-  const sdk = loadSdk({ boxId: 'lf6l61etomwk9fdl', origin: 'https://htmlbox.dev' })
+  const sdk = loadSdk({ boxId: 'lf6l61etomwk9fdl', origin: 'https://sivocloud.dev' })
   const r = await sdk.table('ventas').rows({ limit: 50 })
-  assert.equal(lastUrl, 'https://htmlbox.dev/api/data/lf6l61etomwk9fdl/tables/ventas/rows?limit=50')
+  assert.equal(lastUrl, 'https://sivocloud.dev/api/data/lf6l61etomwk9fdl/tables/ventas/rows?limit=50')
   assert.deepEqual(r.rows, [{ id: 1, name: 'A' }])
 })
 
@@ -69,7 +69,7 @@ test('table().rows() con where lo serializa como JSON', async () => {
     lastUrl = url
     return new Response(JSON.stringify({ rows: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }
-  const sdk = loadSdk({ boxId: 'b1', origin: 'https://htmlbox.dev' })
+  const sdk = loadSdk({ boxId: 'b1', origin: 'https://sivocloud.dev' })
   await sdk.table('ventas').rows({ where: { region: 'LATAM' } })
   assert.ok(lastUrl.endsWith('where=%7B%22region%22%3A%22LATAM%22%7D'))
 })
@@ -80,7 +80,7 @@ test('table().upsert() POST con body JSON', async () => {
     capturedInit = init
     return new Response(JSON.stringify({ ok: true, inserted: 2 }), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }
-  const sdk = loadSdk({ boxId: 'b1', origin: 'https://htmlbox.dev' })
+  const sdk = loadSdk({ boxId: 'b1', origin: 'https://sivocloud.dev' })
   const r = await sdk.table('x').upsert([{ a: 1 }, { a: 2 }])
   assert.equal(r.inserted, 2)
   assert.equal(capturedInit.method, 'POST')
@@ -90,13 +90,13 @@ test('table().upsert() POST con body JSON', async () => {
 
 test('table().upsert() rechaza si rows no es array', async () => {
   globalThis.fetch = fakeFetch
-  const sdk = loadSdk({ boxId: 'b1', origin: 'https://htmlbox.dev' })
+  const sdk = loadSdk({ boxId: 'b1', origin: 'https://sivocloud.dev' })
   await assert.rejects(() => sdk.table('x').upsert({ a: 1 }), /rows debe ser array/)
 })
 
 test('table() rechaza slug vacío', () => {
   globalThis.fetch = fakeFetch
-  const sdk = loadSdk({ boxId: 'b1', origin: 'https://htmlbox.dev' })
+  const sdk = loadSdk({ boxId: 'b1', origin: 'https://sivocloud.dev' })
   assert.throws(() => sdk.table(''), /slug requerido/)
 })
 
@@ -106,15 +106,15 @@ test('table().columns() hace fetch a /columns', async () => {
     lastUrl = url
     return new Response(JSON.stringify({ slug: 'v', name: 'Ventas', columns: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }
-  const sdk = loadSdk({ boxId: 'b1', origin: 'https://htmlbox.dev' })
+  const sdk = loadSdk({ boxId: 'b1', origin: 'https://sivocloud.dev' })
   const c = await sdk.table('v').columns()
   assert.equal(c.slug, 'v')
-  assert.equal(lastUrl, 'https://htmlbox.dev/api/data/b1/tables/v/columns')
+  assert.equal(lastUrl, 'https://sivocloud.dev/api/data/b1/tables/v/columns')
 })
 
 test('fetch failure lanza error con status y body', async () => {
   globalThis.fetch = async () => new Response(JSON.stringify({ error: 'unauthenticated' }), { status: 401, headers: { 'Content-Type': 'application/json' } })
-  const sdk = loadSdk({ boxId: 'b1', origin: 'https://htmlbox.dev' })
+  const sdk = loadSdk({ boxId: 'b1', origin: 'https://sivocloud.dev' })
   try {
     await sdk.table('v').rows()
     assert.fail('debe lanzar')

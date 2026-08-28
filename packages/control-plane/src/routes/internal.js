@@ -4,6 +4,7 @@
 //   GET  /api/internal/boxes-by-slug/:tenant/:slug    → lookup privado
 //   GET  /api/internal/boxes/:boxId/db                → credenciales Turso (runtime)
 //   POST /api/internal/retry-schema/:boxId            → re-aplica el schema (diagnóstico desde el admin)
+//   POST /api/internal/wfp/migrate-tags               → re-deploya per-box scripts con tags (one-off admin)
 //   POST /api/internal/send-app-magic-link            → envío de magic link para usuarios de la app (runtime → control-plane)
 //   POST /api/internal/tenant-app-auth/request        → magic link TENANT-app-user (fase 3)
 //   POST /api/internal/tenant-app-auth/consume        → consume + crea sesión TENANT-app-user (fase 3)
@@ -16,6 +17,7 @@
 
 import { retrySchema } from './boxes.js'
 import { sendAppMagicLinkEmail } from '../lib/email.js'
+import { deployBoxWorker } from '../lib/wfpDeployer.js'
 import {
   isTenantAppRateLimited, createTenantAppMagicLink, consumeTenantAppMagicLink,
   findTenantAppUserByEmail, createTenantAppSession, validateTenantAppSession,
@@ -46,7 +48,8 @@ export async function handleInternal(request, env, ctx, path, method) {
     path.startsWith('/api/internal/boxes/') ||
     path === '/api/internal/whoami' ||
     path === '/api/internal/send-app-magic-link' ||
-    path.startsWith('/api/internal/tenant-app-auth/')
+    path.startsWith('/api/internal/tenant-app-auth/') ||
+    path.startsWith('/api/internal/wfp/')
 
   if (requiresInternalSecret) {
     const provided = request.headers.get('X-HTMLBox-Internal-Secret') || ''
@@ -89,6 +92,14 @@ export async function handleInternal(request, env, ctx, path, method) {
   if (retryMatch && method === 'POST') {
     const result = await retrySchema(env, retryMatch[1])
     return json(result, result.ok ? 200 : 500)
+  }
+
+  // POST /api/internal/wfp/migrate-tags  — one-off admin: re-deploya los
+  // per-box scripts ya existentes en WFP, agregándoles los tags legibles
+  // (tenant, box, visibility, template). El bundle no cambia — solo el
+  // metadata. Best-effort: si falla uno, sigue con el siguiente.
+  if (path === '/api/internal/wfp/migrate-tags' && method === 'POST') {
+    return await postWfpMigrateTags(env)
   }
 
   // POST /api/internal/send-app-magic-link  — runtime delega el envío al
@@ -352,4 +363,61 @@ async function getBoxMembership(env, boxId, request) {
   `).bind(sess.user_id, row.workspace_id).first()
   if (!m) return json({ membership: null }, 403)
   return json({ membership: { role: m.role } })
+}
+
+// POST /api/internal/wfp/migrate-tags
+// One-off admin: re-deploya TODOS los per-box scripts existentes en WFP
+// con los tags legibles (tenant / box / visibility / template). Útil para
+// poblar tags en boxes creados antes de que se implementara este feature.
+//
+// Respuesta: { total, succeeded, failed: [{ boxId, error }] }
+// - total: cantidad de boxes ready que se intentó re-deployar
+// - succeeded: cantidad que respondió 200 OK
+// - failed: array con boxId + mensaje de error por cada fallo (best-effort)
+//
+// No es idempotente en sentido estricto: el PUT a Cloudflare es idempotente
+// (mismo bundle + mismas tags), pero la query a D1 NO se filtra por
+// wfp_status='ready' — si hay un box 'failed' en WFP, lo intenta igual.
+// Si querés solo los ready, filtrar en el SQL antes del loop.
+async function postWfpMigrateTags(env) {
+  const accountId = env.HTMLBOX_CLOUDFLARE_ACCOUNT_ID
+  const namespace = env.HTMLBOX_WFP_NAMESPACE || 'htmlbox-boxes'
+  if (!env.WFP_DEPLOY_TOKEN || !accountId) {
+    return json({ error: 'wfp_not_configured', detail: !env.WFP_DEPLOY_TOKEN ? 'WFP_DEPLOY_TOKEN faltante' : 'HTMLBOX_CLOUDFLARE_ACCOUNT_ID faltante' }, 503)
+  }
+
+  // Solo boxes con wfp_status='ready' — los 'failed' no tienen script en
+  // WFP para re-deployar (o lo tienen en estado roto). El operador puede
+  // usar el botón "retry" en el admin panel para esos casos.
+  const rows = await env.DB.prepare(`
+    SELECT b.id, b.slug, b.visibility, b.template,
+           t.id AS tenant_id, t.slug AS tenant_slug
+      FROM htmlbox_boxes b
+      JOIN htmlbox_tenants t ON t.id = b.tenant_id
+     WHERE b.wfp_status = 'ready'
+     ORDER BY b.created_at ASC
+  `).all()
+  const boxes = rows.results ?? []
+
+  let succeeded = 0
+  const failed = []
+  for (const box of boxes) {
+    const tags = [
+      `tenant:${box.tenant_slug}`,
+      `box:${box.slug}`,
+      `tenant-id:${box.tenant_id}`,
+      `box-id:${box.id}`,
+      `visibility:${box.visibility}`,
+      `template:${box.template || 'empty'}`,
+    ]
+    try {
+      await deployBoxWorker(env, accountId, namespace, box.id, { tags })
+      succeeded++
+    } catch (err) {
+      console.error(`[wfp/migrate-tags] failed for box ${box.id}:`, err)
+      failed.push({ boxId: box.id, error: String(err?.message || err).slice(0, 500) })
+    }
+  }
+
+  return json({ total: boxes.length, succeeded, failed })
 }

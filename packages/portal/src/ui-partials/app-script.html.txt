@@ -744,7 +744,7 @@
           const slug = this.currentBox.slug
           const share = this.currentBox.share_id
           const tenantSlug = (this.tenants.find((t) => t.id === this.currentTenantId) || {}).slug || 'tenant'
-          this.shareUrl = `https://htmlbox.dev/s/${share}    https://${tenantSlug}.htmlbox.dev/${slug}`
+          this.shareUrl = `https://sivocloud.dev/s/${share}    https://${tenantSlug}.sivocloud.dev/${slug}`
           this.shareModalOpen = true
         },
 
@@ -756,7 +756,7 @@
           if (!this.currentBox) return
           const slug = this.currentBox.slug
           const tenantSlug = (this.tenants.find((t) => t.id === this.currentTenantId) || {}).slug || 'tenant'
-          const base = `https://${tenantSlug}.htmlbox.dev/${slug}`
+          const base = `https://${tenantSlug}.sivocloud.dev/${slug}`
           const url = base.includes('?') ? `${base}&hbx_debug=1` : `${base}?hbx_debug=1`
           window.open(url, '_blank', 'noopener')
         },

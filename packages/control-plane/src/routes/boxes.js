@@ -151,9 +151,22 @@ async function createBox(request, env) {
   // (asumiendo que el binding BOX_DISPATCH está prendido en runtime).
   const accountId = env.HTMLBOX_CLOUDFLARE_ACCOUNT_ID
   const namespace = env.HTMLBOX_WFP_NAMESPACE || 'htmlbox-boxes'
+  // Tags legibles para el dashboard de Cloudflare. Permiten filtrar por
+  // tenant / box / visibility sin exponer el boxId. Ver wfpDeployer.js
+  // para las reglas de validación (max 32 tags × 64 chars).
+  const visibility = body?.visibility === 'public' ? 'public' : 'private'
+  const template = body?.template || 'empty'
+  const wfpTags = [
+    `tenant:${tenant.slug}`,
+    `box:${candidate}`,
+    `tenant-id:${tenant.id}`,
+    `box-id:${id}`,
+    `visibility:${visibility}`,
+    `template:${template}`,
+  ]
   if (env.WFP_DEPLOY_TOKEN && accountId) {
     try {
-      await deployBoxWorker(env, accountId, namespace, id)
+      await deployBoxWorker(env, accountId, namespace, id, { tags: wfpTags })
       await env.DB.prepare(
         `UPDATE htmlbox_boxes SET wfp_status = 'ready', wfp_error = NULL, updated_at = datetime('now') WHERE id = ?1`
       ).bind(id).run()

@@ -80,7 +80,7 @@ CREATE INDEX IF NOT EXISTS idx_htmlbox_tenant_app_access_scope ON htmlbox_tenant
 
 ## 2. Auth — mismo mecanismo (magic link), pero dueño del D1
 
-El login sigue siendo magic link por email, mismo patrón que las fases 1/2 — pero como los datos están en D1, el auth vive del lado de `control-plane`, no de `runtime`. Para que el box publicado (servido por `runtime`, en `{tenant}.htmlbox.dev/...`) nunca tenga que hablarle directo a `controlplane.htmlbox.dev` (evita CORS y mantiene el mismo principio del resto del sistema — el box solo habla con `runtime`), `runtime` expone las rutas públicas y por debajo llama a `control-plane` — exactamente el mismo patrón ya usado para el envío de email en la fase 1 (`sendAppMagicLinkViaControlPlane`, fase 1 §5.1).
+El login sigue siendo magic link por email, mismo patrón que las fases 1/2 — pero como los datos están en D1, el auth vive del lado de `control-plane`, no de `runtime`. Para que el box publicado (servido por `runtime`, en `{tenant}.sivocloud.dev/...`) nunca tenga que hablarle directo a `controlplane.sivocloud.dev` (evita CORS y mantiene el mismo principio del resto del sistema — el box solo habla con `runtime`), `runtime` expone las rutas públicas y por debajo llama a `control-plane` — exactamente el mismo patrón ya usado para el envío de email en la fase 1 (`sendAppMagicLinkViaControlPlane`, fase 1 §5.1).
 
 ### 2.1 Nuevas funciones en `packages/control-plane/src/lib/session.js`
 
@@ -178,7 +178,7 @@ export async function checkTenantAppAccess(env, tenantAppUserId, box) {
 
 ### 2.2 Cookie nueva — `hbx_tapp_sid`, con `Domain`, no con `Path`
 
-A diferencia de la cookie de la fase 1 (`hbx_app_sid`, scoped por `Path` a un solo box — ver esa spec §6), esta necesita viajar a **cualquier box** del tenant. Se resuelve igual que ya resuelve la cookie de plataforma (`sid`): `Domain=.htmlbox.dev` en producción. Se agrega a `session.js`, junto a `buildSessionCookie`/`buildClearCookie`:
+A diferencia de la cookie de la fase 1 (`hbx_app_sid`, scoped por `Path` a un solo box — ver esa spec §6), esta necesita viajar a **cualquier box** del tenant. Se resuelve igual que ya resuelve la cookie de plataforma (`sid`): `Domain=.sivocloud.dev` en producción. Se agrega a `session.js`, junto a `buildSessionCookie`/`buildClearCookie`:
 
 ```js
 const TENANT_APP_SESSION_COOKIE = 'hbx_tapp_sid'
@@ -433,4 +433,4 @@ Con la limitación explícita de arriba (`postUpsert` devuelve 403 para `tenant_
 10. Probar `scope_type='workspace'`: otorgar acceso a un workspace con 2+ boxes, confirmar que alcanza a ambos sin altas individuales.
 11. Probar `scope_type='tenant'`: confirmar que alcanza incluso a un box creado DESPUÉS de otorgar el acceso (no hay que re-otorgar nada al crear apps nuevas).
 12. Probar que `postUpsert` devuelve `tenant_wide_users_are_read_only_in_v1` para un `tenant_app_user`, en cualquier scope.
-13. Probar que la cookie `hbx_tapp_sid` viaja correctamente entre dos boxes distintos del mismo tenant bajo subdominios distintos (`Domain=.htmlbox.dev`) — a diferencia de `hbx_app_sid` de la fase 1, que NO debe viajar entre boxes.
+13. Probar que la cookie `hbx_tapp_sid` viaja correctamente entre dos boxes distintos del mismo tenant bajo subdominios distintos (`Domain=.sivocloud.dev`) — a diferencia de `hbx_app_sid` de la fase 1, que NO debe viajar entre boxes.

@@ -47,9 +47,9 @@ Se reutilizan **patrones** de sivocloud, no sus Workers.
 
 | Worker | Dominio | Responsabilidad |
 |---|---|---|
-| `htmlbox-control-plane` | `controlplane.htmlbox.dev` | Registry de tenants/workspaces/boxes, auth, billing, **aprovisionamiento de la Turso DB de cada box**, panel admin (Alpine) |
-| `htmlbox-portal` | `portal.htmlbox.dev` | Tenant Portal (Alpine): crear/subir boxes, gestionar datos y automatizaciones, compartir, permisos |
-| `htmlbox-runtime` | `*.htmlbox.dev` | Sirve el HTML de cada box (desde R2), Data API del box, ejecuta flows (flow-engine), webhooks de ingesta, endpoint MCP |
+| `htmlbox-control-plane` | `controlplane.sivocloud.dev` | Registry de tenants/workspaces/boxes, auth, billing, **aprovisionamiento de la Turso DB de cada box**, panel admin (Alpine) |
+| `htmlbox-portal` | `portal.sivocloud.dev` | Tenant Portal (Alpine): crear/subir boxes, gestionar datos y automatizaciones, compartir, permisos |
+| `htmlbox-runtime` | `*.sivocloud.dev` | Sirve el HTML de cada box (desde R2), Data API del box, ejecuta flows (flow-engine), webhooks de ingesta, endpoint MCP |
 
 Recursos:
 
@@ -111,7 +111,7 @@ Roles por workspace/box (tabla `htmlbox_memberships`):
 
 **Auth**: se porta el sistema de sivocloud tal cual (`control-plane/auth.js`,
 `migrations/0003_auth.sql`): magic-link por email (sin passwords), sesión
-cookie `sid` HttpOnly con `Domain=.htmlbox.dev` para compartir sesión entre
+cookie `sid` HttpOnly con `Domain=.sivocloud.dev` para compartir sesión entre
 los 3 Workers, rate-limit por email, respuesta genérica anti-enumeración,
 2 pasos para consumir el link (anti-scanners).
 
@@ -312,7 +312,7 @@ del último sync y botón "Correr ahora".
 Sistemas externos hacen POST directo:
 
 ```
-https://{tenant}.htmlbox.dev/{boxSlug}/api/ingest/{tabla}
+https://{tenant}.sivocloud.dev/{boxSlug}/api/ingest/{tabla}
 ```
 
 Flow con `http-in` → validación (token de ingesta del box) → `transform` →
@@ -422,16 +422,16 @@ el control plane de sivocloud, Alpine via CDN):
 
 | Tipo | URL | Acceso |
 |---|---|---|
-| **Público** | `https://htmlbox.dev/s/{shareId}` | Cualquiera con el link. SDK corre con token **read-only** de esa DB embebido al servir el HTML. Landing pages, reportes públicos |
-| **Privado** | `https://{tenant}.htmlbox.dev/{boxSlug}` | Requiere sesión + rol ≥ Lector. Escrituras requieren Editor+. ERPs, CRMs, herramientas internas |
+| **Público** | `https://sivocloud.dev/s/{shareId}` | Cualquiera con el link. SDK corre con token **read-only** de esa DB embebido al servir el HTML. Landing pages, reportes públicos |
+| **Privado** | `https://{tenant}.sivocloud.dev/{boxSlug}` | Requiere sesión + rol ≥ Lector. Escrituras requieren Editor+. ERPs, CRMs, herramientas internas |
 
-> Privados también funcionan sin wildcard DNS: `https://htmlbox.dev/t/{tenantSlug}/{boxSlug}` (path-based fallback).
+> Privados también funcionan sin wildcard DNS: `https://sivocloud.dev/t/{tenantSlug}/{boxSlug}` (path-based fallback).
 
 ### Aislamiento
 
 - El HTML de usuario (potencialmente no confiable) se sirve en el dominio de
-  runtime (`*.htmlbox.dev`), **nunca** en `portal.htmlbox.dev` ni
-  `controlplane.htmlbox.dev` — el sandbox del navegador aísla cookies/storage
+  runtime (`*.sivocloud.dev`), **nunca** en `portal.sivocloud.dev` ni
+  `controlplane.sivocloud.dev` — el sandbox del navegador aísla cookies/storage
   por origen.
 - Preview dentro del portal: `<iframe sandbox>` (sin `allow-same-origin`
   sobre el origen del portal).
@@ -464,7 +464,7 @@ consultar tablas y conectar APIs — así el usuario sigue iterando con su
 agente de preferencia mientras **ve los cambios en vivo en HTMLBox** (el
 agente pushea → el usuario refresca el link del box).
 
-Endpoint en el runtime: `https://{tenant}.htmlbox.dev/{boxSlug}/mcp`
+Endpoint en el runtime: `https://{tenant}.sivocloud.dev/{boxSlug}/mcp`
 (Streamable HTTP; variante pública del box usa su API key).
 
 ### 11.1 Auto-documentación: el agente entiende HTMLBox antes de actuar

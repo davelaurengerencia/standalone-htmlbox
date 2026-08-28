@@ -22,41 +22,41 @@ function makeReq(method, url) {
 }
 
 function makeEnv() {
-  return { HTMLBOX_CONTROL_PLANE_ORIGIN: 'https://controlplane.htmlbox.dev' }
+  return { HTMLBOX_CONTROL_PLANE_ORIGIN: 'https://controlplane.sivocloud.dev' }
 }
 
 test('router devuelve null para URL que no matchea', async () => {
-  const url = new URL('https://htmlbox.dev/api/other/x')
-  const r = await handleAppDataApi(makeReq('GET', 'https://htmlbox.dev/api/other/x'), makeEnv(), url)
+  const url = new URL('https://sivocloud.dev/api/other/x')
+  const r = await handleAppDataApi(makeReq('GET', 'https://sivocloud.dev/api/other/x'), makeEnv(), url)
   assert.equal(r, null)
 })
 
 test('router devuelve null para boxId con formato inválido', async () => {
-  const url = new URL('https://htmlbox.dev/api/app-data/BAD/tables/ventas/rows')
-  const r = await handleAppDataApi(makeReq('GET', 'https://htmlbox.dev/api/app-data/BAD/tables/ventas/rows'), makeEnv(), url)
+  const url = new URL('https://sivocloud.dev/api/app-data/BAD/tables/ventas/rows')
+  const r = await handleAppDataApi(makeReq('GET', 'https://sivocloud.dev/api/app-data/BAD/tables/ventas/rows'), makeEnv(), url)
   assert.equal(r, null)
 })
 
 test('router devuelve null para slug con mayúsculas', async () => {
-  const url = new URL(`https://htmlbox.dev/api/app-data/${BOX_ID}/tables/Ventas/rows`)
+  const url = new URL(`https://sivocloud.dev/api/app-data/${BOX_ID}/tables/Ventas/rows`)
   const r = await handleAppDataApi(makeReq('GET', url.toString()), makeEnv(), url)
   assert.equal(r, null)
 })
 
 test('método incorrecto en /rows → 405', async () => {
-  const url = new URL(`https://htmlbox.dev/api/app-data/${BOX_ID}/tables/ventas/rows`)
+  const url = new URL(`https://sivocloud.dev/api/app-data/${BOX_ID}/tables/ventas/rows`)
   const r = await handleAppDataApi(makeReq('POST', url.toString()), makeEnv(), url)
   assert.equal(r.status, 405)
 })
 
 test('método incorrecto en /upsert → 405', async () => {
-  const url = new URL(`https://htmlbox.dev/api/app-data/${BOX_ID}/tables/ventas/upsert`)
+  const url = new URL(`https://sivocloud.dev/api/app-data/${BOX_ID}/tables/ventas/upsert`)
   const r = await handleAppDataApi(makeReq('GET', url.toString()), makeEnv(), url)
   assert.equal(r.status, 405)
 })
 
 test('op inválida (no rows/upsert) → null', async () => {
-  const url = new URL(`https://htmlbox.dev/api/app-data/${BOX_ID}/tables/ventas/upload`)
+  const url = new URL(`https://sivocloud.dev/api/app-data/${BOX_ID}/tables/ventas/upload`)
   const r = await handleAppDataApi(makeReq('POST', url.toString()), makeEnv(), url)
   assert.equal(r, null)
 })
@@ -64,7 +64,7 @@ test('op inválida (no rows/upsert) → null', async () => {
 test('router matchea /rows y /upsert para boxId válido', async () => {
   for (const op of ['rows', 'upsert']) {
     const method = op === 'rows' ? 'GET' : 'POST'
-    const url = new URL(`https://htmlbox.dev/api/app-data/${BOX_ID}/tables/ventas/${op}`)
+    const url = new URL(`https://sivocloud.dev/api/app-data/${BOX_ID}/tables/ventas/${op}`)
     const r = await handleAppDataApi(makeReq(method, url.toString()), makeEnv(), url)
     // Llega al router (matchea); el status puede ser 401 por falta de sesión app-user
     assert.notEqual(r, null)
@@ -74,13 +74,13 @@ test('router matchea /rows y /upsert para boxId válido', async () => {
 
 test('slug demasiado largo (>40 chars) → null', async () => {
   const longSlug = 'a'.repeat(50)
-  const url = new URL(`https://htmlbox.dev/api/app-data/${BOX_ID}/tables/${longSlug}/rows`)
+  const url = new URL(`https://sivocloud.dev/api/app-data/${BOX_ID}/tables/${longSlug}/rows`)
   const r = await handleAppDataApi(makeReq('GET', url.toString()), makeEnv(), url)
   assert.equal(r, null)
 })
 
 test('slug con caracter inválido (-) en posición 0 → null', async () => {
-  const url = new URL(`https://htmlbox.dev/api/app-data/${BOX_ID}/tables/-ventas/rows`)
+  const url = new URL(`https://sivocloud.dev/api/app-data/${BOX_ID}/tables/-ventas/rows`)
   const r = await handleAppDataApi(makeReq('GET', url.toString()), makeEnv(), url)
   assert.equal(r, null)
 })

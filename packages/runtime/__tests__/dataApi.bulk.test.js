@@ -10,7 +10,7 @@ import assert from 'node:assert/strict'
 const BOX_ID = 'lf6l61etomwk9fdl'
 
 function makeEnv() {
-  return { HTMLBOX_CONTROL_PLANE_ORIGIN: 'https://controlplane.htmlbox.dev' }
+  return { HTMLBOX_CONTROL_PLANE_ORIGIN: 'https://controlplane.sivocloud.dev' }
 }
 
 function makeRequest({ method = 'POST', url, body = null } = {}) {
@@ -104,7 +104,7 @@ test('bulk-create valida auth y crea múltiples tablas', async () => {
   })
 
   const req = makeRequest({
-    url: `https://htmlbox.dev/api/data/${BOX_ID}/tables/bulk-create`,
+    url: `https://sivocloud.dev/api/data/${BOX_ID}/tables/bulk-create`,
     body: {
       tables: [
         {
@@ -143,7 +143,7 @@ test('bulk-create rechaza slugs inválidos', async () => {
   })
 
   const req = makeRequest({
-    url: `https://htmlbox.dev/api/data/${BOX_ID}/tables/bulk-create`,
+    url: `https://sivocloud.dev/api/data/${BOX_ID}/tables/bulk-create`,
     body: {
       tables: [
         {
@@ -182,7 +182,7 @@ test('bulk-create rechaza rol viewer', async () => {
     ],
   }
   const req = makeRequest({
-    url: `https://htmlbox.dev/api/data/${BOX_ID}/tables/bulk-create`,
+    url: `https://sivocloud.dev/api/data/${BOX_ID}/tables/bulk-create`,
     body: viewerBody,
   })
   const url = new URL(req.url)
@@ -202,7 +202,7 @@ test('bulk-create maneja errores parciales', async () => {
   })
 
   const req = makeRequest({
-    url: `https://htmlbox.dev/api/data/${BOX_ID}/tables/bulk-create`,
+    url: `https://sivocloud.dev/api/data/${BOX_ID}/tables/bulk-create`,
     body: {
       tables: [
         {

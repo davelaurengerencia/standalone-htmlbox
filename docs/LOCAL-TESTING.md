@@ -18,7 +18,7 @@ remoto de Cloudflare, sin necesidad de desplegar nada. El código corre local
 > En macOS los subdominios `*.localhost` resuelven solos a `127.0.0.1`. En Linux
 > agregá a `/etc/hosts`:
 > ```
-> 127.0.0.1   controlplane.localhost portal.localhost runtime.localhost
+> 127.0.0.1   controlplane.localhost studio.localhost runtime.localhost
 > ```
 
 ---
@@ -61,7 +61,7 @@ Esto ejecuta `scripts/dev.sh`, que:
 3. Aplica las migrations D1 a la base remota (`wrangler d1 migrations apply --remote`).
 4. Levanta los 3 wrangler dev con `--remote` en paralelo:
    - `http://controlplane.localhost:8781` — control-plane (API + UI admin)
-   - `http://portal.localhost:8782` — portal (UI Alpine del tenant)
+   - `http://studio.localhost:8782` — portal (UI Alpine del tenant)
    - `http://runtime.localhost:8783` — runtime (sirve los boxes publicados)
 
 ### Opción B — paso por paso
@@ -101,7 +101,7 @@ npx wrangler dev --remote --persist-to ./.wrangler
 
 ### 3.2 Portal (UI Alpine)
 
-1. Abrí `http://portal.localhost:8782/`.
+1. Abrí `http://studio.localhost:8782/`.
 2. Iniciá sesión con el mismo email (`david@ejemplo.com`) — el portal habla con
    el control-plane en `http://controlplane.localhost:8781` (configurado vía
    `window.HTMLBOX_API_ORIGIN`).
@@ -116,7 +116,7 @@ En el tab **Vista Previa** el iframe muestra el HTML servido. Para acceder al bo
 desde fuera (URL "real"), abrí (con curl o browser):
 
 - **Privado**: `http://acme.localhost:8783/mi-dashboard` — requiere cookie de sesión del portal.
-- **Público**: la URL del share está en el modal "Compartir" — formato `https://htmlbox.dev/s/<shareId>`.
+- **Público**: la URL del share está en el modal "Compartir" — formato `https://sivocloud.dev/s/<shareId>`.
   En dev se sirve igual por el runtime si lo abrís directo.
 
 ---

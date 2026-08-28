@@ -72,7 +72,7 @@ function d1Mock({ user, roleRank = 0, tenants = ['t1'] } = {}) {
 function makeReq({ method, path, cookie = 'sid=sid_test' } = {}) {
   return {
     method,
-    url: `https://portal.htmlbox.dev${path}`,
+    url: `https://studio.sivocloud.dev${path}`,
     headers: {
       get: (k) => {
         if (k.toLowerCase() === 'cookie') return cookie
@@ -185,7 +185,7 @@ test('anexo H1 — platform_owner con ?tenant_id inválido → 404 tenant_not_fo
   })
   const req = {
     method: 'GET',
-    url: 'https://portal.htmlbox.dev/api/tenant-app-users?tenant_id=t_ghost',
+    url: 'https://studio.sivocloud.dev/api/tenant-app-users?tenant_id=t_ghost',
     headers: { get: (k) => k.toLowerCase() === 'cookie' ? 'sid=sid_test' : null },
     json: async () => ({}),
   }

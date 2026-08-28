@@ -6,7 +6,7 @@
   "compatibility_flags": ["nodejs_compat"],
 
   "dev": {
-    "ip": "0.0.0.0",
+    "ip": "::",
     "port": 8783,
     "inspector_port": 9231,
     "inspector_ip": "127.0.0.1"
@@ -18,12 +18,17 @@
 
   "vars": {
     "HTMLBOX_ENV": "production",
-    "HTMLBOX_CONTROL_PLANE_ORIGIN": "https://controlplane.htmlbox.dev"
+    "HTMLBOX_CONTROL_PLANE_ORIGIN": "https://controlplane.sivocloud.dev"
   },
 
+  // El apex sivocloud.dev lo sirve el worker landing (packages/landing/).
+  // Acá solo manejamos el wildcard — cubre {tenant}.sivocloud.dev (boxes)
+  // Y cualquier subdominio explícito (ej: runtime.sivocloud.dev, aunque
+  // hoy no se use, queda disponible para futuras herramientas).
+  // El patrón DEBE terminar en `/*` para matchear subpaths — sin el
+  // `/*`, Cloudflare solo matchea el path raíz `/` (confirmado).
   "routes": [
-    { "pattern": "htmlbox.dev", "zone_name": "htmlbox.dev", "custom_domain": true },
-    { "pattern": "*.htmlbox.dev", "zone_name": "htmlbox.dev" }
+    { "pattern": "*.sivocloud.dev/*", "zone_name": "sivocloud.dev" }
   ],
 
   "r2_buckets": [

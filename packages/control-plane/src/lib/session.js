@@ -2,7 +2,7 @@
 //
 // Convenciones:
 //   - Cookie "sid" HttpOnly SameSite=Lax. Domain configurable por var
-//     HTMLBOX_SESSION_DOMAIN (en prod ".htmlbox.dev", en dev "" host-only).
+//     HTMLBOX_SESSION_DOMAIN (en prod ".sivocloud.dev", en dev "" host-only).
 //   - Sesiones = random 32 bytes hex. TTL 30 días.
 //   - Magic links = random 32 bytes hex. TTL 15 min.
 //   - Rate limit: 1 magic link pedido cada 60s por email.
@@ -52,12 +52,12 @@ function shouldUseSecureCookie(request, env) {
 //
 // Reglas:
 //   1. Si el request viene proxied desde un portal en un dominio que NO es
-//      *.htmlbox.dev (ej: htmlbox-portal.sivocloud-latam.workers.dev), el
+//      *.sivocloud.dev (ej: htmlbox-portal.sivocloud-latam.workers.dev), el
 //      browser rechaza cookies con Domain que no matchea el origen del
 //      response. Usamos host-only para que la cookie se guarde en el
 //      origen actual del usuario.
 //   2. Si el env var HTMLBOX_SESSION_DOMAIN está explícitamente set, gana.
-//   3. Si el hostname del request es *.htmlbox.dev, usamos ".htmlbox.dev"
+//   3. Si el hostname del request es *.sivocloud.dev, usamos ".sivocloud.dev"
 //      para compartir sesión entre subdomains.
 //   4. Si nada matchea, host-only (dev).
 function getCookieDomain(request, env) {
@@ -66,16 +66,16 @@ function getCookieDomain(request, env) {
   const referer = request.headers.get('Referer') || ''
   const userHost = extractHost(origin) || extractHost(referer)
 
-  // (1) Portal en dominio no-htmlbox.dev → host-only
-  if (userHost && !userHost.endsWith('.htmlbox.dev') && !userHost.endsWith('.localhost')) {
+  // (1) Portal en dominio no-sivocloud.dev → host-only
+  if (userHost && !userHost.endsWith('.sivocloud.dev') && !userHost.endsWith('.localhost')) {
     return ''
   }
 
   // (2) Override por env var
   if (env.HTMLBOX_SESSION_DOMAIN) return env.HTMLBOX_SESSION_DOMAIN
 
-  // (3) Producción *.htmlbox.dev
-  if (url.hostname.endsWith('.htmlbox.dev')) return '.htmlbox.dev'
+  // (3) Producción *.sivocloud.dev
+  if (url.hostname.endsWith('.sivocloud.dev')) return '.sivocloud.dev'
 
   // (4) Default
   return ''

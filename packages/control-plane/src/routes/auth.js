@@ -97,7 +97,7 @@ async function getVerify(request, env) {
   }
   // adminOrigin: el control-plane mismo (donde vive /admin/). En dev es
   // el host actual; en prod, HTMLBOX_PUBLIC_ORIGIN ya apunta al subdomain
-  // de controlplane.htmlbox.dev. Si no hay var, derivamos del request.
+  // de controlplane.sivocloud.dev. Si no hay var, derivamos del request.
   const adminOrigin = (env.HTMLBOX_PUBLIC_ORIGIN || `${url.protocol}//${url.host}`).replace(/\/+$/, '')
   // portalOrigin: HTMLBOX_PORTAL_ORIGIN. Default vacío = no redirige al
   // portal (cae en redirect según `from`).

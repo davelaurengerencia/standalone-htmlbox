@@ -6,7 +6,7 @@
   "compatibility_flags": ["nodejs_compat"],
 
   "dev": {
-    "ip": "0.0.0.0",
+    "ip": "::",
     "port": 8782,
     "inspector_port": 9230,
     "inspector_ip": "127.0.0.1"
@@ -14,10 +14,29 @@
 
   "vars": {
     "HTMLBOX_ENV": "production",
-    "HTMLBOX_CONTROL_PLANE_ORIGIN": "https://controlplane.htmlbox.dev",
-    "HTMLBOX_RUNTIME_ORIGIN": "https://htmlbox.dev",
+    "HTMLBOX_CONTROL_PLANE_ORIGIN": "https://controlplane.sivocloud.dev",
+    "HTMLBOX_RUNTIME_ORIGIN": "https://sivocloud.dev",
     "HTMLBOX_PORTAL_VERSION": "0.1.0"
   },
+
+  // Custom domain — studio.sivocloud.dev.
+  // El patrón DEBE terminar en `/*` para matchear subpaths.
+  // NO usamos custom_domain: true (mismo motivo que control-plane:
+  // la zona tiene A records placeholder que CF marca como externally
+  // managed). El rename del host es solo cosmético — el paquete y el
+  // worker name siguen siendo "htmlbox-portal" internamente.
+  "routes": [
+    { "pattern": "studio.sivocloud.dev/*", "zone_name": "sivocloud.dev" }
+  ],
+
+  // Service binding al control-plane para el proxy /api/*.
+  // Por qué NO fetch() al URL público: en wrangler 4.127+, los fetches
+  // worker-to-worker via custom domain en la misma zona cuelgan en 20s
+  // (522). Service binding es interno (no sale al edge), zero-latency, y
+  // no tiene ese problema. Mismo patrón que landing → runtime.
+  "services": [
+    { "binding": "CONTROL_PLANE", "service": "htmlbox-control-plane" }
+  ],
 
   "rules": [
     { "type": "Text", "globs": ["src/ui/*.txt", "src/ui-partials/*.txt"], "fallthrough": true }

@@ -133,7 +133,7 @@ test('deployBoxWorker: metadata JSON tiene main_module + bindings + compat', asy
       {
         WFP_DEPLOY_TOKEN: 't',
         HTMLBOX_R2_BUCKET_NAME: 'htmlbox-content',
-        HTMLBOX_PUBLIC_ORIGIN: 'https://controlplane.htmlbox.dev',
+        HTMLBOX_PUBLIC_ORIGIN: 'https://controlplane.sivocloud.dev',
       },
       ACCOUNT_ID, NAMESPACE, VALID_BOX,
       { bundleSource: STUB_BUNDLE }
@@ -149,7 +149,7 @@ test('deployBoxWorker: metadata JSON tiene main_module + bindings + compat', asy
     assert.equal(r2.bucket_name, 'htmlbox-content')
     assert.ok(origin, 'origin binding presente')
     assert.equal(origin.type, 'plain_text')
-    assert.equal(origin.text, 'https://controlplane.htmlbox.dev')
+    assert.equal(origin.text, 'https://controlplane.sivocloud.dev')
     assert.equal(meta.compatibility_date, '2026-08-01')
     assert.deepEqual(meta.compatibility_flags, ['nodejs_compat'])
   } finally {
@@ -210,17 +210,156 @@ test('deployBoxWorker: HTMLBOX_PUBLIC_ORIGIN fallback a HTMLBOX_RUNTIME_ORIGIN',
   }
   try {
     await deployBoxWorker(
-      { WFP_DEPLOY_TOKEN: 't', HTMLBOX_RUNTIME_ORIGIN: 'https://runtime.htmlbox.dev' },
+      { WFP_DEPLOY_TOKEN: 't', HTMLBOX_RUNTIME_ORIGIN: 'https://runtime.sivocloud.dev' },
       ACCOUNT_ID, NAMESPACE, VALID_BOX,
       { bundleSource: STUB_BUNDLE }
     )
     const parts = await readForm(capturedInit.body)
     const meta = JSON.parse(parts.metadata.text)
     const origin = meta.bindings.find(b => b.name === 'HTMLBOX_CONTROL_PLANE_ORIGIN')
-    assert.equal(origin.text, 'https://runtime.htmlbox.dev', 'fallback a RUNTIME_ORIGIN')
+    assert.equal(origin.text, 'https://runtime.sivocloud.dev', 'fallback a RUNTIME_ORIGIN')
   } finally {
     globalThis.fetch = orig
   }
+})
+
+// ============ Tags de metadata (legibilidad en dashboard) ============
+
+test('deployBoxWorker: metadata incluye tags cuando se pasan (happy path)', async () => {
+  const orig = globalThis.fetch
+  let capturedInit
+  globalThis.fetch = async (url, init) => {
+    capturedInit = init
+    return jsonRes({ success: true })
+  }
+  try {
+    await deployBoxWorker(
+      { WFP_DEPLOY_TOKEN: 't' },
+      ACCOUNT_ID, NAMESPACE, VALID_BOX,
+      {
+        bundleSource: STUB_BUNDLE,
+        tags: [
+          'tenant:david',
+          'box:mi-dashboard',
+          'tenant-id:abc123',
+          'box-id:abcdef0123456789',
+          'visibility:public',
+          'template:empty',
+        ],
+      }
+    )
+    const parts = await readForm(capturedInit.body)
+    const meta = JSON.parse(parts.metadata.text)
+    assert.deepEqual(meta.tags, [
+      'tenant:david',
+      'box:mi-dashboard',
+      'tenant-id:abc123',
+      'box-id:abcdef0123456789',
+      'visibility:public',
+      'template:empty',
+    ])
+  } finally {
+    globalThis.fetch = orig
+  }
+})
+
+test('deployBoxWorker: omite campo "tags" del metadata cuando no se pasan (backwards compat)', async () => {
+  const orig = globalThis.fetch
+  let capturedInit
+  globalThis.fetch = async (url, init) => {
+    capturedInit = init
+    return jsonRes({ success: true })
+  }
+  try {
+    await deployBoxWorker(
+      { WFP_DEPLOY_TOKEN: 't' },
+      ACCOUNT_ID, NAMESPACE, VALID_BOX,
+      { bundleSource: STUB_BUNDLE }  // sin tags
+    )
+    const parts = await readForm(capturedInit.body)
+    const meta = JSON.parse(parts.metadata.text)
+    assert.equal(meta.tags, undefined, 'tags debe estar ausente cuando no se pasan')
+  } finally {
+    globalThis.fetch = orig
+  }
+})
+
+test('deployBoxWorker: omite campo "tags" del metadata cuando se pasa array vacío', async () => {
+  const orig = globalThis.fetch
+  let capturedInit
+  globalThis.fetch = async (url, init) => {
+    capturedInit = init
+    return jsonRes({ success: true })
+  }
+  try {
+    await deployBoxWorker(
+      { WFP_DEPLOY_TOKEN: 't' },
+      ACCOUNT_ID, NAMESPACE, VALID_BOX,
+      { bundleSource: STUB_BUNDLE, tags: [] }
+    )
+    const parts = await readForm(capturedInit.body)
+    const meta = JSON.parse(parts.metadata.text)
+    assert.equal(meta.tags, undefined, 'tags=[] se trata como "no tags"')
+  } finally {
+    globalThis.fetch = orig
+  }
+})
+
+test('deployBoxWorker: falla con mensaje claro si una tag excede 64 chars', async () => {
+  const longTag = 'a'.repeat(65)
+  await assert.rejects(
+    () => deployBoxWorker(
+      { WFP_DEPLOY_TOKEN: 't' },
+      ACCOUNT_ID, NAMESPACE, VALID_BOX,
+      { bundleSource: STUB_BUNDLE, tags: ['tenant:ok', longTag] }
+    ),
+    /tags\[1\] excede 64 chars/
+  )
+})
+
+test('deployBoxWorker: falla si se pasan más de 32 tags', async () => {
+  const tags = Array.from({ length: 33 }, (_, i) => `t${i}`)
+  await assert.rejects(
+    () => deployBoxWorker(
+      { WFP_DEPLOY_TOKEN: 't' },
+      ACCOUNT_ID, NAMESPACE, VALID_BOX,
+      { bundleSource: STUB_BUNDLE, tags }
+    ),
+    /tags excede el máximo \(33 > 32\)/
+  )
+})
+
+test('deployBoxWorker: falla si una tag tiene caracteres fuera de [a-zA-Z0-9_:.-]', async () => {
+  await assert.rejects(
+    () => deployBoxWorker(
+      { WFP_DEPLOY_TOKEN: 't' },
+      ACCOUNT_ID, NAMESPACE, VALID_BOX,
+      { bundleSource: STUB_BUNDLE, tags: ['tenant ok', 'box:ok'] }  // espacio inválido
+    ),
+    /tags\[0\] "tenant ok" tiene caracteres fuera de \[a-zA-Z0-9_:.\-\]/
+  )
+})
+
+test('deployBoxWorker: falla si una tag está vacía', async () => {
+  await assert.rejects(
+    () => deployBoxWorker(
+      { WFP_DEPLOY_TOKEN: 't' },
+      ACCOUNT_ID, NAMESPACE, VALID_BOX,
+      { bundleSource: STUB_BUNDLE, tags: ['tenant:ok', ''] }
+    ),
+    /tags\[1\] está vacía/
+  )
+})
+
+test('deployBoxWorker: falla si tags no es array', async () => {
+  await assert.rejects(
+    () => deployBoxWorker(
+      { WFP_DEPLOY_TOKEN: 't' },
+      ACCOUNT_ID, NAMESPACE, VALID_BOX,
+      { bundleSource: STUB_BUNDLE, tags: 'tenant:ok' }  // string, no array
+    ),
+    /tags debe ser array/
+  )
 })
 
 // ============ Errores ============
@@ -353,4 +492,32 @@ test('_internal.buildMetadataJson devuelve JSON parseable con main_module espera
   const json = _internal.buildMetadataJson({ HTMLBOX_RUNTIME_ORIGIN: 'https://r.example' }, 'box-abc.mjs')
   const meta = JSON.parse(json)
   assert.equal(meta.main_module, 'box-abc.mjs')
+})
+
+test('_internal.buildMetadataJson omite "tags" cuando no se pasan', () => {
+  const json = _internal.buildMetadataJson({}, 'box-abc.mjs')
+  const meta = JSON.parse(json)
+  assert.equal(meta.tags, undefined)
+})
+
+test('_internal.buildMetadataJson incluye "tags" cuando se pasan', () => {
+  const json = _internal.buildMetadataJson({}, 'box-abc.mjs', ['tenant:david', 'box:dash'])
+  const meta = JSON.parse(json)
+  assert.deepEqual(meta.tags, ['tenant:david', 'box:dash'])
+})
+
+test('_internal.assertValidTags acepta undefined y []', () => {
+  assert.doesNotThrow(() => _internal.assertValidTags(undefined))
+  assert.doesNotThrow(() => _internal.assertValidTags([]))
+  assert.doesNotThrow(() => _internal.assertValidTags(['tenant:ok', 'box:ok']))
+})
+
+test('_internal.assertValidTags acepta exactamente 32 tags', () => {
+  const tags = Array.from({ length: 32 }, (_, i) => `t${i}`)
+  assert.doesNotThrow(() => _internal.assertValidTags(tags))
+})
+
+test('_internal.assertValidTags acepta tag de exactamente 64 chars', () => {
+  const tag = 'a'.repeat(64)
+  assert.doesNotThrow(() => _internal.assertValidTags([tag]))
 })

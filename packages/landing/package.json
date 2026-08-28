@@ -1,0 +1,11 @@
+{
+  "name": "@htmlbox/landing",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Worker minimal — Coming Soon para sivocloud.dev (apex). Sin bindings, sin estado.",
+  "scripts": {
+    "dev": "wrangler dev --port 8784",
+    "deploy": "wrangler deploy",
+    "test": "node --test __tests__/*.test.js"
+  }
+}

@@ -41,7 +41,7 @@ async function main() {
   const env = {
     WFP_DEPLOY_TOKEN: process.env.WFP_DEPLOY_TOKEN,
     HTMLBOX_R2_BUCKET_NAME: 'htmlbox-content',
-    HTMLBOX_PUBLIC_ORIGIN: 'https://controlplane.htmlbox.dev',
+    HTMLBOX_PUBLIC_ORIGIN: 'https://controlplane.sivocloud.dev',
   }
 
   // Cleanup previo (idempotente — por si quedó un smoke viejo).

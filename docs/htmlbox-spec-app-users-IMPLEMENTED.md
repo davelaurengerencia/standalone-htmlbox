@@ -573,7 +573,7 @@ async function postLogout(request, env, boxId) {
 
 Ya definido en `appAuth.js` (§3): la cookie se llama **`hbx_app_sid`**, nunca `sid` — así no hay ninguna chance de colisión con la cookie de sesión de plataforma (que además vive en otro dominio funcional: control-plane/portal vs. runtime).
 
-**El punto crítico es el `Path`.** `resolver.js` ya deja claro que un mismo host puede servir varios boxes distintos por path (`{tenant}.htmlbox.dev/{boxSlugA}`, `{tenant}.htmlbox.dev/{boxSlugB}`) o que el mismo box puede tener múltiples rutas válidas según su modo (`/s/{shareId}` público, `/t/{tenant}/{boxSlug}` o `/{boxSlug}` privado). Si la cookie `hbx_app_sid` se setea con `Path=/`, dos boxes bajo el mismo subdominio se van a pisar la cookie entre sí (el segundo login sobrescribe al primero en el browser).
+**El punto crítico es el `Path`.** `resolver.js` ya deja claro que un mismo host puede servir varios boxes distintos por path (`{tenant}.sivocloud.dev/{boxSlugA}`, `{tenant}.sivocloud.dev/{boxSlugB}`) o que el mismo box puede tener múltiples rutas válidas según su modo (`/s/{shareId}` público, `/t/{tenant}/{boxSlug}` o `/{boxSlug}` privado). Si la cookie `hbx_app_sid` se setea con `Path=/`, dos boxes bajo el mismo subdominio se van a pisar la cookie entre sí (el segundo login sobrescribe al primero en el browser).
 
 La defensa en profundidad es doble:
 
@@ -697,5 +697,5 @@ Esto es lo que el usuario planteó como visión completa, pero pidió explícita
 6. Agregar las rutas de administración `/api/app-auth/{boxId}/admin/users*` en `runtime`, reusando `requireBox()` de `dataApi.js` (§8).
 7. Agregar la tab "Usuarios" en `packages/portal/src/ui-partials/main-panel.html.txt` + el estado/métodos correspondientes en `app-script.html.txt`, usando `apiFetch()` (§8).
 8. Probar el flujo completo en dev (`HTMLBOX_EMAIL_MODE=dev`, usar el `_dev_preview` link): tenant agrega un email desde el portal → simular al app-user pidiendo el magic link desde el box → consumir → confirmar que `GET /api/app-auth/{boxId}/me` devuelve el `appUser` → logout → confirmar que vuelve a `null`.
-9. Probar el caso de colisión de cookie: dos boxes del mismo tenant bajo el mismo subdominio (`{tenant}.htmlbox.dev/boxA` y `{tenant}.htmlbox.dev/boxB`), loguear un app-user distinto en cada uno, confirmar en devtools que existen dos cookies `hbx_app_sid` con `Path` distinto y que cada una solo viaja a su box.
+9. Probar el caso de colisión de cookie: dos boxes del mismo tenant bajo el mismo subdominio (`{tenant}.sivocloud.dev/boxA` y `{tenant}.sivocloud.dev/boxB`), loguear un app-user distinto en cada uno, confirmar en devtools que existen dos cookies `hbx_app_sid` con `Path` distinto y que cada una solo viaja a su box.
 10. Probar deshabilitar un usuario (`disabled_at`) con una sesión activa — confirmar que el siguiente `GET /me` devuelve `null`.

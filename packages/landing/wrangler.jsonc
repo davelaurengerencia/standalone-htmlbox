@@ -1,0 +1,41 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "htmlbox-landing",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-08-01",
+
+  "dev": {
+    "ip": "::",
+    "port": 8784,
+    "inspector_port": 9232,
+    "inspector_ip": "127.0.0.1"
+  },
+
+  // Custom domain — apex sivocloud.dev.
+  // Este worker es el front del apex: responde la landing (Coming Soon)
+  // y forwardea los paths de runtime (shares, boxes path-based) al
+  // runtime worker via service binding.
+  //
+  // Routes:
+  //   - *.sivocloud.dev/*      → runtime (tenant boxes)
+  //   - sivocloud.dev/*        → landing (este worker)
+  //   - studio.sivocloud.dev/* → portal
+  //   - controlplane.sivocloud.dev/* → control-plane
+  //
+  // El patrón DEBE terminar en `/*` para matchear subpaths — sin el
+  // `/*`, Cloudflare solo matchea el path raíz `/` y todo lo demás
+  // se queda en el limbo (522 en 20s).
+  //
+  // Por qué service binding y no fetch() al workers.dev URL: el binding
+  // es interno (no sale al edge), zero-latency, y no depende de URLs
+  // autoasignadas que cambian entre deploys.
+  "routes": [
+    { "pattern": "sivocloud.dev/*", "zone_name": "sivocloud.dev" }
+  ],
+
+  "services": [
+    { "binding": "RUNTIME", "service": "htmlbox-runtime" }
+  ],
+
+  "observability": { "enabled": true }
+}

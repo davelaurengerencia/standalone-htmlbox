@@ -11,7 +11,7 @@
           <form @submit.prevent="createTenant()" class="p-6 space-y-4">
             <p class="text-xs text-slate-400 leading-relaxed">
               El tenant agrupa tus workspaces y boxes. El slug es la URL pública
-              (<code class="text-indigo-300 font-mono text-[10px]">{slug}.htmlbox.dev</code>)
+              (<code class="text-indigo-300 font-mono text-[10px]">{slug}.sivocloud.dev</code>)
               y <strong>no se puede cambiar después</strong>.
             </p>
 
@@ -37,7 +37,7 @@
                        @input="onTenantSlugInput($event)"
                        :class="(tenantSlugValid && newTenant.slug) ? 'border-transparent text-slate-100' : 'border-transparent text-slate-100'"
                        class="flex-1 bg-transparent px-3 py-2 text-sm font-mono focus:outline-none">
-                <span class="px-3 py-2 text-xs text-slate-500 font-mono bg-slate-900 border-l border-slate-800 flex items-center">.htmlbox.dev</span>
+                <span class="px-3 py-2 text-xs text-slate-500 font-mono bg-slate-900 border-l border-slate-800 flex items-center">.sivocloud.dev</span>
               </div>
               <p class="text-[10px] mt-1 text-slate-500">
                 Solo minúsculas, números y guiones. Empieza con letra, 3-32 chars.

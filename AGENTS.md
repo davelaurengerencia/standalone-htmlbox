@@ -12,7 +12,7 @@
 Plataforma **runtime + publicador** para dashboards y apps HTML generados por
 IA (ChatGPT, Claude, Gemini) sobre Cloudflare Workers. El usuario sube un
 HTML con datos embebidos, HTMLBox lo sirve en un subdominio wildcards
-(`{tenant}.htmlbox.dev/{boxSlug}`) y opcionalmente extrae los datos a una DB
+(`{tenant}.sivocloud.dev/{boxSlug}`) y opcionalmente extrae los datos a una DB
 Turso aislada por box, dejando el HTML apuntando a la Data API.
 
 Tres Workers + 3 docs canónicos:
@@ -45,15 +45,33 @@ htmlbox/
 
 | Worker | Puerto dev | Host dev | Modo wrangler |
 |---|---|---|---|
-| `htmlbox-control-plane` | 8781 | `controlplane.localhost` | `--remote` (necesita D1 real) |
-| `htmlbox-portal` | 8782 | `portal.localhost` | `--local` |
-| `htmlbox-runtime` | 8783 | `runtime.localhost` | `--local` |
+| `htmlbox-control-plane` | 8781 | `controlplane.localhost` | `--remote` |
+| `htmlbox-portal` | 8782 | `studio.localhost` | `--remote` |
+| `htmlbox-runtime` | 8783 | `runtime.localhost` | `--remote` |
+| `htmlbox-landing` | 8784 | `sivocloud.localhost` | `--remote` |
 
-**Por qué runtime/portal son `--local`** y no `--remote`: necesitan hacer
-fetch a `controlplane.localhost` desde workerd local (cross-origin + subdominio
-distinto). Si corrieran en `--remote`, el workerd estaría en el edge y no
-podría resolver `controlplane.localhost`. El control-plane sí va en
-`--remote` porque su D1 real solo está en Cloudflare.
+**Todos los workers corren `--remote`** — único source of truth, mismas tablas / bindings
+que prod. Cada worker levanta un preview en el edge de Cloudflare y la proxy local
+(8781-8784) forwardea al edge. Las migrations se aplican con `npm run migrate:remote`
+antes de arrancar dev.
+
+**Inter-worker calls vía service bindings** (NO HTTP fetch público):
+- `portal → control-plane` via `env.CONTROL_PLANE.fetch(request)`
+- `landing → runtime` via `env.RUNTIME.fetch(request)`
+
+Workaround para bug de wrangler 4.127+ donde fetches worker-to-worker via custom
+domain en la misma zona hanguean 20s (522). Service binding es interno (no sale
+al edge público), zero-latency, sin loop.
+
+**Trade-off `--remote`**: las vars de wrangler.jsonc apuntan a URLs prod (ej
+`HTMLBOX_PORTAL_ORIGIN=https://studio.sivocloud.dev`). Para dev hay que
+sobreescribir vía `.dev.vars` cuando el worker corre en `--local` — pero
+`--remote` no carga `.dev.vars`. Sol: editar el magic link manualmente en dev
+(reemplazar el host) o aceptar que el link apunte a prod.
+
+**Nota DNS macOS**: `*.localhost` resuelve a `::1` (IPv6) por defecto. Los
+wrangler configs tienen `dev.ip = "::"` (IPv6 dual-stack) para que funcione
+sin necesidad de editar `/etc/hosts` con sudo.
 
 ## 3. Setup local
 
@@ -119,9 +137,9 @@ Tres cookies conviven, una por tipo de usuario — **distinto nombre, distinto s
 
 | Cookie | Scope | Path/Domain | Quién |
 |---|---|---|---|
-| `sid` | Path=/, Domain=.htmlbox.dev | cross-subdominio | usuario de PLATAFORMA (login en portal) |
+| `sid` | Path=/, Domain=.sivocloud.dev | cross-subdominio | usuario de PLATAFORMA (login en portal) |
 | `hbx_app_sid` | Path=`/{boxSlug}` (o `/s/{shareId}`, `/t/{tenant}/{boxSlug}`) | host-only o Domain | CUSTOMER de un box (login en box publicado) |
-| `hbx_tapp_sid` | Path=/, Domain=.htmlbox.dev | cross-box del tenant | usuario CENTRALIZADO del tenant (cruza boxes con un solo login) |
+| `hbx_tapp_sid` | Path=/, Domain=.sivocloud.dev | cross-box del tenant | usuario CENTRALIZADO del tenant (cruza boxes con un solo login) |
 
 Sesiones/magic-links viven en D1 (plataforma + tenant-app) o en Turso del box
 (app-user per-box). Secret tokens de Worker a Worker: `HTMLBOX_INTERNAL_SECRET`,
@@ -227,7 +245,7 @@ No hay specs pendientes — todos los `htmlbox-spec-*.md` están en estado `-IMP
   que el resto del proyecto).
 - Cookies siempre `HttpOnly` + `SameSite=Lax` (o `Strict` cuando aplique).
 - `Secure` flag: `HTMLBOX_COOKIE_SECURE=true` en prod, omitir en localhost.
-- `Domain` solo cuando hay dominio padre registrable (`.htmlbox.dev` en
+- `Domain` solo cuando hay dominio padre registrable (`.sivocloud.dev` en
   prod). En dev (`*.localhost`) NO usar Domain — host-only.
 - Internal endpoints SIEMPRE gateados por `X-HTMLBox-Internal-Secret` (ver
   `requiresInternalSecret` en `routes/internal.js`).

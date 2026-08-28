@@ -7,7 +7,7 @@ import { handleDataApi } from '../src/lib/dataApi.js'
 const BOX_ID = 'lf6l61etomwk9fdl'
 
 function makeEnv() {
-  return { HTMLBOX_CONTROL_PLANE_ORIGIN: 'https://controlplane.htmlbox.dev' }
+  return { HTMLBOX_CONTROL_PLANE_ORIGIN: 'https://controlplane.sivocloud.dev' }
 }
 
 function mockControlPlane({ whoami = null, membership = null, boxDb = null } = {}) {
@@ -31,21 +31,21 @@ function mockControlPlane({ whoami = null, membership = null, boxDb = null } = {
 }
 
 test('router rechaza URL no reconocida', async () => {
-  const url = new URL('https://htmlbox.dev/api/other/x')
-  const r = await handleDataApi({ method: 'GET', url: 'https://htmlbox.dev/api/other/x' }, makeEnv(), url)
+  const url = new URL('https://sivocloud.dev/api/other/x')
+  const r = await handleDataApi({ method: 'GET', url: 'https://sivocloud.dev/api/other/x' }, makeEnv(), url)
   assert.equal(r, null)
 })
 
 test('router devuelve null si boxId malformado (worker responde 404)', async () => {
-  const url = new URL(`https://htmlbox.dev/api/data/BAD/tables`)
-  const r = await handleDataApi({ method: 'GET', url: 'https://htmlbox.dev/api/data/BAD/tables' }, makeEnv(), url)
+  const url = new URL(`https://sivocloud.dev/api/data/BAD/tables`)
+  const r = await handleDataApi({ method: 'GET', url: 'https://sivocloud.dev/api/data/BAD/tables' }, makeEnv(), url)
   assert.equal(r, null) // worker.js convierte null → 404
 })
 
 test('listTables sin sesión → 401', async () => {
   mockControlPlane()
-  const url = new URL(`https://htmlbox.dev/api/data/${BOX_ID}/tables`)
-  const req = { method: 'GET', url: 'https://htmlbox.dev/api/data/' + BOX_ID + '/tables', headers: { get: () => null } }
+  const url = new URL(`https://sivocloud.dev/api/data/${BOX_ID}/tables`)
+  const req = { method: 'GET', url: 'https://sivocloud.dev/api/data/' + BOX_ID + '/tables', headers: { get: () => null } }
   const r = await handleDataApi(req, makeEnv(), url)
   assert.equal(r.status, 401)
 })
@@ -56,8 +56,8 @@ test('listTables con sesión pero sin membresía → 403', async () => {
     membership: null,
     boxDb: null,
   })
-  const url = new URL(`https://htmlbox.dev/api/data/${BOX_ID}/tables`)
-  const req = { method: 'GET', url: 'https://htmlbox.dev/api/data/' + BOX_ID + '/tables', headers: { get: () => 'sid=abc' } }
+  const url = new URL(`https://sivocloud.dev/api/data/${BOX_ID}/tables`)
+  const req = { method: 'GET', url: 'https://sivocloud.dev/api/data/' + BOX_ID + '/tables', headers: { get: () => 'sid=abc' } }
   const r = await handleDataApi(req, makeEnv(), url)
   assert.equal(r.status, 403)
 })
@@ -68,8 +68,8 @@ test('listTables con sesión + membresía pero box sin DB → 404', async () => 
     membership: { role: 'editor' },
     boxDb: null,
   })
-  const url = new URL(`https://htmlbox.dev/api/data/${BOX_ID}/tables`)
-  const req = { method: 'GET', url: 'https://htmlbox.dev/api/data/' + BOX_ID + '/tables', headers: { get: () => 'sid=abc' } }
+  const url = new URL(`https://sivocloud.dev/api/data/${BOX_ID}/tables`)
+  const req = { method: 'GET', url: 'https://sivocloud.dev/api/data/' + BOX_ID + '/tables', headers: { get: () => 'sid=abc' } }
   const r = await handleDataApi(req, makeEnv(), url)
   assert.equal(r.status, 404)
 })

@@ -16,7 +16,7 @@
 //   GET    /api/tenant-app-auth/{boxId}/me                                → { tenantAppUser } | null
 //   POST   /api/tenant-app-auth/{boxId}/logout                            → limpia cookie
 //
-// Cookie: hbx_tapp_sid, Domain=.htmlbox.dev en prod, host-only en dev.
+// Cookie: hbx_tapp_sid, Domain=.sivocloud.dev en prod, host-only en dev.
 // Control-plane arma el Set-Cookie string y runtime lo reenvía en su
 // respuesta — porque el response que llega al browser lo arma runtime.
 

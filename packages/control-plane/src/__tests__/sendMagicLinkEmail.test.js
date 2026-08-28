@@ -11,7 +11,7 @@
 // email apuntaba a ese host — el browser al hacer click abría prod-like,
 // no dev. Encima, el loginConfirmHtml hacía auto-POST a '/api/auth/consume'
 // que en el browser resolvía al dev proxy 'controlplane.localhost:8781', y
-// la Set-Cookie del control-plane remoto (con Domain='.htmlbox.dev') no
+// la Set-Cookie del control-plane remoto (con Domain='.sivocloud.dev') no
 // coincidía con el host del browser (no se compartía cross-subdomain
 // entre el apex de workers.dev y *.localhost).
 //
@@ -121,33 +121,33 @@ test('dev: Referer con URL relativa no crashea', async () => {
 
 // ============ PROD: siempre va al portal ============
 
-test('prod: con HTMLBOX_PORTAL_ORIGIN=htmlbox.dev, link va al portal de prod', async () => {
+test('prod: con HTMLBOX_PORTAL_ORIGIN=studio.sivocloud.dev, link va al portal de prod', async () => {
   const env = makeEnv({
-    HTMLBOX_PORTAL_ORIGIN: 'https://portal.htmlbox.dev',
-    HTMLBOX_PUBLIC_ORIGIN: 'https://controlplane.htmlbox.dev',
+    HTMLBOX_PORTAL_ORIGIN: 'https://studio.sivocloud.dev',
+    HTMLBOX_PUBLIC_ORIGIN: 'https://controlplane.sivocloud.dev',
   })
   const req = makeRequest({
-    headers: { Referer: 'https://controlplane.htmlbox.dev/admin/' },
+    headers: { Referer: 'https://controlplane.sivocloud.dev/admin/' },
   })
   const out = await sendMagicLinkEmail(env, req, { toEmail: 'a@x.com', tokenId: 'tok' })
-  // En prod va al PORTAL (cross-subdomain con Domain=.htmlbox.dev).
-  assert.equal(getPreviewLink(out), 'https://portal.htmlbox.dev/api/auth/verify?token=tok')
+  // En prod va al PORTAL (cross-subdomain con Domain=.sivocloud.dev).
+  assert.equal(getPreviewLink(out), 'https://studio.sivocloud.dev/api/auth/verify?token=tok')
 })
 
 test('prod: el host del browser NO se usa aunque venga en headers', async () => {
-  // En prod, portal y controlplane son subdomains de htmlbox.dev con
-  // Domain=.htmlbox.dev. Cualquier host distinto del portal sería un
+  // En prod, portal y controlplane son subdomains de sivocloud.dev con
+  // Domain=.sivocloud.dev. Cualquier host distinto del portal sería un
   // problema de routing (cookie domain mismatch). Por eso prod ignora
   // los headers del browser y siempre va al portal.
   const env = makeEnv({
-    HTMLBOX_PORTAL_ORIGIN: 'https://portal.htmlbox.dev',
-    HTMLBOX_PUBLIC_ORIGIN: 'https://controlplane.htmlbox.dev',
+    HTMLBOX_PORTAL_ORIGIN: 'https://studio.sivocloud.dev',
+    HTMLBOX_PUBLIC_ORIGIN: 'https://controlplane.sivocloud.dev',
   })
   const req = makeRequest({
     headers: { 'X-Forwarded-Host': 'http://attacker.com' },
   })
   const out = await sendMagicLinkEmail(env, req, { toEmail: 'a@x.com', tokenId: 'tok' })
-  assert.equal(getPreviewLink(out), 'https://portal.htmlbox.dev/api/auth/verify?token=tok')
+  assert.equal(getPreviewLink(out), 'https://studio.sivocloud.dev/api/auth/verify?token=tok')
 })
 
 // ============ defaults sin HTMLBOX_PORTAL_ORIGIN (fallback al request.url) ============

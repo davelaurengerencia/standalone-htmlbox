@@ -24,9 +24,9 @@ htmlbox/
 
 | Worker | Host | Rol |
 |---|---|---|
-| `htmlbox-control-plane` | `controlplane.htmlbox.dev` | Auth (magic-link), tenants/workspaces/boxes, **provisiona la Turso DB por box**, panel admin |
-| `htmlbox-portal` | `portal.htmlbox.dev` | SPA Alpine del tenant (crear/subir boxes, versionar HTML, gestionar) |
-| `htmlbox-runtime` | `*.htmlbox.dev` | Sirve HTML de boxes desde R2 + inyecta SDK |
+| `htmlbox-control-plane` | `controlplane.sivocloud.dev` | Auth (magic-link), tenants/workspaces/boxes, **provisiona la Turso DB por box**, panel admin |
+| `htmlbox-portal` | `portal.sivocloud.dev` | SPA Alpine del tenant (crear/subir boxes, versionar HTML, gestionar) |
+| `htmlbox-runtime` | `*.sivocloud.dev` | Sirve HTML de boxes desde R2 + inyecta SDK |
 
 ---
 
@@ -68,7 +68,7 @@ Edítalos y rellena los secretos (ver archivos `.example`).
 ### 3. (una sola vez por máquina) subdominios *.localhost
 En macOS resuelven solos a 127.0.0.1. En Linux agregá a `/etc/hosts`:
 ```
-127.0.0.1   controlplane.localhost portal.localhost runtime.localhost
+127.0.0.1   controlplane.localhost studio.localhost runtime.localhost
 ```
 
 ### 4. Aplicar migrations D1 a remoto
@@ -83,13 +83,13 @@ npm run dev
 
 Esto lanza en paralelo:
 - control-plane en `http://controlplane.localhost:8781`
-- portal en `http://portal.localhost:8782`
+- portal en `http://studio.localhost:8782`
 - runtime en `http://runtime.localhost:8783`
 
 Los 3 workers corren con `wrangler dev --remote`: el código se ejecuta local (workerd), pero los bindings D1/R2/KV pegan contra la API real de Cloudflare. dev = prod en datos.
 
 ### 6. Crear el primer tenant
-Visita `http://portal.localhost:8782`, solicita el magic-link del primer usuario. En dev el email se loguea en consola del control-plane (no se envía realmente).
+Visita `http://studio.localhost:8782`, solicita el magic-link del primer usuario. En dev el email se loguea en consola del control-plane (no se envía realmente).
 
 ### 7. Probar el ciclo de versionado
 1. Crear HTML Box desde el portal.
@@ -115,8 +115,8 @@ npm test
 
 ## Producción
 
-- Reemplazar `*.localhost` por `*.htmlbox.dev` en DNS / Workers routes.
-- Cookies con `Domain=.htmlbox.dev` para compartirlas entre los 3 Workers.
+- Reemplazar `*.localhost` por `*.sivocloud.dev` en DNS / Workers routes.
+- Cookies con `Domain=.sivocloud.dev` para compartirlas entre los 3 Workers.
 - `wrangler secret put HTMLBOX_SESSION_SECRET`, `HTMLBOX_TURSO_PLATFORM_TOKEN`, `HTMLBOX_R2_ACCESS_KEY_ID`, `HTMLBOX_R2_SECRET_ACCESS_KEY`.
 - Aplicar migrations a remoto: `npm run migrate:remote`.
 
