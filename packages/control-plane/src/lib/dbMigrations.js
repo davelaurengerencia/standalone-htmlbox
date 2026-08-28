@@ -40,11 +40,23 @@ export async function applyWfpSchema(env) {
 }
 
 // Aplica las columnas necesarias para el routing post-magic-link.
-// Idempotente.
-//   - htmlbox_magic_links.from: 'portal' | 'admin'. El loginConfirmHtml
-//     redirige según este flag al origin correcto. Antes siempre iba
-//     al portal — bug: si pedías el link desde /admin/ te redirigía al
-//     portal y viceversa. Fix en routes/auth.js#postRequest + loginConfirmHtml.
+// Idempotente. El nombre original 'from' era palabra reservada en SQL
+// (FROM keyword) — renombramos a 'origin' en código + DB. Si una DB vieja
+// tiene la columna 'from' (intento previo que falló silenciosamente por
+// syntax error), la renombramos acá.
 export async function applyAuthSchema(env) {
-  await ensureColumnD1(env, 'htmlbox_magic_links', 'from', `TEXT NOT NULL DEFAULT 'portal'`)
+  // PRAGMA: ver qué columnas existen actualmente.
+  const info = await env.DB.prepare('PRAGMA table_info(htmlbox_magic_links)').all()
+  const cols = new Set((info.results || []).map((r) => r.name))
+  // Si la DB tiene la columna vieja 'from' (de un intento previo), la
+  // renombramos. RENAME COLUMN requiere SQLite 3.25+ — D1 usa 3.39, OK.
+  if (cols.has('from') && !cols.has('origin')) {
+    await env.DB.prepare('ALTER TABLE htmlbox_magic_links RENAME COLUMN "from" TO "origin"').run()
+    cols.delete('from')
+    cols.add('origin')
+  }
+  // Si después de la transición no tenemos 'origin', la creamos.
+  if (!cols.has('origin')) {
+    await env.DB.prepare(`ALTER TABLE htmlbox_magic_links ADD COLUMN "origin" TEXT NOT NULL DEFAULT 'portal'`).run()
+  }
 }

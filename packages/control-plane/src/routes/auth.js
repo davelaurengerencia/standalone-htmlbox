@@ -47,12 +47,13 @@ async function postRequest(request, env) {
     return json(GENERIC_RESPONSE)
   }
 
-  // `from` indica la UI desde la que se pidió el magic link.
+  // `origin` indica la UI desde la que se pidió el magic link.
   //   'portal' (default) — el confirmHtml redirige al portal.
   //   'admin' — redirige a /admin/ (dashboard de platform owner).
   // Validamos explícitamente para que no se cuele ningún valor raro por
-  // accidente (la columna es TEXT, podría aceptar cualquier cosa).
-  const from = body?.from === 'admin' ? 'admin' : 'portal'
+  // accidente. Antes se llamaba `from` pero ese nombre es palabra
+  // reservada SQL (FROM keyword) — renombrado a `origin`.
+  const origin = body?.from === 'admin' ? 'admin' : 'portal'
 
   if (await isRateLimited(env, email)) {
     // No creamos link adicional. Logueamos y devolvemos la misma respuesta.
@@ -60,7 +61,7 @@ async function postRequest(request, env) {
     return json(GENERIC_RESPONSE)
   }
 
-  const { id } = await createMagicLink(env, email, from)
+  const { id } = await createMagicLink(env, email, origin)
   const emailResult = await sendMagicLinkEmail(env, request, { toEmail: email, tokenId: id })
   // Devolvemos previewLink si:
   //   - modo dev, o
@@ -101,7 +102,7 @@ async function getVerify(request, env) {
   // portalOrigin: HTMLBOX_PORTAL_ORIGIN. Default vacío = no redirige al
   // portal (cae en redirect según `from`).
   const portalOrigin = env.HTMLBOX_PORTAL_ORIGIN || ''
-  return new Response(loginConfirmHtml(token, peek.from || 'portal', portalOrigin, adminOrigin), {
+  return new Response(loginConfirmHtml(token, peek.origin || 'portal', portalOrigin, adminOrigin), {
     status: 200,
     headers: { 'Content-Type': 'text/html; charset=utf-8' },
   })
@@ -150,14 +151,14 @@ async function postLogout(request, env) {
   return json({ ok: true }, 200, { 'Set-Cookie': buildClearCookie(request, env) })
 }
 
-function loginConfirmHtml(token, from, portalOrigin, adminOrigin) {
+function loginConfirmHtml(token, origin, portalOrigin, adminOrigin) {
   // JSON.stringify evita reabrir XSS si el token (hoy hex) trajera chars raros.
   const safeToken = JSON.stringify(token)
-  // `from` viene del token (guardado al pedir el magic link). Si por algún
+  // `origin` viene del token (guardado al pedir el magic link). Si por algún
   // motivo falta o es desconocido, default 'portal' (backward compat).
-  const safeFrom = JSON.stringify(from === 'admin' ? 'admin' : 'portal')
+  const safeOrigin = JSON.stringify(origin === 'admin' ? 'admin' : 'portal')
   // Inyectamos ambos origins — el JS del browser decide a cuál redirigir
-  // según `from`.
+  // según `origin`.
   const safePortal = JSON.stringify(portalOrigin || '')
   const safeAdmin = JSON.stringify(adminOrigin || '')
   return `<!doctype html><html><head><meta charset="utf-8"><title>Verificando…</title></head>
@@ -175,10 +176,10 @@ function loginConfirmHtml(token, from, portalOrigin, adminOrigin) {
         const data = await res.json()
         if (res.ok && data.ok) {
           document.getElementById('status').textContent = 'Listo — podés cerrar esta pestaña.'
-          const from = ${safeFrom}
+          const origin = ${safeOrigin}
           const portalOrigin = ${safePortal}
           const adminOrigin = ${safeAdmin}
-          const dest = from === 'admin' ? (adminOrigin + '/admin/') : portalOrigin
+          const dest = origin === 'admin' ? (adminOrigin + '/admin/') : portalOrigin
           if (dest) setTimeout(() => { window.location.href = dest }, 1200)
         } else {
           document.getElementById('status').textContent = 'Error: ' + (data.error || res.status)

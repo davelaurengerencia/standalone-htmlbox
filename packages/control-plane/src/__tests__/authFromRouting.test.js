@@ -5,16 +5,21 @@
 // que quedarse en /admin/.
 //
 // Fix: el request incluye from='admin' | 'portal'. createMagicLink persiste
-// esa info, peekMagicLink la devuelve, y loginConfirmHtml redirige según from.
+// esa info en la columna `origin` (antes se llamaba `from`, pero `from` es
+// palabra reservada SQL — FROM keyword — y rompía INSERT/SELECT/ALTER con
+// syntax error). peekMagicLink devuelve `origin`, y loginConfirmHtml
+// redirige según origin.
 //
 // Estos tests cubren:
-//   - createMagicLink persiste from (default 'portal' si falta)
-//   - peekMagicLink devuelve from (default 'portal' si la fila es vieja)
-//   - El HTML redirect va a admin si from='admin', portal si from='portal'
+//   - createMagicLink persiste origin (default 'portal' si falta)
+//   - peekMagicLink devuelve origin (default 'portal' si la fila es vieja)
+//   - createMagicLink rechaza valores raros (security)
 //
 // La lógica vive en:
 //   - packages/control-plane/src/lib/session.js  (create/peek)
 //   - packages/control-plane/src/routes/auth.js  (loginConfirmHtml)
+//   - packages/control-plane/src/lib/dbMigrations.js  (applyAuthSchema —
+//     migración rename de 'from' → 'origin')
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -26,41 +31,32 @@ import { createMagicLink, peekMagicLink } from '../lib/session.js'
 //   - prepare(sql).bind(...).run()       para INSERTs
 //   - prepare(sql).bind(...).first()     para SELECTs (toma la primera row)
 //
-// Solo cubre los queries que usan createMagicLink/peekMagicLink. El
-// mock vive acá dentro del test — no es reusado en otros archivos.
+// Solo cubre los queries que usan createMagicLink/peekMagicLink.
 
 function makeD1() {
   const tables = {}
   const exec = (sql, bindings) => {
-    // INSERT INTO htmlbox_magic_links ...
-    const m = sql.match(/^INSERT\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)/i)
+    // INSERT INTO htmlbox_magic_links (id, email, expires_at, origin) VALUES (...)
+    const m = sql.match(/^INSERT\s+INTO\s+(\w+)\s*\(([^)]+)\)/i)
     if (m) {
       const table = m[1]
-      const cols = m[2].split(',').map((c) => c.trim())
+      const cols = m[2].split(',').map((c) => c.trim().replace(/^"|"$/g, ''))
       if (!tables[table]) tables[table] = []
       const row = {}
       cols.forEach((c, i) => { row[c] = bindings[i] })
       tables[table].push(row)
       return { kind: 'run', changes: 1 }
     }
-    // SELECT (datetime(?1) > datetime('now')) AS ok — usado por peekMagicLink
-    // para chequear si el magic link todavía no expiró. En este mock siempre
-    // decimos "ok=true" — si en un test queremos probar expiración, lo
-    // seteamos explícitamente via d1._tables antes de invocar.
+    // SELECT (datetime(?1) > datetime('now')) AS ok — usado por peekMagicLink.
     const validity = sql.match(/SELECT\s+\(datetime\(\?1\)\s+>\s+datetime\('now'\)\)\s+AS\s+ok/i)
     if (validity) {
       return { kind: 'first', value: { ok: tables._validity?.ok ?? 1 } }
     }
     // SELECT ... FROM htmlbox_magic_links ...
-    // Match `\s+FROM\s+\w+(\s+WHERE|\s*;|\s*$)` en vez de `\s+FROM\s+\w+`
-    // para NO matchear la palabra reservada `from` cuando aparece como
-    // nombre de columna en el SELECT list (ej: `SELECT id, email, from
-    // FROM magic_links` — el primer FROM es la palabra `from` del list,
-    // no el FROM keyword que separa cols de tabla).
     const sel = sql.match(/^SELECT\s+(.+?)\s+FROM\s+(\w+)(?=\s+WHERE|\s+ORDER|\s+GROUP|\s+LIMIT|\s*$|\s*;)/i)
     if (sel) {
       const table = sel[2]
-      const cols = sel[1].split(',').map((c) => c.trim().replace(/.*\bas\s+/i, '').replace(/\s+as\s+/i, ''))
+      const cols = sel[1].split(',').map((c) => c.trim().replace(/.*\bas\s+/i, '').replace(/\s+as\s+/i, '').replace(/^"|"$/g, ''))
       const rows = tables[table] || []
       const row = rows[0]
       if (!row) return { kind: 'first', value: null }
@@ -89,8 +85,6 @@ function makeD1() {
         },
       }
     },
-    // Helpers de test — el usuario puede mutar `_validity.ok` para simular
-    // magic links expirados (mockear el validity check de peekMagicLink).
     _tables: tables,
     _setValidityOk(v) { tables._validity = { ok: v ? 1 : 0 } },
   }
@@ -98,60 +92,58 @@ function makeD1() {
 
 // ============ createMagicLink + peekMagicLink ============
 
-test('createMagicLink persiste from="admin" cuando se pasa explícito', async () => {
+test('createMagicLink persiste origin="admin" cuando se pasa explícito', async () => {
   const d1 = makeD1()
   const env = { DB: d1 }
   const link = await createMagicLink(env, 'a@x.com', 'admin')
-  assert.equal(link.from, 'admin')
+  assert.equal(link.origin, 'admin')
   const peek = await peekMagicLink(env, link.id)
   assert.equal(peek.ok, true)
-  assert.equal(peek.from, 'admin')
+  assert.equal(peek.origin, 'admin')
   assert.equal(peek.email, 'a@x.com')
 })
 
-test('createMagicLink persiste from="portal" cuando se pasa', async () => {
+test('createMagicLink persiste origin="portal" cuando se pasa', async () => {
   const d1 = makeD1()
   const env = { DB: d1 }
   const link = await createMagicLink(env, 'a@x.com', 'portal')
-  assert.equal(link.from, 'portal')
+  assert.equal(link.origin, 'portal')
   const peek = await peekMagicLink(env, link.id)
-  assert.equal(peek.from, 'portal')
+  assert.equal(peek.origin, 'portal')
 })
 
-test('createMagicLink default = portal cuando NO se pasa from', async () => {
+test('createMagicLink default = portal cuando NO se pasa origin', async () => {
   const d1 = makeD1()
   const env = { DB: d1 }
   const link = await createMagicLink(env, 'a@x.com')
-  assert.equal(link.from, 'portal', 'backward compat: rows viejas con default portal')
+  assert.equal(link.origin, 'portal', 'backward compat: rows viejas con default portal')
   const peek = await peekMagicLink(env, link.id)
-  assert.equal(peek.from, 'portal')
+  assert.equal(peek.origin, 'portal')
 })
 
 test('createMagicLink rechaza valores raros (security: solo admin|portal)', async () => {
   const d1 = makeD1()
   const env = { DB: d1 }
-  // Aunque la columna es TEXT, validamos en código para que no se cuele
-  // un 'evilvalue' que termine en una redirect inesperada.
   for (const bad of ['ADMIN', 'admin; javascript:alert(1)', '../../etc/passwd', '', null, undefined]) {
     const link = await createMagicLink(env, 'a@x.com', bad)
-    assert.equal(link.from, 'portal', `from inválido ${JSON.stringify(bad)} → portal (default)`)
+    assert.equal(link.origin, 'portal', `origin inválido ${JSON.stringify(bad)} → portal (default)`)
   }
 })
 
-test('peekMagicLink default from=portal si la fila no tiene la columna', async () => {
-  // Simula una fila creada antes del fix (sin columna `from`).
+test('peekMagicLink default origin=portal si la fila no tiene la columna', async () => {
+  // Simula una fila creada antes del fix (sin columna `origin`).
   const d1 = makeD1()
   d1._tables.htmlbox_magic_links = [{
     id: 'old_token',
     email: 'a@x.com',
     expires_at: '2099-12-31 00:00:00',
     used_at: null,
-    // NOTA: sin `from` — simula fila pre-migration.
+    // NOTA: sin `origin` — simula fila pre-migration.
   }]
   const env = { DB: d1 }
   const peek = await peekMagicLink(env, 'old_token')
   assert.equal(peek.ok, true)
-  assert.equal(peek.from, 'portal', 'peek debe normalizar filas viejas a portal')
+  assert.equal(peek.origin, 'portal', 'peek debe normalizar filas viejas a portal')
 })
 
 test('peekMagicLink: token inexistente devuelve ok=false', async () => {
@@ -159,4 +151,20 @@ test('peekMagicLink: token inexistente devuelve ok=false', async () => {
   const env = { DB: d1 }
   const peek = await peekMagicLink(env, 'nonexistent')
   assert.equal(peek.ok, false)
+})
+
+test('createMagicLink NO usa "from" como columna SQL (regression test del bug)', async () => {
+  // Introspección sobre el source: si alguien cambia el código de vuelta
+  // a `from`, este test falla — la idea es que el nombre SQL-safe quede
+  // explícito en el código Y en el test.
+  const fs = await import('node:fs/promises')
+  const path = await import('node:path')
+  const url = await import('node:url')
+  const here = path.dirname(url.fileURLToPath(import.meta.url))
+  const sessionSource = await fs.readFile(path.join(here, '..', 'lib', 'session.js'), 'utf8')
+  // INSERT y SELECT deben referenciar "origin" — NUNCA "from".
+  assert.match(sessionSource, /INSERT INTO htmlbox_magic_links[^)]*\borigin\b/i,
+    'INSERT debe usar columna origin (NO from — bug del FROM keyword SQL)')
+  assert.match(sessionSource, /SELECT[^]*\borigin\b[^]*FROM htmlbox_magic_links/i,
+    'SELECT debe usar columna origin (NO from)')
 })
