@@ -1,0 +1,4 @@
+# Wrangler dev / deploy artifacts
+.wrangler/
+dist/box-worker.mjs
+dist/box-worker.mjs.js

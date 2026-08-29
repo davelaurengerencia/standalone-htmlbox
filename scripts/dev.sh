@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Levanta los 5 Workers de SivoCloud contra el D1 REMOTO en subdominios *.localhost.
+# Levanta los 6 Workers de SivoCloud contra el D1 REMOTO en subdominios *.localhost.
 #
 # Workers:
 #   - control-plane (8781) — registry, internal API, admin (no auth: lo migró a auth)
@@ -7,12 +7,20 @@
 #   - runtime       (8783) — sirve boxes (incluye dispatch WFP)
 #   - landing       (8784) — Coming Soon para sivocloud.localhost
 #   - auth          (8785) — magic links, login, sesión cross-subdomain
+#   - sivostudio    (8786) — experimento aislado: lanzador + dispatch a boxes
+#                             creados en namespace WFP separado
 #
 # Requiere estar autenticado en Cloudflare (`wrangler login` o CLOUDFLARE_API_TOKEN).
 # El código corre local (workerd) pero los bindings D1/R2/KV van a la API real.
 #
 # Subdominios esperados en /etc/hosts (los agregamos una sola vez):
-#   127.0.0.1   controlplane.localhost studio.localhost runtime.localhost sivocloud.localhost auth.localhost
+#   127.0.0.1   controlplane.localhost studio.localhost runtime.localhost sivocloud.localhost auth.localhost studiov2.localhost
+#
+# En macOS `*.localhost` ya resuelve a 127.0.0.1 nativamente, así que no hace
+# falta tocar /etc/hosts. En Linux hay que agregarlos manualmente.
+#
+# `studiov2.localhost` es DEL EXPERIMENTO sivostudio — distinto a `studio.localhost`
+# (que es el portal de prod) para reforzar el aislamiento entre los dos.
 #
 # En macOS `*.localhost` ya resuelve a 127.0.0.1 nativamente, así que no hace
 # falta tocar /etc/hosts. En Linux hay que agregarlos manualmente.
@@ -33,12 +41,13 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="$HERE/.logs/dev"
 mkdir -p "$LOG_DIR"
 
-# Colores ANSI para los 5 workers en el tail en vivo.
+# Colores ANSI para los 6 workers en el tail en vivo.
 COLOR_CP="\033[36m"   # cyan
 COLOR_PO="\033[35m"   # magenta
 COLOR_RT="\033[33m"   # yellow
 COLOR_LD="\033[32m"   # green
 COLOR_AU="\033[34m"   # blue
+COLOR_SS="\033[91m"   # red (sivostudio — para distinguir el experimento)
 RESET="\033[0m"
 
 # 1) Limpia procesos de runs previos. Importante: matar wrangler CLI ANTES
@@ -52,7 +61,7 @@ kill_zombies() {
   sleep 1
   # Backup por puerto — wrangler v4 pone workerd en su propio session group,
   # así que SIGINT no propaga. lsof + kill es lo único que llega.
-  for p in 8781 8782 8783 8784 8785 9229 9230 9231 9235; do
+  for p in 8781 8782 8783 8784 8785 8786 9229 9230 9231 9235 9236; do
     leftover="$(lsof -tiTCP:$p -sTCP:LISTEN 2>/dev/null || true)"
     if [ -n "$leftover" ]; then
       echo "  ⚠ :$p aún ocupado (PIDs $leftover) — matando"
@@ -64,7 +73,7 @@ kill_zombies() {
   # (probablemente workerd re-spawn-eada por otro proceso). Avisamos y
   # seguimos igual — wrangler va a fallar con "Address already in use" y
   # el usuario va a ver el error claro.
-  for p in 8781 8782 8783 8784 8785; do
+  for p in 8781 8782 8783 8784 8785 8786; do
     if lsof -tiTCP:$p -sTCP:LISTEN >/dev/null 2>&1; then
       echo "  ✗ puerto :$p sigue ocupado. Inspección: lsof -iTCP:$p"
     fi
@@ -105,7 +114,7 @@ bash "$HERE/scripts/migrate-remote.sh"
 rm -f "$LOG_DIR"/*.log "$LOG_DIR"/*.pid
 
 echo
-echo "→ levantando 5 workers contra D1 remoto (logs: .logs/dev/*.log)…"
+echo "→ levantando 6 workers contra D1 remoto (logs: .logs/dev/*.log)…"
 echo
 
 # 6) Lanza cada worker en background. Su stdout/stderr va a su propio log
@@ -154,9 +163,10 @@ launch_worker portal        "portal"       "--remote"
 launch_worker runtime       "runtime"      "--remote"
 launch_worker landing       "landing"      "--remote"
 launch_worker auth          "auth"         "--remote"
+launch_worker sivostudio    "sivostudio"   "--remote"
 
-# 7) Espera Ready en los 5 logs (timeout 90s c/u).
-echo "→ esperando Ready on los 5 workers (timeout 90s)…"
+# 7) Espera Ready en los 6 logs (timeout 90s c/u).
+echo "→ esperando Ready on los 6 workers (timeout 90s)…"
 wait_ready() {
   local name=$1
   local deadline=$(( $(date +%s) + 90 ))
@@ -175,6 +185,7 @@ wait_ready portal        || { echo "  ✗ portal:        timeout"; ok=false; }
 wait_ready runtime       || { echo "  ✗ runtime:       timeout"; ok=false; }
 wait_ready landing       || { echo "  ✗ landing:       timeout"; ok=false; }
 wait_ready auth          || { echo "  ✗ auth:          timeout"; ok=false; }
+wait_ready sivostudio    || { echo "  ✗ sivostudio:    timeout"; ok=false; }
 
 # 8) Banner grande con las URLs lindas.
 echo
@@ -189,6 +200,7 @@ if $ok; then
     runtime       → http://runtime.localhost:8783
     landing       → http://sivocloud.localhost:8784
     auth          → http://auth.localhost:8785
+    sivostudio    → http://studiov2.localhost:8786
 
   Logs en vivo (Ctrl+C para detener el tail; los workers quedan vivos
   y se limpian en el próximo `npm run dev`):
@@ -202,13 +214,14 @@ else
     tail -f .logs/dev/runtime.log
     tail -f .logs/dev/landing.log
     tail -f .logs/dev/auth.log
+    tail -f .logs/dev/sivostudio.log
 ═══════════════════════════════════════════════════════════════
 BANNER
 fi
 echo "═══════════════════════════════════════════════════════════════"
 echo
 
-# 9) Live tail de los 5 logs, con color ANSI por worker.
+# 9) Live tail de los 6 logs, con color ANSI por worker.
 #    tail -F antepone "==> filename <==" cuando rota entre archivos; awk
 #    parsea esos headers para saber qué worker está emitiendo (porque en un
 #    pipe FILENAME queda vacío).
@@ -217,13 +230,15 @@ tail -F \
   "$LOG_DIR/portal.log" \
   "$LOG_DIR/runtime.log" \
   "$LOG_DIR/landing.log" \
-  "$LOG_DIR/auth.log" 2>/dev/null \
-| awk -v cp="$COLOR_CP" -v po="$COLOR_PO" -v rt="$COLOR_RT" -v ld="$COLOR_LD" -v au="$COLOR_AU" -v rst="$RESET" '
+  "$LOG_DIR/auth.log" \
+  "$LOG_DIR/sivostudio.log" 2>/dev/null \
+| awk -v cp="$COLOR_CP" -v po="$COLOR_PO" -v rt="$COLOR_RT" -v ld="$COLOR_LD" -v au="$COLOR_AU" -v ss="$COLOR_SS" -v rst="$RESET" '
     /^==> .*control-plane/ { current = cp; print current $0 rst; fflush(); next }
     /^==> .*portal/        { current = po; print current $0 rst; fflush(); next }
     /^==> .*runtime/       { current = rt; print current $0 rst; fflush(); next }
     /^==> .*landing/       { current = ld; print current $0 rst; fflush(); next }
     /^==> .*auth/          { current = au; print current $0 rst; fflush(); next }
+    /^==> .*sivostudio/    { current = ss; print current $0 rst; fflush(); next }
     /^==>/                 { current = rt; print current $0 rst; fflush(); next }
     {
       # Línea normal — usa el color del último "==>" que vimos, o rt como

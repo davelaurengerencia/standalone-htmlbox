@@ -1,0 +1,2249 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flow Engine — Editor Visual Pro</title>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #12131c;
+    --panel: #1a1b26;
+    --panel2: #222436;
+    --panel-hover: #2a2d45;
+    --border: #2f334d;
+    --border-focus: #7aa2f7;
+    --text: #c0caf5;
+    --text-bright: #ffffff;
+    --muted: #787c99;
+    --accent: #7aa2f7;
+    --accent-hover: #5d87e5;
+    --wire: #565f89;
+    --wire-active: #7aa2f7;
+    --ok: #9ece6a;
+    --err: #f7768e;
+    --warn: #e0af68;
+    --shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    --radius: 8px;
+    --radius-sm: 5px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  #topbar {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--panel); border-bottom: 1px solid var(--border);
+    padding: 10px 16px; flex-shrink: 0; z-index: 10;
+  }
+  #topbar h1 { font-size: 15px; font-weight: 700; margin: 0 12px 0 0; color: var(--accent); letter-spacing: -0.02em; display: flex; align-items: center; gap: 6px; }
+  #topbar h1 span { color: var(--muted); font-weight: 400; font-size: 11px; }
+  .flow-tabs { display: flex; gap: 6px; overflow-x: auto; max-width: 45vw; padding-bottom: 2px; }
+  .flow-tab {
+    background: var(--bg); border: 1px solid var(--border); color: var(--muted);
+    padding: 6px 14px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 500;
+    white-space: nowrap; cursor: pointer; transition: all 0.2s ease;
+  }
+  .flow-tab:hover { color: var(--text); border-color: var(--accent); }
+  .flow-tab.active { color: var(--text-bright); border-color: var(--accent); background: var(--panel2); box-shadow: 0 2px 8px rgba(122, 162, 247, 0.15); }
+  
+  button {
+    background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+    padding: 7px 12px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 500;
+    cursor: pointer; font-family: inherit; transition: all 0.2s ease; display: inline-flex; align-items: center; gap: 6px;
+  }
+  button:hover { border-color: var(--accent); color: var(--text-bright); background: var(--panel-hover); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #12131c; font-weight: 600; }
+  button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: #ffffff; }
+  .spacer { flex: 1; }
+
+  #main { flex: 1; display: flex; min-height: 0; }
+
+  #palette {
+    width: 230px; flex-shrink: 0; background: var(--panel);
+    border-right: 1px solid var(--border); padding: 14px; overflow-y: auto;
+  }
+  #palette.collapsed, #config-panel.collapsed {
+    display: none !important;
+  }
+  #palette h3 { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--muted); margin: 16px 0 8px; letter-spacing: 0.06em; }
+  #palette h3:first-child { margin-top: 0; }
+  .palette-item {
+    padding: 10px 12px; border-radius: var(--radius-sm); margin-bottom: 7px; font-size: 12px; font-weight: 500;
+    cursor: grab; border-left: 4px solid; background: var(--panel2); user-select: none;
+    transition: all 0.2s ease; border-top: 1px solid rgba(255,255,255,0.02);
+  }
+  .palette-item:hover { transform: translateX(4px); background: var(--panel-hover); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+  .palette-item small { display: block; color: var(--muted); font-size: 10px; margin-top: 3px; font-family: 'JetBrains Mono', monospace; }
+  .palette-hint { color: var(--muted); font-size: 11px; line-height: 1.5; padding: 12px 0 0; border-top: 1px solid var(--border); margin-top: 16px; }
+
+  #canvas-wrap {
+    flex: 1; position: relative; overflow: auto;
+    background-color: var(--bg);
+    background-image: radial-gradient(circle, #2a2d45 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  #canvas { position: relative; width: 2400px; height: 1600px; }
+  svg#wires { position: absolute; top: 0; left: 0; width: 2400px; height: 1600px; pointer-events: none; }
+
+  .node {
+    position: absolute; min-width: 130px; background: var(--panel2);
+    border: 1px solid var(--border); border-left: 4px solid; border-radius: var(--radius);
+    padding: 9px 12px; font-size: 12px; cursor: grab; user-select: none;
+    text-align: center; line-height: 1.3; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+  .node:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.4); border-color: rgba(255,255,255,0.2); }
+  .node.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), 0 8px 24px rgba(122, 162, 247, 0.25); }
+  .node .name-label { font-weight: 600; color: var(--text-bright); }
+  .inject-btn {
+    position: absolute; right: -12px; top: 50%; transform: translateY(-50%);
+    width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--border);
+    background: var(--accent); color: #12131c; cursor: pointer;
+    font-size: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center;
+    padding: 0; box-shadow: 0 2px 6px rgba(0,0,0,0.3); transition: transform 0.15s ease;
+  }
+  .inject-btn:hover { transform: translateY(-50%) scale(1.15); filter: brightness(1.1); }
+  .port {
+    position: absolute; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--bg); border: 2.5px solid var(--wire); cursor: crosshair;
+    z-index: 2; transition: all 0.2s ease;
+  }
+  .port.in { left: -7px; top: 50%; transform: translateY(-50%); }
+  .port.out { right: -7px; transform: translateY(-50%); }
+  .port:hover { border-color: var(--accent); background: var(--accent); transform: translateY(-50%) scale(1.35); box-shadow: 0 0 8px var(--accent); }
+
+  .port-label {
+    position: absolute; right: 16px; transform: translateY(-50%);
+    font-size: 10px; font-family: 'JetBrains Mono', monospace; color: var(--muted); white-space: nowrap; pointer-events: none;
+  }
+
+  #config-panel {
+    width: 330px; flex-shrink: 0; background: var(--panel);
+    border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden;
+  }
+  #config-panel-tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--bg); }
+  .cfg-tab {
+    flex: 1; background: transparent; border: none; border-bottom: 2px solid transparent;
+    padding: 11px 8px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; border-radius: 0;
+    display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;
+  }
+  .cfg-tab.active { color: var(--accent); border-bottom-color: var(--accent); background: var(--panel); }
+  .cfg-tab .cfg-badge {
+    background: var(--accent); color: #12131c; font-size: 10px; font-weight: 700;
+    border-radius: 10px; min-width: 16px; height: 16px; padding: 0 5px;
+    display: inline-flex; align-items: center; justify-content: center; line-height: 1;
+  }
+  #config-panel-body { flex: 1; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; }
+  #config-panel-body > div { display: none; }
+  #config-panel-body > div.active { display: block; }
+  #tab-info { padding: 14px; font-size: 12px; overflow-y: auto; }
+  #tab-info h3 { font-size: 11px; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; letter-spacing: 0.05em; }
+  .empty-hint { color: var(--muted); line-height: 1.5; font-size: 12px; }
+
+  #statusbar {
+    background: var(--panel); border-top: 1px solid var(--border); padding: 8px 16px;
+    font-size: 11px; color: var(--muted); flex-shrink: 0; display: flex; align-items: center; gap: 12px; font-family: 'JetBrains Mono', monospace;
+  }
+
+  #tab-debug { flex-direction: column; height: 100%; }
+  #config-panel-body > #tab-debug.active { display: flex; }
+  #debug-toolbar {
+    display: flex; align-items: center; justify-content: space-between; padding: 8px 12px;
+    border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--bg);
+  }
+  #debug-toolbar .hint { font-size: 11px; color: var(--muted); }
+  #debug-toolbar button { font-size: 11px; padding: 4px 8px; }
+  #console {
+    flex: 1; overflow-y: auto; background: #161622; padding: 10px 12px;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5;
+  }
+  #console .entry { margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  #console .entry:last-child { border-bottom: none; }
+  #console .entry-time { color: var(--muted); font-size: 10px; margin-bottom: 2px; }
+  #console .line { white-space: pre-wrap; color: var(--text); word-break: break-word; }
+  #console .line.err { color: var(--err); }
+
+  .floating-group {
+    position: relative;
+    margin-bottom: 18px;
+    width: 100%;
+  }
+  .floating-input, .floating-select, .floating-textarea {
+    width: 100%;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px 12px 10px 12px;
+    color: var(--text-bright);
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+                background-color 0.2s ease;
+  }
+  .floating-select {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%237aa2f7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 34px;
+    cursor: pointer;
+  }
+  .floating-textarea {
+    min-height: 90px;
+    resize: vertical;
+  }
+  .floating-input:hover, .floating-select:hover, .floating-textarea:hover {
+    border-color: rgba(122, 162, 247, 0.45);
+  }
+  .floating-input:focus, .floating-select:focus, .floating-textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(122, 162, 247, 0.18), 0 4px 12px rgba(0, 0, 0, 0.25);
+  }
+  .floating-label {
+    position: absolute;
+    left: 10px;
+    top: 13px;
+    color: var(--muted);
+    font-size: 12px;
+    pointer-events: none;
+    padding: 0 4px;
+    border-radius: 3px;
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+                color 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+                background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    transform-origin: left top;
+    line-height: 1;
+    z-index: 5;
+  }
+  /* Floating trigger conditions (Notch Pill Effect) */
+  .floating-input:focus ~ .floating-label,
+  .floating-input:not(:placeholder-shown) ~ .floating-label,
+  .floating-select:focus ~ .floating-label,
+  .floating-select.has-value ~ .floating-label,
+  .floating-textarea:focus ~ .floating-label,
+  .floating-textarea:not(:placeholder-shown) ~ .floating-label {
+    transform: translateY(-20px) scale(0.82);
+    background-color: var(--panel2);
+    color: var(--accent);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  /* Field Error Styling for Floating Labels */
+  .field-error-message { color: var(--err); font-size: 11px; margin-top: 5px; font-weight: 500; }
+  .floating-input.field-error {
+    border-color: var(--err);
+    box-shadow: 0 0 0 2px rgba(247, 118, 142, 0.15);
+  }
+  .floating-input.field-error ~ .floating-label {
+    color: var(--err) !important;
+  }
+
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(10, 10, 18, 0.75);
+    backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 100;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal-card {
+    width: 580px; max-width: 94vw; max-height: 88vh; background: var(--panel);
+    border: 1px solid var(--border); border-radius: var(--radius); display: flex; flex-direction: column;
+    overflow: hidden; box-shadow: var(--shadow);
+  }
+  .modal-header {
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; background: var(--panel2);
+  }
+  .modal-header .title { font-size: 15px; font-weight: 700; color: var(--text-bright); }
+  .modal-header .subtitle { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  .modal-tabs { display: flex; gap: 4px; padding: 0 18px; border-bottom: 1px solid var(--border); flex-shrink: 0; background: var(--bg); }
+  .modal-tab {
+    padding: 10px 14px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.2s;
+  }
+  .modal-tab:hover { color: var(--text-bright); }
+  .modal-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .modal-tab-panel { display: none; }
+  .modal-tab-panel.active { display: block; }
+
+  .modal-body { padding: 18px; overflow-y: auto; font-size: 12px; flex: 1; }
+  .modal-footer {
+    padding: 12px 18px; border-top: 1px solid var(--border); background: var(--panel2);
+    display: flex; justify-content: flex-end; gap: 10px; flex-shrink: 0;
+  }
+
+  /* Key-Value & Dynamic Rules Editors */
+  .kv-editor { display: flex; flex-direction: column; gap: 8px; margin-top: 6px; }
+  .kv-row { display: flex; gap: 8px; align-items: center; }
+  .kv-row .floating-group { margin-bottom: 0; flex: 1; }
+  .kv-row button {
+    flex-shrink: 0; padding: 10px 12px; background: rgba(247, 118, 142, 0.1); border: 1px solid rgba(247, 118, 142, 0.3);
+    color: var(--err); border-radius: var(--radius-sm); cursor: pointer; font-size: 12px;
+  }
+  .kv-row button:hover { background: var(--err); color: #fff; }
+  .kv-add-btn { margin-top: 10px; font-size: 12px; border-style: dashed; }
+  
+  .rule-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .rule-row .floating-group { margin-bottom: 0; flex: 1; }
+  .rule-out { font-size: 11px; font-family: 'JetBrains Mono', monospace; color: var(--accent); white-space: nowrap; font-weight: 600; }
+  
+  .monaco-box { height: 230px; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; margin-top: 6px; }
+  
+  .fn-tabs, .node-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+  .fn-tab, .node-tab {
+    background: transparent; border: none; border-bottom: 2px solid transparent;
+    padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; border-radius: 0;
+  }
+  .fn-tab.active, .node-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .fn-tab-panel, .node-tab-panel { display: none; }
+  .fn-tab-panel.active, .node-tab-panel.active { display: block; }
+  
+  #modal-routing {
+    margin-top: 14px; padding: 12px; border: 1px dashed var(--border); border-radius: var(--radius-sm);
+    background: var(--bg); color: var(--muted); font-size: 11px; line-height: 1.5;
+  }
+
+  .conn-row, .flexdb-sheet-row, .mig-row {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: var(--radius-sm); margin-bottom: 8px; font-size: 12px; background: var(--panel2);
+  }
+  .conn-row .conn-name, .flexdb-sheet-row .sheet-name { font-weight: 600; flex: 1; color: var(--text-bright); }
+  .conn-row .conn-meta, .flexdb-sheet-row .sheet-meta { color: var(--muted); font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+
+  .mig-row .mig-version { font-weight: 700; color: var(--accent); flex-shrink: 0; font-family: 'JetBrains Mono', monospace; }
+  .mig-row .mig-desc { flex: 1; }
+  .mig-row .mig-badge { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600; flex-shrink: 0; }
+  .mig-row .mig-badge.applied { background: rgba(158, 206, 106, 0.2); color: var(--ok); }
+  .mig-row .mig-badge.pending { background: rgba(247, 118, 142, 0.2); color: var(--err); }
+
+  #modal-test-result {
+    margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: #101018; color: var(--ok); font-family: 'JetBrains Mono', monospace; font-size: 11px; white-space: pre-wrap; display: none;
+  }
+  #modal-test-result.show { display: block; }
+  #modal-test-result.error { color: var(--err); }
+
+  /* Save Dirty Indicator pulse animation */
+  #btn-save-flow.dirty {
+    background: var(--err); color: #ffffff; border-color: var(--err);
+    animation: pulse-save 1.4s ease-in-out infinite;
+  }
+  #btn-save-flow.dirty::after { content: ' ●'; }
+  @keyframes pulse-save {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(247, 118, 142, 0.6); }
+    50% { box-shadow: 0 0 0 6px rgba(247, 118, 142, 0); }
+  }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>⚡ Flow Engine <span>editor visual</span></h1>
+  <button onclick="togglePalette()" title="Ocultar/Mostrar Paleta">🎨 Paleta</button>
+  <div id="flow-tabs" class="flow-tabs"></div>
+  <button onclick="newFlow()">+ Nuevo</button>
+  <button id="btn-save-flow" onclick="saveFlow()">Guardar</button>
+  <button onclick="clearCanvas()">Limpiar</button>
+  <span class="spacer"></span>
+  <button onclick="openVarsPanel()">🌐 Variables</button>
+  <button onclick="openConnectionsPanel()">🔌 Conexiones</button>
+  <button onclick="toggleConfigPanel()" title="Ocultar/Mostrar Panel Config/Debug">📋 Panel</button>
+  <button class="primary" onclick="runFlow()">▶ Probar flujo</button>
+</div>
+
+<div id="main">
+  <div id="palette">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+      <span style="font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.06em;">Paleta</span>
+      <button type="button" onclick="togglePalette()" style="padding:2px 6px; font-size:11px;" title="Cerrar paleta">✕</button>
+    </div>
+    <div id="node-types"></div>
+    <p class="palette-hint">Arrastra un nodo al canvas. Conecta de derecha a izquierda. Doble clic para configurar.</p>
+  </div>
+
+  <div id="canvas-wrap">
+    <div id="canvas">
+      <svg id="wires"></svg>
+    </div>
+  </div>
+
+  <div id="config-panel">
+    <div id="config-panel-tabs">
+      <button type="button" class="cfg-tab active" data-cfgtab="info" onclick="switchConfigPanelTab('info')">Info</button>
+      <button type="button" class="cfg-tab" data-cfgtab="debug" onclick="switchConfigPanelTab('debug')">🐛 Debug <span id="debug-badge" class="cfg-badge" style="display:none;">0</span></button>
+      <button type="button" onclick="toggleConfigPanel()" style="padding:2px 8px; font-size:11px; margin-right:6px; background:transparent; border:none; color:var(--muted);" title="Cerrar panel">✕</button>
+    </div>
+    <div id="config-panel-body">
+      <div id="tab-info" class="active">
+        <h3>Nodo seleccionado</h3>
+        <div id="config-body"><p class="empty-hint">Haz clic en un nodo para ver un resumen. Doble clic para configurarlo.</p></div>
+      </div>
+      <div id="tab-debug">
+        <div id="debug-toolbar">
+          <span class="hint">Salida de Debug + editor</span>
+          <button type="button" onclick="clearDebugPanel()">Limpiar</button>
+        </div>
+        <div id="console"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="statusbar">
+  <span id="status-main">Arrastra un nodo desde la paleta al canvas.</span>
+  <span id="status-side" style="margin-left:auto;"></span>
+</div>
+
+<div id="modal-overlay" class="modal-overlay">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div>
+        <div class="title" id="modal-title">Nodo</div>
+        <div class="subtitle" id="modal-subtitle">tipo</div>
+      </div>
+      <button onclick="closeNodeEditor()">✕ Cerrar</button>
+    </div>
+    <div class="modal-tabs">
+      <div class="modal-tab active" data-tab="props" onclick="switchModalTab('props')">Propiedades</div>
+      <div class="modal-tab" data-tab="notes" onclick="switchModalTab('notes')">Notas</div>
+    </div>
+    <div class="modal-body">
+      <div id="tab-props" class="modal-tab-panel active">
+        <div id="modal-fields"></div>
+        <div id="modal-routing"></div>
+        <div id="modal-test-result"></div>
+      </div>
+      <div id="tab-notes" class="modal-tab-panel">
+        <div class="floating-group">
+          <textarea id="modal-notes" class="floating-textarea" placeholder=" " oninput="modalUpdateNotes(this.value)"></textarea>
+          <label for="modal-notes" class="floating-label">Notas libres sobre este nodo</label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button onclick="testNode()">▶ Probar este nodo</button>
+      <button class="primary" onclick="closeNodeEditor()">Guardar y cerrar</button>
+    </div>
+  </div>
+</div>
+
+<div id="vars-overlay" class="modal-overlay">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div>
+        <div class="title">Variables</div>
+        <div class="subtitle">Global context (todos los flujos) y Flow context (flujo actual)</div>
+      </div>
+      <button onclick="closeVarsPanel()">✕ Cerrar</button>
+    </div>
+    <div class="modal-body">
+      <div style="margin-bottom: 20px;">
+        <h4 style="font-size:12px; color:var(--muted); margin:0 0 10px;">Global — compartido por todos los flujos</h4>
+        <div id="vars-global" class="kv-editor"></div>
+        <button type="button" class="kv-add-btn" onclick="addVarRow('global')">+ Agregar variable global</button>
+      </div>
+      <div>
+        <h4 style="font-size:12px; color:var(--muted); margin:0 0 10px;">Flow — solo del flujo actual ("<span id="vars-flow-name"></span>")</h4>
+        <div id="vars-flow" class="kv-editor"></div>
+        <button type="button" class="kv-add-btn" onclick="addVarRow('flow')">+ Agregar variable de flujo</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="primary" onclick="saveVarsPanel()">Guardar variables</button>
+    </div>
+  </div>
+</div>
+
+<div id="conn-overlay" class="modal-overlay">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div>
+        <div class="title">Conexiones (config nodes)</div>
+        <div class="subtitle">⚠️ El token se guarda en texto plano en disk (config-nodes.json).</div>
+      </div>
+      <button onclick="closeConnectionsPanel()">✕ Cerrar</button>
+    </div>
+    <div class="modal-body">
+      <div id="conn-list"></div>
+      <div id="conn-form" style="display:none; margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+        <input type="hidden" id="conn-form-id">
+        <div class="floating-group">
+          <select id="conn-form-type" class="floating-select has-value">
+            <option value="turso-connection">turso-connection</option>
+          </select>
+          <label class="floating-label">Tipo de Conexión</label>
+        </div>
+        <div class="floating-group">
+          <input type="text" id="conn-form-name" class="floating-input" placeholder=" ">
+          <label class="floating-label">Nombre (ej. turso-produccion)</label>
+        </div>
+        <div class="floating-group">
+          <input type="text" id="conn-form-url" class="floating-input" placeholder=" ">
+          <label class="floating-label">URL (libsql://...)</label>
+        </div>
+        <div class="floating-group">
+          <input type="password" id="conn-form-token" class="floating-input" placeholder=" ">
+          <label class="floating-label">Auth Token (dejar vacío para no cambiar)</label>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="primary" onclick="saveConnectionForm()">Guardar conexión</button>
+          <button onclick="cancelConnectionForm()">Cancelar</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="primary" onclick="newConnectionForm()">+ Nueva conexión</button>
+    </div>
+  </div>
+</div>
+
+<div id="schema-overlay" class="modal-overlay">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div>
+        <div class="title" id="schema-title">Schema — conexión</div>
+        <div class="subtitle">Migraciones versionadas ejecutadas en transacción.</div>
+      </div>
+      <button onclick="closeSchemaPanel()">✕ Cerrar</button>
+    </div>
+    <div class="modal-body">
+      <div id="schema-connect-error" class="empty-hint" style="display:none; color:var(--err);"></div>
+      <div id="schema-migrations-list"></div>
+      <div id="schema-form" style="display:none; margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+        <div class="floating-group">
+          <input type="text" id="schema-form-description" class="floating-input" placeholder=" ">
+          <label class="floating-label">Descripción (ej. crea tabla clientes)</label>
+        </div>
+        <div class="floating-group">
+          <textarea id="schema-form-sql-input" class="floating-textarea" placeholder=" " style="font-family: 'JetBrains Mono', monospace;"></textarea>
+          <label class="floating-label">Sentencias SQL</label>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="primary" onclick="saveMigrationForm()">Agregar migración</button>
+          <button onclick="cancelMigrationForm()">Cancelar</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="primary" onclick="newMigrationForm()">+ Nueva migración</button>
+      <button onclick="applyPendingSchemaMigrations()">▶ Aplicar pendientes</button>
+    </div>
+  </div>
+</div>
+
+<div id="flexdb-overlay" class="modal-overlay">
+  <div class="modal-card">
+    <div class="modal-header">
+      <div>
+        <div class="title" id="flexdb-title">FlexDB — conexión</div>
+        <div class="subtitle">Historial de esquemas por sheet.</div>
+      </div>
+      <button onclick="closeFlexdbPanel()">✕ Cerrar</button>
+    </div>
+    <div class="modal-body">
+      <div id="flexdb-connect-error" class="empty-hint" style="display:none; color:var(--err);"></div>
+      <div id="flexdb-sheets-list"></div>
+      <div id="flexdb-history-list" style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px; display:none;"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+function togglePalette() {
+  const p = document.getElementById('palette');
+  if (p) p.classList.toggle('collapsed');
+}
+
+function toggleConfigPanel() {
+  const cp = document.getElementById('config-panel');
+  if (cp) cp.classList.toggle('collapsed');
+}
+
+// Resuelve URLs relativas a absolutas para evitar errores en entornos blob: o iframe
+function getApiUrl(endpoint) {
+  if (!endpoint) return '';
+  if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+    return endpoint;
+  }
+  const base = (window.EDITOR_BASE || '').replace(/\/$/, '');
+  const path = endpoint.startsWith('/') ? endpoint : '/' + endpoint;
+  if (base) {
+    return base + path;
+  }
+  if (window.location && window.location.origin && window.location.origin !== 'null' && !window.location.protocol.startsWith('blob:')) {
+    return window.location.origin + path;
+  }
+  return 'http://localhost' + path;
+}
+
+// Wrapper seguro para peticiones fetch con soporte para backend local / preview independiente
+// El fallback a datos simulados es OPT-IN, y esto es importante: antes se
+// disparaba solo, ante CUALQUIER error de red. Servido en producción eso
+// significa que si la API está caída, el editor muestra un catálogo de nodos
+// inventado y el usuario "guarda" un flujo que no se guardó en ningún lado —
+// con un warning en la consola como única señal. Un error de red tiene que
+// verse como un error, no maquillarse.
+//
+// Para trabajar en el editor sin backend (preview, diseño de la UI), poner
+// `window.EDITOR_MOCK = true` antes de que cargue este script.
+async function apiFetch(endpoint, options = {}) {
+  const url = getApiUrl(endpoint);
+  if (window.EDITOR_MOCK === true) {
+    return await mockApiHandler(endpoint, options);
+  }
+  const res = await fetch(url, options);
+  if (!res.ok) {
+    throw new Error(`La API del editor respondió HTTP ${res.status} en ${endpoint}`);
+  }
+  return await res.json();
+}
+
+// Estado mock local para preview independiente (fallback si no existe backend activo)
+const localStore = {
+  flows: {
+    'example': [
+      { id: 'n_inject1', type: 'inject', name: 'Trigger Demo', x: 140, y: 180, payload: 'timestamp', topic: '', wires: [['n_fn1']] },
+      { id: 'n_fn1', type: 'function', name: 'Formatear Saludo', x: 420, y: 180, code: "msg.payload = '⚡ ¡Hola desde Flow Engine! Hora: ' + new Date().toLocaleTimeString();\nreturn msg;", wires: [['n_debug1']] },
+      { id: 'n_debug1', type: 'debug', name: 'Consola Debug', x: 720, y: 180, target: 'payload', wires: [] }
+    ]
+  },
+  context: { global: { app_env: 'demo' }, flows: {} },
+  configNodes: [
+    { id: 'cfg_turso_demo', type: 'turso-connection', name: 'turso-demo', url: 'libsql://demo-db.turso.io', hasToken: true, tokenPreview: '••••1234' }
+  ],
+  migrations: {},
+  flexdbSheets: {}
+};
+
+const DEFAULT_NODE_DEFS = [
+  { type: 'inject', name: 'Inject', category: 'input', inputs: 0, outputs: 1, defaults: { payload: { value: 'timestamp', label: 'Payload' }, topic: { value: '', label: 'Topic' } } },
+  { type: 'debug', name: 'Debug', category: 'output', inputs: 1, outputs: 0, defaults: { target: { value: 'payload', label: 'Propiedad' } } },
+  { type: 'function', name: 'Function', category: 'function', inputs: 1, outputs: 1, defaults: { onStart: { value: '// Al iniciar\n', label: 'On Start', code: true }, code: { value: "msg.payload = 'procesado';\nreturn msg;", label: 'On Message', code: true }, onStop: { value: '// Al detener\n', label: 'On Stop', code: true } } },
+  { type: 'switch', name: 'Switch', category: 'function', inputs: 1, outputs: 1, defaults: { rules: { value: '[{"property":"payload","operator":"==","value":""}]', label: 'Reglas', type: 'rules' } } },
+  { type: 'http-in', name: 'HTTP In', category: 'network', inputs: 0, outputs: 1, defaults: { method: { value: 'GET', label: 'Método', type: 'select', options: ['GET', 'POST', 'PUT', 'DELETE'] }, url: { value: '/api/demo', label: 'Ruta' } } },
+  { type: 'http-response', name: 'HTTP Response', category: 'network', inputs: 1, outputs: 0, defaults: { statusCode: { value: '200', label: 'Código Estado' }, headers: { value: '{}', label: 'Headers', type: 'keyvalue' } } },
+  { type: 'turso', name: 'Turso DB', category: 'storage', inputs: 1, outputs: 1, defaults: { connection: { value: '', label: 'Conexión', type: 'configRef', configType: 'turso-connection' }, operation: { value: 'listRows', label: 'Operación', type: 'select', options: ['listRows', 'getRow', 'insertRow', 'updateRow', 'deleteRow'] }, tableName: { value: 'usuarios', label: 'Tabla' } } },
+  { type: 'flexdb', name: 'FlexDB Sheet', category: 'storage', inputs: 1, outputs: 1, defaults: { connection: { value: '', label: 'Conexión', type: 'configRef', configType: 'turso-connection' }, operation: { value: 'read', label: 'Operación', type: 'select', options: ['read', 'write', 'createSheet'] }, sheetName: { value: 'Clientes', label: 'Nombre Sheet' }, columnsSpec: { value: '[\n  {"name": "nombre", "type": "TEXT"}\n]', label: 'Columnas Spec', type: 'textarea', code: true } } }
+];
+
+// Fallback intercepción API cuando fetch de red falla o corre en preview sin backend real
+async function mockApiHandler(endpoint, options = {}) {
+  const method = (options.method || 'GET').toUpperCase();
+  const body = options.body ? JSON.parse(options.body) : null;
+  const [path, queryString] = endpoint.split('?');
+  const params = new URLSearchParams(queryString || '');
+
+  if (path === '/_editor/api/nodes') return DEFAULT_NODE_DEFS;
+  if (path === '/_editor/api/flows') return Object.keys(localStore.flows);
+  
+  if (path.startsWith('/_editor/api/flows/')) {
+    const name = decodeURIComponent(path.replace('/_editor/api/flows/', ''));
+    if (method === 'GET') return localStore.flows[name] || [];
+    if (method === 'POST') {
+      localStore.flows[name] = body;
+      return { ok: true };
+    }
+  }
+
+  if (path === '/_editor/api/context') return localStore.context;
+  if (path === '/_editor/api/context/global' && method === 'POST') {
+    localStore.context.global = body.value || {};
+    return { ok: true };
+  }
+  if (path.startsWith('/_editor/api/context/flow/') && method === 'POST') {
+    const name = decodeURIComponent(path.replace('/_editor/api/context/flow/', ''));
+    localStore.context.flows[name] = body.value || {};
+    return { ok: true };
+  }
+
+  if (path === '/_editor/api/config-nodes') {
+    if (method === 'GET') {
+      const typeFilter = params.get('type');
+      if (typeFilter) {
+        return localStore.configNodes.filter(c => c.type === typeFilter);
+      }
+      return localStore.configNodes;
+    }
+    if (method === 'POST') {
+      if (body.id) {
+        const idx = localStore.configNodes.findIndex(c => c.id === body.id);
+        if (idx !== -1) localStore.configNodes[idx] = { ...localStore.configNodes[idx], ...body };
+      } else {
+        body.id = 'cfg_' + Date.now().toString(36);
+        body.hasToken = Boolean(body.token);
+        body.tokenPreview = body.token ? '••••' + body.token.slice(-4) : '';
+        localStore.configNodes.push(body);
+      }
+      return { ok: true };
+    }
+  }
+
+  if (path.startsWith('/_editor/api/config-nodes/')) {
+    const parts = path.split('/');
+    const connId = parts[4];
+    if (parts.length === 5 && method === 'DELETE') {
+      localStore.configNodes = localStore.configNodes.filter(c => c.id !== connId);
+      return { ok: true };
+    }
+    if (path.endsWith('/migrations')) {
+      if (method === 'GET') return { migrations: localStore.migrations[connId] || [], applied: [] };
+      if (method === 'POST') {
+        localStore.migrations[connId] = localStore.migrations[connId] || [];
+        const version = localStore.migrations[connId].length + 1;
+        localStore.migrations[connId].push({ version, ...body });
+        return { ok: true };
+      }
+    }
+    if (path.endsWith('/migrations/apply')) return { results: [{ ok: true, version: 1 }] };
+    if (path.endsWith('/flexdb-sheets')) return { sheets: [] };
+  }
+
+  if (path === '/_editor/api/run') {
+    const flow = body.flow || [];
+    const logs = [`⚡ Ejecutando flujo local "${body.flowName || 'demo'}" (${flow.length} nodos)...`];
+    let payload = { demo: true, timestamp: Date.now() };
+    flow.forEach(node => {
+      if (node.type === 'function' && node.code) {
+        try {
+          const fn = new Function('msg', 'ctx', node.code);
+          const res = fn({ payload }, { env: {}, log: (...a) => logs.push(a.join(' ')) });
+          if (res && res.payload !== undefined) payload = res.payload;
+        } catch (e) {
+          logs.push(`⚠ Error en función "${node.name || node.id}": ${e.message}`);
+        }
+      }
+    });
+    return { ok: true, logs, result: { status: 'success', payload } };
+  }
+
+  if (path === '/_editor/api/run-node') {
+    return { result: { tested: true, nodeType: body.type, payload: body.payload } };
+  }
+
+  return { ok: true };
+}
+
+let NODE_DEFS = [];           // catálogo crudo desde /api/nodes
+let NODE_DEFS_BY_TYPE = {};   // type -> def
+
+let nodes = [];      // [{ id, type, position:{x,y}, config:{...} }]
+let edges = [];      // [{ id, from, fromOutput, to }]
+let selectedNodeId = null;
+let selectedEdgeId = null;
+let modalNodeId = null;
+let modalKeyValueState = {}; // { fieldKey: [{key, value}, ...] } — solo mientras el modal está abierto
+let modalRulesState = {}; // { fieldKey: [{property, operator, value}, ...] } — solo mientras el modal está abierto (switch)
+let idCounter = 1;
+let wireDraft = null;
+let flowName = 'example';
+
+// --- aviso de "cambios sin guardar" ---
+let savedFlowSnapshot = null;
+
+function markFlowSaved() {
+  savedFlowSnapshot = JSON.stringify(toFlowJson());
+  updateDirtyIndicator();
+}
+
+function isFlowDirty() {
+  if (savedFlowSnapshot === null) return false;
+  return JSON.stringify(toFlowJson()) !== savedFlowSnapshot;
+}
+
+function updateDirtyIndicator() {
+  const btn = document.getElementById('btn-save-flow');
+  if (btn) btn.classList.toggle('dirty', isFlowDirty());
+}
+
+function uid(prefix) {
+  if (prefix === 'n') {
+    if (globalThis.crypto?.randomUUID) {
+      return globalThis.crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+    }
+    return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  }
+  return prefix + '_' + (idCounter++);
+}
+
+function resyncIdCounterFromLoadedIds(ids) {
+  let maxSeen = 0;
+  (ids || []).forEach(id => {
+    const m = String(id || '').match(/_(\d+)$/);
+    if (m) maxSeen = Math.max(maxSeen, parseInt(m[1], 10));
+  });
+  if (maxSeen + 1 > idCounter) idCounter = maxSeen + 1;
+}
+
+function defOf(type) { return NODE_DEFS_BY_TYPE[type]; }
+
+function outputCountFor(node, def) {
+  if (node.type === 'switch') {
+    try {
+      const rules = JSON.parse(node.config.rules || '[]');
+      return Array.isArray(rules) && rules.length ? rules.length : 1;
+    } catch { return 1; }
+  }
+  return def.outputs ?? 1;
+}
+
+function setStatus(msg, side) {
+  document.getElementById('status-main').textContent = msg;
+  document.getElementById('status-side').textContent = side || '';
+}
+
+let debugUnreadCount = 0;
+
+function switchConfigPanelTab(tab) {
+  document.querySelectorAll('.cfg-tab').forEach(el => el.classList.toggle('active', el.dataset.cfgtab === tab));
+  document.querySelectorAll('#config-panel-body > div').forEach(el => el.classList.toggle('active', el.id === 'tab-' + tab));
+  if (tab === 'debug') {
+    debugUnreadCount = 0;
+    document.getElementById('debug-badge').style.display = 'none';
+  }
+}
+
+function clearDebugPanel() {
+  document.getElementById('console').innerHTML = '';
+}
+
+const DEBUG_LINE_RE = /^🐛 \[(.*?)\] (.+)$/
+function logLine(msg, isErr) {
+  const el = document.getElementById('console');
+  const entry = document.createElement('div');
+  entry.className = 'entry';
+
+  const time = document.createElement('div');
+  time.className = 'entry-time';
+  time.textContent = new Date().toLocaleTimeString();
+  entry.appendChild(time);
+
+  const m = String(msg).match(DEBUG_LINE_RE);
+  const line = document.createElement('div');
+  line.className = 'line' + (isErr ? ' err' : '');
+  if (m) {
+    let pretty = m[2];
+    try { pretty = JSON.stringify(JSON.parse(m[2]), null, 2); } catch {}
+    line.textContent = '🐛 ' + m[1] + '\n' + pretty;
+  } else {
+    line.textContent = msg;
+  }
+  entry.appendChild(line);
+
+  el.appendChild(entry);
+  el.scrollTop = el.scrollHeight;
+
+  const debugTabActive = document.querySelector('.cfg-tab[data-cfgtab="debug"]').classList.contains('active');
+  if (!debugTabActive) {
+    debugUnreadCount++;
+    const badge = document.getElementById('debug-badge');
+    badge.textContent = String(debugUnreadCount);
+    badge.style.display = 'inline-flex';
+  }
+}
+
+// --- carga del catálogo + arranque ---
+
+async function init() {
+  const res = await apiFetch('/_editor/api/nodes');
+  NODE_DEFS = Array.isArray(res) ? res : DEFAULT_NODE_DEFS;
+  NODE_DEFS_BY_TYPE = Object.fromEntries(NODE_DEFS.map(d => [d.type, d]));
+  renderPalette();
+  await refreshFlowList();
+  await loadFlow();
+}
+
+async function refreshFlowList(selectName) {
+  const res = await apiFetch('/_editor/api/flows');
+  const names = Array.isArray(res) ? res : [];
+  const current = selectName || flowName;
+  const tabsEl = document.getElementById('flow-tabs');
+  tabsEl.innerHTML = names.map(n =>
+    '<button type="button" class="flow-tab' + (n === current ? ' active' : '') + '" onclick="switchFlowTab(\'' + n.replace(/'/g, "\\'") + '\')">' + n + '</button>'
+  ).join('');
+  if (names.length && !names.includes(current)) {
+    flowName = names[0];
+  }
+}
+
+async function switchFlowTab(name) {
+  await loadFlow(name);
+  refreshFlowList(name);
+}
+
+async function newFlow() {
+  const { value: name } = await Swal.fire({
+    title: 'Nuevo Flujo',
+    input: 'text',
+    inputLabel: 'Nombre del nuevo flujo',
+    inputValue: 'nuevo-flujo',
+    showCancelButton: true,
+    confirmButtonColor: 'var(--accent)',
+    background: 'var(--panel)',
+    color: 'var(--text)'
+  });
+  if (!name) return;
+  flowName = name.trim();
+  nodes = [];
+  edges = [];
+  selectedNodeId = null;
+  renderCanvas();
+  renderConfig();
+  await saveFlow();
+  await refreshFlowList(flowName);
+}
+
+function renderPalette() {
+  const nt = document.getElementById('node-types');
+  nt.innerHTML = '';
+  const categories = [...new Set(NODE_DEFS.map(d => d.category))];
+  categories.forEach(cat => {
+    const h = document.createElement('h3');
+    h.textContent = cat;
+    nt.appendChild(h);
+    NODE_DEFS.filter(d => d.category === cat).forEach(def => {
+      const el = document.createElement('div');
+      el.className = 'palette-item';
+      el.style.borderLeftColor = colorFor(def.type);
+      const warn = def.type === 'function'
+        ? ' <span title="⚠ Ejecuta código SIN sandbox">⚠</span>'
+        : '';
+      el.innerHTML = def.name + warn + '<small>' + def.type + '</small>';
+      el.draggable = true;
+      el.ondragstart = e => e.dataTransfer.setData('text/plain', JSON.stringify({ type: def.type }));
+      nt.appendChild(el);
+    });
+  });
+}
+
+function colorFor(type) {
+  const palette = ['#7aa2f7', '#bb9af7', '#7dcfff', '#73daca', '#b4f9f8', '#9ece6a', '#e0af68', '#f7768e'];
+  let hash = 0;
+  for (let i = 0; i < type.length; i++) hash = (hash * 31 + type.charCodeAt(i)) >>> 0;
+  return palette[hash % palette.length];
+}
+
+function addNode(type, x, y, presetConfig) {
+  const def = defOf(type);
+  if (!def) { logLine('❌ tipo de nodo desconocido: ' + type, true); return null; }
+  const config = {};
+  Object.entries(def.defaults || {}).forEach(([key, cfg]) => {
+    config[key] = presetConfig && presetConfig[key] !== undefined ? presetConfig[key] : cfg.value;
+  });
+  const node = {
+    id: (presetConfig && presetConfig.__id) || uid('n'),
+    type,
+    name: (presetConfig && presetConfig.__name) || '',
+    position: { x: Math.max(0, x), y: Math.max(0, y) },
+    config,
+    notes: (presetConfig && presetConfig.__notes) || '',
+  };
+  nodes.push(node);
+  selectedNodeId = node.id;
+  renderCanvas();
+  renderConfig();
+  return node;
+}
+
+function deleteNode(id) {
+  nodes = nodes.filter(n => n.id !== id);
+  edges = edges.filter(e => e.from !== id && e.to !== id);
+  if (selectedNodeId === id) selectedNodeId = null;
+  renderCanvas();
+  renderConfig();
+}
+
+function renderCanvas() {
+  const wrap = document.getElementById('canvas-wrap');
+  const canvas = document.getElementById('canvas');
+  canvas.querySelectorAll('.node').forEach(n => n.remove());
+
+  wrap.ondragover = e => e.preventDefault();
+  wrap.ondrop = e => {
+    e.preventDefault();
+    const data = JSON.parse(e.dataTransfer.getData('text/plain') || '{}');
+    if (!data.type) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left - 70;
+    const y = e.clientY - rect.top - 20;
+    addNode(data.type, x, y);
+    if (data.type === 'function') {
+      logLine('⚠ El nodo "function" ejecuta código SIN sandbox (new Function).', true);
+    }
+  };
+
+  nodes.forEach(node => {
+    const def = defOf(node.type) || { name: node.type, inputs: 1, outputs: 1 };
+    const color = colorFor(node.type);
+    const el = document.createElement('div');
+    el.className = 'node' + (node.id === selectedNodeId ? ' selected' : '');
+    el.id = 'node-' + node.id;
+    el.style.left = node.position.x + 'px';
+    el.style.top = node.position.y + 'px';
+    el.style.borderLeftColor = color;
+
+    let portsHtml = '';
+    if ((def.inputs ?? 1) > 0) {
+      portsHtml += '<div class="port in" data-node="' + node.id + '" data-role="in"></div>';
+    }
+    const outputs = outputCountFor(node, def);
+    const PORT_GAP_PX = 28;
+    if (outputs > 1) {
+      const neededHeight = outputs * PORT_GAP_PX + 14;
+      el.style.minHeight = neededHeight + 'px';
+    }
+    for (let i = 0; i < outputs; i++) {
+      let topStyle;
+      if (outputs === 1) {
+        topStyle = 'top:50%';
+      } else {
+        const totalSpan = (outputs - 1) * PORT_GAP_PX;
+        const offset = -totalSpan / 2 + i * PORT_GAP_PX;
+        topStyle = 'top:calc(50% + ' + offset + 'px)';
+      }
+      portsHtml += '<div class="port out" style="' + topStyle + '" data-node="' + node.id + '" data-output="' + i + '" title="salida ' + (i + 1) + '"></div>';
+      if (outputs > 1) {
+        portsHtml += '<div class="port-label" style="' + topStyle + '">' + (i + 1) + '</div>';
+      }
+    }
+
+    const displayName = node.name || def.name;
+    const unsandboxed = node.type === 'function';
+    el.title = def.name + (node.name ? ' — ' + node.name : '') + (unsandboxed ? ' — ⚠ SIN sandbox' : '') + ' (doble clic para configurar)';
+    
+    let entryBtn = '';
+    if (node.type === 'inject' || node.type === 'http-in') {
+      entryBtn = '<button class="inject-btn" title="Disparar nodo" onclick="event.stopPropagation(); triggerEntryNode(\'' + node.id + '\')">▶</button>';
+    }
+    const warnBadge = unsandboxed ? ' <span title="⚠ Ejecuta código SIN sandbox">⚠</span>' : '';
+    el.innerHTML = '<div class="name-label">' + displayName + warnBadge + '</div>' + entryBtn + portsHtml;
+
+    el.ondblclick = e => {
+      if (e.target.classList.contains('port')) return;
+      openNodeEditor(node.id);
+    };
+
+    el.onmousedown = e => {
+      if (e.target.classList.contains('port') || e.target.classList.contains('inject-btn')) return;
+      selectedNodeId = node.id;
+      renderConfig();
+      document.querySelectorAll('.node').forEach(n => n.classList.remove('selected'));
+      el.classList.add('selected');
+
+      const startX = e.clientX, startY = e.clientY;
+      const ox = node.position.x, oy = node.position.y;
+      function move(ev) {
+        node.position.x = ox + (ev.clientX - startX);
+        node.position.y = oy + (ev.clientY - startY);
+        el.style.left = node.position.x + 'px';
+        el.style.top = node.position.y + 'px';
+        drawWires();
+      }
+      function up() {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+      }
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    };
+
+    canvas.appendChild(el);
+
+    el.querySelectorAll('.port.out').forEach(outPort => {
+      outPort.onmousedown = e => {
+        e.stopPropagation();
+        const outputIndex = Number(outPort.dataset.output);
+        const rect = canvas.getBoundingClientRect();
+        wireDraft = { fromNode: node.id, fromOutput: outputIndex, x2: e.clientX - rect.left, y2: e.clientY - rect.top };
+        function move(ev) {
+          wireDraft.x2 = ev.clientX - rect.left;
+          wireDraft.y2 = ev.clientY - rect.top;
+          drawWires();
+        }
+        function up(ev) {
+          document.removeEventListener('mousemove', move);
+          document.removeEventListener('mouseup', up);
+          const target = document.elementFromPoint(ev.clientX, ev.clientY);
+          if (target && target.classList.contains('port') && target.dataset.role === 'in') {
+            const toNode = target.dataset.node;
+            if (toNode !== node.id) {
+              edges.push({ id: uid('e'), from: node.id, fromOutput: outputIndex, to: toNode });
+            }
+          }
+          wireDraft = null;
+          drawWires();
+        }
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+      };
+    });
+  });
+
+  drawWires();
+  updateDirtyIndicator();
+}
+
+function selectEdge(id) {
+  selectedEdgeId = id;
+  drawWires();
+}
+
+function deleteEdge(id) {
+  edges = edges.filter(e => e.id !== id);
+  selectedEdgeId = null;
+  drawWires();
+  renderConfig();
+  updateDirtyIndicator();
+}
+
+function deselectEdge() {
+  if (!selectedEdgeId) return;
+  selectedEdgeId = null;
+  drawWires();
+}
+
+function portCenter(nodeId, role, outputIndex) {
+  const node = nodes.find(n => n.id === nodeId);
+  if (!node) return { x: 0, y: 0 };
+  const el = document.getElementById('node-' + nodeId);
+  const width = el ? el.offsetWidth : 160;
+  const height = el ? el.offsetHeight : 50;
+  if (role === 'in') {
+    return { x: node.position.x, y: node.position.y + height / 2 };
+  }
+  const portEl = el ? el.querySelector('.port.out[data-output="' + outputIndex + '"]') : null;
+  const relY = portEl ? portEl.offsetTop + portEl.offsetHeight / 2 : height / 2;
+  return { x: node.position.x + width, y: node.position.y + relY };
+}
+
+function drawWires(highlightIds) {
+  const svg = document.getElementById('wires');
+  svg.innerHTML = '';
+  edges.forEach(edge => {
+    const p1 = portCenter(edge.from, 'out', edge.fromOutput || 0);
+    const p2 = portCenter(edge.to, 'in');
+    const mid = (p1.x + p2.x) / 2;
+    const midY = (p1.y + p2.y) / 2;
+    const d = 'M ' + p1.x + ' ' + p1.y + ' C ' + mid + ' ' + p1.y + ', ' + mid + ' ' + p2.y + ', ' + p2.x + ' ' + p2.y;
+    const active = highlightIds && highlightIds.includes(edge.id);
+    const selected = edge.id === selectedEdgeId;
+
+    const hit = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    hit.setAttribute('d', d);
+    hit.setAttribute('stroke', 'transparent');
+    hit.setAttribute('stroke-width', '14');
+    hit.setAttribute('fill', 'none');
+    hit.style.cursor = 'pointer';
+    hit.style.pointerEvents = 'stroke';
+    hit.addEventListener('click', (e) => { e.stopPropagation(); selectEdge(edge.id); });
+    svg.appendChild(hit);
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', d);
+    path.setAttribute('stroke', selected ? '#f7768e' : (active ? 'var(--wire-active)' : 'var(--wire)'));
+    path.setAttribute('stroke-width', selected ? '3' : (active ? '2.5' : '1.8'));
+    path.setAttribute('fill', 'none');
+    path.style.pointerEvents = 'none';
+    svg.appendChild(path);
+
+    if (selected) {
+      const delBtn = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      delBtn.style.cursor = 'pointer';
+      delBtn.style.pointerEvents = 'auto';
+      delBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteEdge(edge.id); });
+      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      circle.setAttribute('cx', mid);
+      circle.setAttribute('cy', midY);
+      circle.setAttribute('r', '10');
+      circle.setAttribute('fill', '#f7768e');
+      const x1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      x1.setAttribute('x1', mid - 3.5); x1.setAttribute('y1', midY - 3.5);
+      x1.setAttribute('x2', mid + 3.5); x1.setAttribute('y2', midY + 3.5);
+      x1.setAttribute('stroke', '#fff'); x1.setAttribute('stroke-width', '2');
+      const x2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      x2.setAttribute('x1', mid + 3.5); x2.setAttribute('y1', midY - 3.5);
+      x2.setAttribute('x2', mid - 3.5); x2.setAttribute('y2', midY + 3.5);
+      x2.setAttribute('stroke', '#fff'); x2.setAttribute('stroke-width', '2');
+      delBtn.appendChild(circle);
+      delBtn.appendChild(x1);
+      delBtn.appendChild(x2);
+      svg.appendChild(delBtn);
+    }
+  });
+  if (wireDraft) {
+    const p1 = portCenter(wireDraft.fromNode, 'out', wireDraft.fromOutput);
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M ' + p1.x + ' ' + p1.y + ' L ' + wireDraft.x2 + ' ' + wireDraft.y2);
+    path.setAttribute('stroke', 'var(--accent)');
+    path.setAttribute('stroke-width', '2');
+    path.setAttribute('stroke-dasharray', '4 3');
+    path.setAttribute('fill', 'none');
+    svg.appendChild(path);
+  }
+}
+
+function renderConfig() {
+  const body = document.getElementById('config-body');
+  if (!selectedNodeId) {
+    body.innerHTML = '<p class="empty-hint">' + nodes.length + ' nodo(s), ' + edges.length + ' conexión(es). Haz clic en uno para ver su resumen.</p>';
+    return;
+  }
+  const node = nodes.find(n => n.id === selectedNodeId);
+  if (!node) { body.innerHTML = ''; return; }
+  const def = defOf(node.type) || { name: node.type, defaults: {} };
+  const fields = Object.entries(def.defaults || {})
+    .map(([k, cfg]) => '<div style="margin-bottom:4px;"><b>' + cfg.label + ':</b> ' + (node.config[k] ?? '') + '</div>')
+    .join('');
+  body.innerHTML =
+    '<div style="font-weight:600;margin-bottom:2px;font-size:14px;">' + (node.name || def.name) + '</div>' +
+    '<div style="margin-bottom:12px;color:var(--muted);font-size:11px;text-transform:uppercase;font-family:monospace;">' + def.type + '</div>' +
+    fields +
+    '<button style="margin-top:16px;width:100%;color:var(--err);border-color:rgba(247,118,142,0.3);" onclick="deleteNode(\'' + node.id + '\')">Eliminar nodo</button>' +
+    '<p class="palette-hint" style="margin-top:12px">Doble clic sobre el nodo en el canvas para editarlo.</p>';
+}
+
+function validateNodeId(value, nodeId) {
+  if (!value) return 'El ID no puede estar vacío';
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(value)) return 'Solo letras, números, guiones y guiones bajos (debe empezar con letra)';
+  if (nodes.some(n => n.id === value && n.id !== nodeId)) return 'Ya existe un nodo con este ID';
+  return '';
+}
+
+// El HTML del modal llama a estas dos desde oninput (el input de nombre y el
+// textarea de notas), pero en esta copia del editor nunca se definieron: el
+// rediseño visual las perdió, así que escribir el nombre o las notas de un nodo
+// lanzaba ReferenceError y no guardaba nada. Las dos copias desplegadas
+// (data-plane y tenant-portal) sí las tienen — esta es la implementación de
+// ahí, sin cambios.
+function modalUpdateName(value) {
+  const node = nodes.find(n => n.id === modalNodeId);
+  if (!node) return;
+  node.name = value;
+  const def = defOf(node.type);
+  document.getElementById('modal-title').textContent = value || (def ? def.name : node.type);
+  renderCanvas();
+}
+
+function modalUpdateNotes(value) {
+  const node = nodes.find(n => n.id === modalNodeId);
+  if (!node) return;
+  node.notes = value;
+}
+
+function modalUpdateId(value) {
+  const node = nodes.find(n => n.id === modalNodeId);
+  if (!node) return;
+  const error = validateNodeId(value, node.id);
+  const input = document.getElementById('node-id-input');
+  const message = document.getElementById('node-id-error');
+  if (input) input.classList.toggle('field-error', Boolean(error));
+  if (message) message.textContent = error;
+  if (error) return;
+  const oldId = node.id;
+  node.id = value;
+  edges.forEach(edge => {
+    if (edge.from === oldId) edge.from = value;
+    if (edge.to === oldId) edge.to = value;
+  });
+  if (selectedNodeId === oldId) selectedNodeId = value;
+  if (modalNodeId === oldId) modalNodeId = value;
+  renderCanvas();
+  renderConfig();
+}
+
+function renderNodeIdField(node) {
+  const error = validateNodeId(node.id, node.id);
+  return '<div class="floating-group">' +
+    '<input id="node-id-input" class="floating-input ' + (error ? 'field-error' : '') + '" type="text" value="' + node.id + '" placeholder=" " oninput="modalUpdateId(this.value)">' +
+    '<label for="node-id-input" class="floating-label">ID Único del Nodo</label>' +
+    '<div id="node-id-error" class="field-error-message">' + error + '</div></div>';
+}
+
+function renderFieldHtml(key, cfg, node) {
+  const val = node.config[key] ?? '';
+  const showIfAttr = cfg.showIf ? ' data-showif="' + JSON.stringify(cfg.showIf).replace(/"/g, '&quot;') + '"' : '';
+
+  if (cfg.type === 'keyvalue') {
+    let obj = {};
+    try { obj = val ? JSON.parse(val) : {}; } catch {}
+    modalKeyValueState[key] = Object.entries(obj).map(([k, v]) => ({ key: k, value: v }));
+    return '<div' + showIfAttr + ' style="margin-bottom:16px;"><label style="font-size:11px;color:var(--muted);font-weight:600;">' + cfg.label + '</label><div id="kv-' + key + '" class="kv-editor"></div>' +
+      '<button type="button" class="kv-add-btn" onclick="addKvRow(\'' + key + '\')">+ Agregar Par</button></div>';
+  }
+  if (cfg.type === 'rules') {
+    let arr = [];
+    try { arr = val ? JSON.parse(val) : []; } catch {}
+    modalRulesState[key] = arr.length ? arr : [{ property: 'payload', operator: '==', value: '' }];
+    return '<div' + showIfAttr + ' style="margin-bottom:16px;"><label style="font-size:11px;color:var(--muted);font-weight:600;">' + cfg.label + '</label><div id="rules-' + key + '" class="rules-editor"></div>' +
+      '<button type="button" class="kv-add-btn" onclick="addRuleRow(\'' + key + '\')">+ Agregar Regla</button></div>';
+  }
+  if (cfg.type === 'configRef') {
+    return '<div' + showIfAttr + ' class="floating-group">' +
+      '<select id="configref-' + key + '" class="floating-select ' + (val ? 'has-value' : '') + '" onchange="this.classList.toggle(\'has-value\', Boolean(this.value)); modalUpdate(\'' + key + '\', this.value)"><option value="">Cargando…</option></select>' +
+      '<label class="floating-label">' + cfg.label + '</label>' +
+      '<button type="button" class="kv-add-btn" onclick="openConnectionsPanel(\'' + (cfg.configType || '') + '\')">+ Nueva Conexión</button></div>';
+  }
+  if (cfg.type === 'textarea' && cfg.code) {
+    const versionPickerHtml = key === 'columnsSpec'
+      ? '<div class="flexdb-version-row" style="margin-bottom:8px; display:flex; gap:8px;">' +
+          '<select id="flexdb-version-select" class="floating-select" style="flex:1;" onchange="applyFlexdbVersionToColumnsSpec(this.value)"><option value="">Versión actual (sin cargar historial)</option></select>' +
+          '<button type="button" class="kv-add-btn" style="margin:0;" onclick="refreshFlexdbVersionSelect()">↻ Cargar versiones</button>' +
+        '</div>'
+      : '';
+    return '<div' + showIfAttr + ' style="margin-bottom:16px;"><label style="font-size:11px;color:var(--muted);font-weight:600;">' + cfg.label + '</label>' + versionPickerHtml + '<div class="monaco-box" id="monaco-' + key + '"></div></div>';
+  }
+  if (cfg.type === 'textarea') {
+    return '<div' + showIfAttr + ' class="floating-group">' +
+      '<textarea id="field-' + key + '" class="floating-textarea" placeholder=" " oninput="modalUpdate(\'' + key + '\', this.value)">' + val + '</textarea>' +
+      '<label for="field-' + key + '" class="floating-label">' + cfg.label + '</label></div>';
+  }
+  if (cfg.type === 'select') {
+    const opts = (cfg.options || []).map(o => '<option value="' + o + '"' + (val === o ? ' selected' : '') + '>' + o + '</option>').join('');
+    return '<div' + showIfAttr + ' class="floating-group">' +
+      '<select id="field-' + key + '" class="floating-select has-value" onchange="modalUpdate(\'' + key + '\', this.value); applyFieldVisibility();">' + opts + '</select>' +
+      '<label for="field-' + key + '" class="floating-label">' + cfg.label + '</label></div>';
+  }
+  const inputType = cfg.type === 'number' ? 'number' : 'text';
+  return '<div' + showIfAttr + ' class="floating-group">' +
+    '<input id="field-' + key + '" class="floating-input" type="' + inputType + '" value="' + val + '" placeholder=" " oninput="modalUpdate(\'' + key + '\', this.value)">' +
+    '<label for="field-' + key + '" class="floating-label">' + cfg.label + '</label></div>';
+}
+
+function switchNodeFieldTab(tab) {
+  document.querySelectorAll('.node-tab').forEach(el => el.classList.toggle('active', el.dataset.nodetab === tab));
+  document.querySelectorAll('.node-tab-panel').forEach(el => el.classList.toggle('active', el.id === 'nodetab-panel-' + tab));
+}
+
+function openNodeEditor(nodeId) {
+  const node = nodes.find(n => n.id === nodeId);
+  const def = defOf(node.type);
+  if (!node || !def) return;
+  modalNodeId = nodeId;
+  selectedNodeId = nodeId;
+
+  document.getElementById('modal-title').textContent = node.name || def.name;
+  document.getElementById('modal-subtitle').textContent = 'tipo: ' + node.type;
+  document.getElementById('modal-routing').textContent = buildRoutingInfo(node);
+
+  const nameFieldHtml =
+    '<div class="floating-group">' +
+    '<input id="node-name-input" class="floating-input" type="text" value="' + (node.name || '') + '" placeholder=" " oninput="modalUpdateName(this.value)">' +
+    '<label for="node-name-input" class="floating-label">Nombre del Nodo (Opcional)</label></div>';
+
+  modalKeyValueState = {};
+  modalRulesState = {};
+  const fieldsEl = document.getElementById('modal-fields');
+
+  let fieldsBodyHtml;
+  if (node.type === 'function') {
+    fieldsBodyHtml = renderFunctionFields();
+  } else {
+    const entries = Object.entries(def.defaults || {});
+    const hasTabs = entries.some(([, cfg]) => cfg.tab);
+    if (hasTabs) {
+      const order = [];
+      const groups = {};
+      entries.forEach(([key, cfg]) => {
+        const tabName = cfg.tab || 'General';
+        if (!groups[tabName]) { groups[tabName] = []; order.push(tabName); }
+        groups[tabName].push([key, cfg]);
+      });
+      fieldsBodyHtml =
+        '<div class="node-tabs">' +
+        order.map((t, i) => '<button type="button" class="node-tab' + (i === 0 ? ' active' : '') + '" data-nodetab="' + t + '" onclick="switchNodeFieldTab(\'' + t + '\')">' + t + '</button>').join('') +
+        '</div>' +
+        order.map((t, i) => '<div class="node-tab-panel' + (i === 0 ? ' active' : '') + '" id="nodetab-panel-' + t + '">' +
+          groups[t].map(([key, cfg]) => renderFieldHtml(key, cfg, node)).join('') +
+          '</div>').join('');
+    } else {
+      fieldsBodyHtml = entries.map(([key, cfg]) => renderFieldHtml(key, cfg, node)).join('');
+    }
+  }
+  fieldsEl.innerHTML = renderNodeIdField(node) + nameFieldHtml + fieldsBodyHtml;
+
+  applyFieldVisibility();
+
+  Object.entries(def.defaults || {}).forEach(([key, cfg]) => {
+    if (cfg.type === 'keyvalue') renderKvRows(key);
+    if (cfg.type === 'rules') renderRulesRows(key);
+    if (cfg.type === 'configRef') mountConfigRefField(key, cfg, node);
+  });
+
+  disposeMonacoEditors();
+  if (node.type === 'function') {
+    mountFnEditor('onStart', def, node);
+  } else {
+    const codeFields = Object.entries(def.defaults || {}).filter(([, cfg]) => cfg.code);
+    if (codeFields.length) {
+      loadMonaco().then((monaco) => {
+        if (modalNodeId !== nodeId) return;
+        codeFields.forEach(([key, cfg]) => {
+          const container = document.getElementById('monaco-' + key);
+          if (!container) return;
+          const editor = monaco.editor.create(container, {
+            value: node.config[key] ?? cfg.value ?? '',
+            language: 'javascript',
+            theme: 'vs-dark',
+            minimap: { enabled: false },
+            automaticLayout: true,
+            fontSize: 13,
+            scrollBeyondLastLine: false,
+          });
+          editor.onDidChangeModelContent(() => modalUpdate(key, editor.getValue()));
+          activeMonacoEditors[key] = editor;
+        });
+      });
+    }
+  }
+
+  const notesEl = document.getElementById('modal-notes');
+  if (notesEl) notesEl.value = node.notes || '';
+  switchModalTab('props');
+
+  const t = document.getElementById('modal-test-result');
+  if (t) {
+    t.classList.remove('show', 'error');
+    t.textContent = '';
+  }
+
+  document.getElementById('modal-overlay').classList.add('open');
+  renderCanvas();
+}
+
+function buildRoutingInfo(node) {
+  const incoming = edges.filter(e => e.to === node.id).length;
+  const outgoing = edges.filter(e => e.from === node.id).length;
+  let txt = '';
+  if (incoming) txt += incoming + ' conexión entrante. ';
+  if (outgoing) txt += outgoing + ' conexión saliente. ';
+  if (!txt) txt = 'Sin conexiones. ';
+  txt += 'Esta acción se ejecuta dentro del flujo "' + flowName + '".';
+  return txt;
+}
+
+function switchModalTab(tab) {
+  document.querySelectorAll('.modal-tab').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+  document.querySelectorAll('.modal-tab-panel').forEach(el => el.classList.toggle('active', el.id === 'tab-' + tab));
+}
+
+function closeNodeEditor() {
+  document.getElementById('modal-overlay').classList.remove('open');
+  modalNodeId = null;
+  disposeMonacoEditors();
+  renderConfig();
+  if (isFlowDirty() && typeof Swal !== 'undefined') {
+    Swal.fire({
+      icon: 'info',
+      title: 'Falta guardar en servidor',
+      text: 'Recuerda hacer clic en "Guardar" en la barra superior.',
+      toast: true,
+      position: 'bottom-end',
+      showConfirmButton: false,
+      timer: 2500,
+      background: 'var(--panel)',
+      color: 'var(--text)'
+    });
+  }
+}
+
+function renderFunctionFields() {
+  return (
+    '<div class="fn-tabs">' +
+      '<button type="button" class="fn-tab active" data-fn="onStart" onclick="switchFnTab(\'onStart\')">On Start</button>' +
+      '<button type="button" class="fn-tab" data-fn="code" onclick="switchFnTab(\'code\')">On Message</button>' +
+      '<button type="button" class="fn-tab" data-fn="onStop" onclick="switchFnTab(\'onStop\')">On Stop</button>' +
+    '</div>' +
+    '<div class="fn-tab-panel active" id="fn-panel-onStart"><div class="monaco-box" id="monaco-onStart"></div></div>' +
+    '<div class="fn-tab-panel" id="fn-panel-code"><div class="monaco-box" id="monaco-code"></div></div>' +
+    '<div class="fn-tab-panel" id="fn-panel-onStop"><div class="monaco-box" id="monaco-onStop"></div></div>'
+  );
+}
+
+function switchFnTab(tab) {
+  document.querySelectorAll('.fn-tab').forEach(el => el.classList.toggle('active', el.dataset.fn === tab));
+  document.querySelectorAll('.fn-tab-panel').forEach(el => el.classList.toggle('active', el.id === 'fn-panel-' + tab));
+  const node = nodes.find(n => n.id === modalNodeId);
+  const def = node && defOf(node.type);
+  if (node && def) mountFnEditor(tab, def, node);
+  const editor = activeMonacoEditors[tab];
+  if (editor) setTimeout(() => editor.layout(), 0);
+}
+
+function mountFnEditor(key, def, node) {
+  if (activeMonacoEditors[key]) return;
+  const cfg = def.defaults[key];
+  if (!cfg) return;
+  loadMonaco().then((monaco) => {
+    if (modalNodeId !== node.id) return;
+    if (activeMonacoEditors[key]) return;
+    const container = document.getElementById('monaco-' + key);
+    if (!container) return;
+    const editor = monaco.editor.create(container, {
+      value: node.config[key] ?? cfg.value ?? '',
+      language: 'javascript',
+      theme: 'vs-dark',
+      minimap: { enabled: false },
+      automaticLayout: true,
+      fontSize: 13,
+      scrollBeyondLastLine: false,
+    });
+    editor.onDidChangeModelContent(() => modalUpdate(key, editor.getValue()));
+    activeMonacoEditors[key] = editor;
+  });
+}
+
+let monacoLoadPromise = null;
+let activeMonacoEditors = {};
+
+function loadMonaco() {
+  if (monacoLoadPromise) return monacoLoadPromise;
+  const BASE = 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs';
+  monacoLoadPromise = new Promise((resolve) => {
+    const script = document.createElement('script');
+    script.src = BASE + '/loader.js';
+    script.onload = () => {
+      window.require.config({ paths: { vs: BASE } });
+      window.require(['vs/editor/editor.main'], () => {
+        monaco.languages.typescript.javascriptDefaults.addExtraLib(
+          `declare const msg: { payload: any; topic?: string; [key: string]: any };
+           declare const ctx: { env: Record<string, any>; flow: Record<string, any>; log: (...args: any[]) => void };
+           declare const context: Record<string, any>;`,
+          'flow-engine-globals.d.ts'
+        );
+        monaco.languages.typescript.javascriptDefaults.setCompilerOptions({
+          allowNonTsExtensions: true,
+          allowJs: true,
+          checkJs: false,
+          target: monaco.languages.typescript.ScriptTarget.ES2020,
+        });
+        resolve(window.monaco);
+      });
+    };
+    document.head.appendChild(script);
+  });
+  return monacoLoadPromise;
+}
+
+function disposeMonacoEditors() {
+  Object.values(activeMonacoEditors).forEach((ed) => ed.dispose());
+  activeMonacoEditors = {};
+}
+
+function applyFieldVisibility() {
+  const node = nodes.find(n => n.id === modalNodeId);
+  if (!node) return;
+  document.querySelectorAll('#modal-fields [data-showif]').forEach(el => {
+    let cond;
+    try { cond = JSON.parse(el.dataset.showif); } catch { return; }
+    const matches = Object.entries(cond).every(([field, allowed]) => allowed.includes(node.config[field]));
+    el.style.display = matches ? '' : 'none';
+  });
+}
+
+function modalUpdate(key, value) {
+  const node = nodes.find(n => n.id === modalNodeId);
+  if (!node) return;
+  node.config[key] = value;
+  renderCanvas();
+}
+
+function renderKvRows(fieldKey) {
+  const container = document.getElementById('kv-' + fieldKey);
+  if (!container) return;
+  const rows = modalKeyValueState[fieldKey] || [];
+  container.innerHTML = rows.length
+    ? rows.map((row, i) =>
+        '<div class="kv-row">' +
+          '<div class="floating-group">' +
+            '<input type="text" class="floating-input" placeholder=" " value="' + (row.key || '') + '" oninput="updateKvRow(\'' + fieldKey + '\', ' + i + ', \'key\', this.value)">' +
+            '<label class="floating-label">Clave / Header</label>' +
+          '</div>' +
+          '<div class="floating-group">' +
+            '<input type="text" class="floating-input" placeholder=" " value="' + (row.value || '') + '" oninput="updateKvRow(\'' + fieldKey + '\', ' + i + ', \'value\', this.value)">' +
+            '<label class="floating-label">Valor</label>' +
+          '</div>' +
+          '<button type="button" onclick="removeKvRow(\'' + fieldKey + '\', ' + i + ')">✕</button>' +
+        '</div>'
+      ).join('')
+    : '<p class="empty-hint" style="margin:4px 0">Sin elementos todavía — clic en "+ Agregar".</p>';
+}
+
+function addKvRow(fieldKey) {
+  modalKeyValueState[fieldKey] = modalKeyValueState[fieldKey] || [];
+  modalKeyValueState[fieldKey].push({ key: '', value: '' });
+  renderKvRows(fieldKey);
+}
+
+function removeKvRow(fieldKey, index) {
+  modalKeyValueState[fieldKey].splice(index, 1);
+  renderKvRows(fieldKey);
+  syncKvToConfig(fieldKey);
+}
+
+function updateKvRow(fieldKey, index, which, value) {
+  modalKeyValueState[fieldKey][index][which] = value;
+  syncKvToConfig(fieldKey);
+}
+
+function syncKvToConfig(fieldKey) {
+  const obj = {};
+  (modalKeyValueState[fieldKey] || []).forEach(r => { if (r.key) obj[r.key] = r.value; });
+  modalUpdate(fieldKey, JSON.stringify(obj));
+}
+
+const SWITCH_OPERATORS = ['==', '!=', '>', '>=', '<', '<=', 'contains'];
+
+function renderRulesRows(fieldKey) {
+  const container = document.getElementById('rules-' + fieldKey);
+  if (!container) return;
+  const rows = modalRulesState[fieldKey] || [];
+  container.innerHTML = rows.map((r, i) =>
+    '<div class="rule-row">' +
+      '<span class="rule-out">out ' + (i + 1) + '</span>' +
+      '<div class="floating-group">' +
+        '<input type="text" class="floating-input" placeholder=" " value="' + (r.property || '') + '" oninput="updateRuleRow(\'' + fieldKey + '\', ' + i + ', \'property\', this.value)">' +
+        '<label class="floating-label">Propiedad</label>' +
+      '</div>' +
+      '<div class="floating-group" style="max-width:100px;">' +
+        '<select class="floating-select has-value" onchange="updateRuleRow(\'' + fieldKey + '\', ' + i + ', \'operator\', this.value)">' +
+          SWITCH_OPERATORS.map(o => '<option value="' + o + '"' + (r.operator === o ? ' selected' : '') + '>' + o + '</option>').join('') +
+        '</select>' +
+        '<label class="floating-label">Op</label>' +
+      '</div>' +
+      '<div class="floating-group">' +
+        '<input type="text" class="floating-input" placeholder=" " value="' + (r.value || '') + '" oninput="updateRuleRow(\'' + fieldKey + '\', ' + i + ', \'value\', this.value)">' +
+        '<label class="floating-label">Valor</label>' +
+      '</div>' +
+      '<button type="button" class="kv-row button" style="padding: 10px 12px; background: rgba(247, 118, 142, 0.1); border: 1px solid rgba(247, 118, 142, 0.3); color: var(--err); border-radius: var(--radius-sm); cursor: pointer;" onclick="removeRuleRow(\'' + fieldKey + '\', ' + i + ')">✕</button>' +
+    '</div>'
+  ).join('');
+}
+
+function addRuleRow(fieldKey) {
+  modalRulesState[fieldKey] = modalRulesState[fieldKey] || [];
+  modalRulesState[fieldKey].push({ property: 'payload', operator: '==', value: '' });
+  renderRulesRows(fieldKey);
+  syncRulesToConfig(fieldKey);
+}
+
+function removeRuleRow(fieldKey, index) {
+  if ((modalRulesState[fieldKey] || []).length <= 1) return;
+  modalRulesState[fieldKey].splice(index, 1);
+  renderRulesRows(fieldKey);
+  syncRulesToConfig(fieldKey);
+}
+
+function updateRuleRow(fieldKey, index, which, value) {
+  modalRulesState[fieldKey][index][which] = value;
+  syncRulesToConfig(fieldKey);
+}
+
+async function mountConfigRefField(key, cfg, node) {
+  const sel = document.getElementById('configref-' + key);
+  if (!sel) return;
+  const list = await apiFetch('/_editor/api/config-nodes?type=' + encodeURIComponent(cfg.configType || ''));
+  if (modalNodeId !== node.id) return;
+  const items = Array.isArray(list) ? list : [];
+  const current = node.config[key] || '';
+  sel.innerHTML = '<option value="">— ninguna (usar override manual / global) —</option>' +
+    items.map(c => '<option value="' + c.id + '"' + (c.id === current ? ' selected' : '') + '>' + c.name + '</option>').join('');
+}
+
+// --- Panel de Variables (global context + flow context del flujo actual) ---
+
+let varsState = { global: [], flow: [] };
+
+async function openVarsPanel() {
+  document.getElementById('vars-flow-name').textContent = flowName;
+  const data = await apiFetch('/_editor/api/context');
+  varsState.global = Object.entries(data.global || {}).map(([key, value]) => ({ key, value }));
+  varsState.flow = Object.entries((data.flows || {})[flowName] || {}).map(([key, value]) => ({ key, value }));
+  renderVarRows('global');
+  renderVarRows('flow');
+  document.getElementById('vars-overlay').classList.add('open');
+}
+
+function closeVarsPanel() {
+  document.getElementById('vars-overlay').classList.remove('open');
+}
+
+function renderVarRows(scope) {
+  const container = document.getElementById('vars-' + scope);
+  const rows = varsState[scope] || [];
+  container.innerHTML = rows.length
+    ? rows.map((row, i) =>
+        '<div class="kv-row">' +
+          '<div class="floating-group">' +
+            '<input type="text" class="floating-input" placeholder=" " value="' + (row.key || '') + '" oninput="updateVarRow(\'' + scope + '\', ' + i + ', \'key\', this.value)">' +
+            '<label class="floating-label">Nombre variable</label>' +
+          '</div>' +
+          '<div class="floating-group">' +
+            '<input type="text" class="floating-input" placeholder=" " value="' + (row.value ?? '') + '" oninput="updateVarRow(\'' + scope + '\', ' + i + ', \'value\', this.value)">' +
+            '<label class="floating-label">Valor</label>' +
+          '</div>' +
+          '<button type="button" onclick="removeVarRow(\'' + scope + '\', ' + i + ')">✕</button>' +
+        '</div>'
+      ).join('')
+    : '<p class="empty-hint" style="margin:2px 0">Sin variables todavía.</p>';
+}
+
+function addVarRow(scope) {
+  varsState[scope] = varsState[scope] || [];
+  varsState[scope].push({ key: '', value: '' });
+  renderVarRows(scope);
+}
+
+function removeVarRow(scope, index) {
+  varsState[scope].splice(index, 1);
+  renderVarRows(scope);
+}
+
+function updateVarRow(scope, index, which, value) {
+  varsState[scope][index][which] = value;
+}
+
+async function saveVarsPanel() {
+  const toObject = (rows) => {
+    const obj = {};
+    (rows || []).forEach((r) => { if (r.key) obj[r.key] = r.value; });
+    return obj;
+  };
+  await apiFetch('/_editor/api/context/global', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value: toObject(varsState.global) }),
+  });
+  await apiFetch('/_editor/api/context/flow/' + flowName, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value: toObject(varsState.flow) }),
+  });
+  logLine('✔ variables guardadas (global + flow "' + flowName + '")');
+  closeVarsPanel();
+}
+
+// --- Panel de Conexiones (config nodes) ---
+
+let connectionsList = [];
+
+async function openConnectionsPanel(prefillType) {
+  await refreshConnectionsList();
+  cancelConnectionForm();
+  if (prefillType) newConnectionForm(prefillType);
+  document.getElementById('conn-overlay').classList.add('open');
+}
+
+function closeConnectionsPanel() {
+  document.getElementById('conn-overlay').classList.remove('open');
+  if (modalNodeId) {
+    const node = nodes.find(n => n.id === modalNodeId);
+    const def = node && defOf(node.type);
+    if (node && def) {
+      Object.entries(def.defaults || {}).forEach(([key, cfg]) => {
+        if (cfg.type === 'configRef') mountConfigRefField(key, cfg, node);
+      });
+    }
+  }
+}
+
+async function refreshConnectionsList() {
+  const res = await apiFetch('/_editor/api/config-nodes');
+  connectionsList = Array.isArray(res) ? res : [];
+  renderConnectionsList();
+}
+
+function renderConnectionsList() {
+  const el = document.getElementById('conn-list');
+  el.innerHTML = connectionsList.length
+    ? connectionsList.map(c =>
+        '<div class="conn-row">' +
+          '<span class="conn-name">' + c.name + '</span>' +
+          '<span class="conn-meta">' + c.type + (c.hasToken ? ' · token ' + c.tokenPreview : ' · sin token') + '</span>' +
+          (c.type === 'turso-connection' ? '<button onclick="openSchemaPanel(\'' + c.id + '\')">Schema</button>' : '') +
+          (c.type === 'turso-connection' ? '<button onclick="openFlexdbPanel(\'' + c.id + '\')">FlexDB</button>' : '') +
+          '<button onclick="editConnectionForm(\'' + c.id + '\')">Editar</button>' +
+          '<button onclick="deleteConnection(\'' + c.id + '\')">Borrar</button>' +
+        '</div>'
+      ).join('')
+    : '<p class="empty-hint">Sin conexiones todavía — clic en "+ Nueva conexión".</p>';
+}
+
+function newConnectionForm(prefillType) {
+  document.getElementById('conn-form').style.display = 'block';
+  document.getElementById('conn-form-id').value = '';
+  document.getElementById('conn-form-type').value = prefillType || 'turso-connection';
+  document.getElementById('conn-form-name').value = '';
+  document.getElementById('conn-form-url').value = '';
+  document.getElementById('conn-form-token').value = '';
+}
+
+function editConnectionForm(id) {
+  const c = connectionsList.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('conn-form').style.display = 'block';
+  document.getElementById('conn-form-id').value = c.id;
+  document.getElementById('conn-form-type').value = c.type;
+  document.getElementById('conn-form-name').value = c.name;
+  document.getElementById('conn-form-url').value = c.url || '';
+  document.getElementById('conn-form-token').value = '';
+}
+
+function cancelConnectionForm() {
+  document.getElementById('conn-form').style.display = 'none';
+}
+
+async function saveConnectionForm() {
+  const id = document.getElementById('conn-form-id').value || undefined;
+  const body = {
+    id,
+    type: document.getElementById('conn-form-type').value,
+    name: document.getElementById('conn-form-name').value.trim(),
+    url: document.getElementById('conn-form-url').value.trim(),
+    token: document.getElementById('conn-form-token').value,
+  };
+  if (!body.name || !body.url) { setStatus('Nombre y URL son obligatorios.', ''); return; }
+  await apiFetch('/_editor/api/config-nodes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  cancelConnectionForm();
+  await refreshConnectionsList();
+  logLine('✔ conexión "' + body.name + '" guardada');
+}
+
+async function deleteConnection(id) {
+  if (!confirm('¿Borrar esta conexión? Los nodos que la usen quedarán sin conexión asignada.')) return;
+  await apiFetch('/_editor/api/config-nodes/' + id, { method: 'DELETE' });
+  await refreshConnectionsList();
+}
+
+// --- Schema / migraciones versionadas (por Conexión) ---
+
+let schemaConnId = null;
+
+async function openSchemaPanel(connId) {
+  schemaConnId = connId;
+  const c = connectionsList.find(x => x.id === connId);
+  document.getElementById('schema-title').textContent = 'Schema — ' + (c ? c.name : connId);
+  cancelMigrationForm();
+  await refreshSchemaPanel();
+  document.getElementById('schema-overlay').classList.add('open');
+}
+
+function closeSchemaPanel() {
+  document.getElementById('schema-overlay').classList.remove('open');
+  schemaConnId = null;
+}
+
+async function refreshSchemaPanel() {
+  if (!schemaConnId) return;
+  const data = await apiFetch('/_editor/api/config-nodes/' + schemaConnId + '/migrations');
+  renderSchemaMigrationsList(data.migrations || [], data.applied || []);
+  const errEl = document.getElementById('schema-connect-error');
+  if (data.connectError) {
+    errEl.style.display = 'block';
+    errEl.textContent = '⚠️ No se pudo conectar a la base para ver qué migraciones ya se aplicaron: ' + data.connectError + ' (se muestran igual las declaradas, sin marcar).';
+  } else {
+    errEl.style.display = 'none';
+    errEl.textContent = '';
+  }
+}
+
+function renderSchemaMigrationsList(migrations, applied) {
+  const appliedSet = new Set(applied);
+  const el = document.getElementById('schema-migrations-list');
+  el.innerHTML = migrations.length
+    ? migrations.slice().sort((a, b) => a.version - b.version).map(m => {
+        const isApplied = appliedSet.has(m.version);
+        return '<div class="mig-row">' +
+          '<span class="mig-version">v' + m.version + '</span>' +
+          '<span class="mig-desc">' + (m.description || (m.sql ? m.sql.slice(0, 60) : m.table)) + '</span>' +
+          '<span class="mig-badge ' + (isApplied ? 'applied' : 'pending') + '">' + (isApplied ? 'aplicada' : 'pendiente') + '</span>' +
+        '</div>';
+      }).join('')
+    : '<p class="empty-hint">Sin migraciones todavía — clic en "+ Nueva migración".</p>';
+}
+
+function newMigrationForm() {
+  document.getElementById('schema-form').style.display = 'block';
+  document.getElementById('schema-form-description').value = '';
+  document.getElementById('schema-form-sql-input').value = '';
+}
+
+function cancelMigrationForm() {
+  document.getElementById('schema-form').style.display = 'none';
+}
+
+async function saveMigrationForm() {
+  if (!schemaConnId) return;
+  const description = document.getElementById('schema-form-description').value.trim();
+  const sql = document.getElementById('schema-form-sql-input').value.trim();
+  if (!sql) { alert('Escribe el SQL de la migración.'); return; }
+  const body = { description, sql };
+  const res = await apiFetch('/_editor/api/config-nodes/' + schemaConnId + '/migrations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (res.error) {
+    alert('Error: ' + res.error);
+    return;
+  }
+  cancelMigrationForm();
+  await refreshSchemaPanel();
+}
+
+async function applyPendingSchemaMigrations() {
+  if (!schemaConnId) return;
+  const data = await apiFetch('/_editor/api/config-nodes/' + schemaConnId + '/migrations/apply', { method: 'POST' });
+  if (data.error) { alert('Error: ' + data.error); return; }
+  const results = data.results || [];
+  if (!results.length) {
+    alert('No había migraciones pendientes.');
+  } else {
+    const ok = results.filter(r => r.ok).length;
+    const failed = results.find(r => !r.ok);
+    alert(
+      ok + ' migración(es) aplicada(s) correctamente.' +
+      (failed ? ('\n\n⚠️ Se detuvo en v' + failed.version + ': ' + failed.error) : '')
+    );
+  }
+  await refreshSchemaPanel();
+}
+
+// --- FlexDB: historial versionado de esquema (por sheet, por Conexión) ---
+
+let flexdbConnId = null;
+let flexdbSelectedSheet = null;
+
+async function openFlexdbPanel(connId) {
+  flexdbConnId = connId;
+  flexdbSelectedSheet = null;
+  const c = connectionsList.find(x => x.id === connId);
+  document.getElementById('flexdb-title').textContent = 'FlexDB — ' + (c ? c.name : connId);
+  document.getElementById('flexdb-history-list').style.display = 'none';
+  document.getElementById('flexdb-history-list').innerHTML = '';
+  await refreshFlexdbSheetsList();
+  document.getElementById('flexdb-overlay').classList.add('open');
+}
+
+function closeFlexdbPanel() {
+  document.getElementById('flexdb-overlay').classList.remove('open');
+  flexdbConnId = null;
+  flexdbSelectedSheet = null;
+}
+
+async function refreshFlexdbSheetsList() {
+  if (!flexdbConnId) return;
+  const data = await apiFetch('/_editor/api/config-nodes/' + flexdbConnId + '/flexdb-sheets');
+  const errEl = document.getElementById('flexdb-connect-error');
+  if (data.connectError) {
+    errEl.style.display = 'block';
+    errEl.textContent = '⚠️ No se pudo conectar a la base para listar los sheets: ' + data.connectError;
+  } else {
+    errEl.style.display = 'none';
+    errEl.textContent = '';
+  }
+  renderFlexdbSheetsList(data.sheets || []);
+}
+
+function renderFlexdbSheetsList(sheets) {
+  const el = document.getElementById('flexdb-sheets-list');
+  el.innerHTML = sheets.length
+    ? sheets.map(s =>
+        '<div class="flexdb-sheet-row' + (flexdbSelectedSheet === s.slug ? ' active' : '') + '" onclick="selectFlexdbSheet(\'' + s.slug + '\')">' +
+          '<span class="sheet-name">' + s.name + '</span>' +
+          '<span class="sheet-meta">' + s.slug + ' · ' + s.columns.length + ' columna(s)</span>' +
+        '</div>'
+      ).join('')
+    : '<p class="empty-hint">Esta conexión todavía no tiene ningún sheet de FlexDB.</p>';
+}
+
+async function selectFlexdbSheet(slug) {
+  flexdbSelectedSheet = slug;
+  const sheetsData = await apiFetch('/_editor/api/config-nodes/' + flexdbConnId + '/flexdb-sheets');
+  renderFlexdbSheetsList(sheetsData.sheets || []);
+  const listEl = document.getElementById('flexdb-history-list');
+  listEl.style.display = 'block';
+  listEl.innerHTML = '<p class="empty-hint">Cargando historial…</p>';
+  const data = await apiFetch('/_editor/api/config-nodes/' + flexdbConnId + '/flexdb-sheets/' + slug + '/history');
+  if (data.error) {
+    listEl.innerHTML = '<p class="empty-hint" style="color:var(--err);">Error: ' + data.error + '</p>';
+    return;
+  }
+  renderFlexdbHistory(data.history || []);
+}
+
+const FLEXDB_ACTION_LABEL = {
+  create_sheet: '🆕 Sheet creado',
+  add_column: '➕ Columna agregada',
+  remove_column: '➖ Columna quitada',
+  delete_sheet: '🗑️ Sheet borrado',
+};
+
+function renderFlexdbHistory(history) {
+  const listEl = document.getElementById('flexdb-history-list');
+  if (!history.length) {
+    listEl.innerHTML = '<p class="empty-hint">Sin historial todavía para este sheet.</p>';
+    return;
+  }
+  const rows = history.slice().reverse().map(h => {
+    const label = FLEXDB_ACTION_LABEL[h.action] || h.action;
+    let detail = '';
+    if (h.action === 'add_column' || h.action === 'remove_column') detail = ' — columna "' + h.detail.name + '"' + (h.detail.type ? ' (' + h.detail.type + ')' : '');
+    const cols = h.columns.map(c => c.name + ':' + c.type).join(', ') || '(sin columnas)';
+    return (
+      '<div class="flexdb-history-row">' +
+        '<span class="hv-version">v' + h.version + '</span>' +
+        '<div class="hv-body">' +
+          '<div class="hv-action">' + label + detail + '</div>' +
+          '<div class="hv-when">' + h.createdAt + '</div>' +
+          '<div class="hv-cols">Columnas en esta versión: ' + cols + '</div>' +
+        '</div>' +
+      '</div>'
+    );
+  }).join('');
+  listEl.innerHTML = rows;
+}
+
+function flexdbClientSlugify(name) {
+  return String(name || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+async function refreshFlexdbVersionSelect() {
+  const node = nodes.find(n => n.id === modalNodeId);
+  const sel = document.getElementById('flexdb-version-select');
+  if (!node || !sel) return;
+  const connId = node.config.connection;
+  const slug = node.config.sheetSlug || flexdbClientSlugify(node.config.sheetName);
+  if (!connId) { alert('Primero elige una Conexión (tab "Conexión").'); return; }
+  if (!slug) { alert('Primero escribe el "Nombre del sheet nuevo" (o el Slug).'); return; }
+  sel.innerHTML = '<option value="">Cargando…</option>';
+  try {
+    const data = await apiFetch('/_editor/api/config-nodes/' + connId + '/flexdb-sheets/' + slug + '/history');
+    if (data.error) throw new Error(data.error);
+    const history = data.history || [];
+    if (!history.length) {
+      sel.innerHTML = '<option value="">Sin historial — este sheet es nuevo o todavía no existe</option>';
+      return;
+    }
+    const opts = history.slice().reverse().map(h => {
+      const label = 'v' + h.version + ' · ' + h.action + ' · ' + h.createdAt;
+      return '<option value="' + h.version + '">' + label + '</option>';
+    }).join('');
+    sel.innerHTML = '<option value="">Versión actual (sin cargar historial)</option>' + opts;
+    sel.dataset.history = JSON.stringify(history);
+  } catch (err) {
+    sel.innerHTML = '<option value="">Error: ' + err.message + '</option>';
+  }
+}
+
+function applyFlexdbVersionToColumnsSpec(version) {
+  if (!version) return;
+  const sel = document.getElementById('flexdb-version-select');
+  const history = JSON.parse(sel.dataset.history || '[]');
+  const entry = history.find(h => String(h.version) === String(version));
+  if (!entry) return;
+  const json = JSON.stringify(entry.columns, null, 2);
+  const editor = activeMonacoEditors['columnsSpec'];
+  if (editor) editor.setValue(json);
+  modalUpdate('columnsSpec', json);
+}
+
+function syncRulesToConfig(fieldKey) {
+  modalUpdate(fieldKey, JSON.stringify(modalRulesState[fieldKey] || []));
+}
+
+async function testNode() {
+  const node = nodes.find(n => n.id === modalNodeId);
+  const t = document.getElementById('modal-test-result');
+  if (!node) return;
+  try {
+    const data = await apiFetch('/_editor/api/run-node', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: node.type, config: node.config, payload: { demo: true } }),
+    });
+    if (data.error) {
+      t.classList.add('error', 'show');
+      t.textContent = '⚠ ' + data.error;
+    } else {
+      t.classList.remove('error');
+      t.classList.add('show');
+      t.textContent = '✔ resultado:\n' + JSON.stringify(data.result, null, 2);
+    }
+  } catch (e) {
+    t.classList.add('error', 'show');
+    t.textContent = '⚠ ' + e.message;
+  }
+}
+
+// --- conversión hacia/desde el flow.json canónico ---
+
+function toFlowJson() {
+  return nodes.map(n => {
+    const def = defOf(n.type) || { outputs: 1 };
+    const outputs = outputCountFor(n, def);
+    const wires = [];
+    for (let i = 0; i < outputs; i++) {
+      wires.push(edges.filter(e => e.from === n.id && (e.fromOutput || 0) === i).map(e => e.to));
+    }
+    return { id: n.id, type: n.type, name: n.name || '', x: n.position.x, y: n.position.y, notes: n.notes || '', ...n.config, wires };
+  });
+}
+
+function migrateLegacyIds(flowJson) {
+  const legacyNodes = flowJson.filter(n => /^n_\d+$/.test(String(n.id)) || /^n\d+$/.test(String(n.id)));
+  if (!legacyNodes.length) return flowJson;
+  if (!confirm('Este flow usa IDs antiguos (n_1, n_2...). ¿Migrar a UUIDs?')) return flowJson;
+  const idMap = new Map(legacyNodes.map(n => [n.id, uid('n')]));
+  return flowJson.map(n => ({
+    ...n,
+    id: idMap.get(n.id) || n.id,
+    wires: (n.wires || []).map(targets => targets.map(target => idMap.get(target) || target)),
+  }));
+}
+
+function loadFlowJsonInto(flowJson) {
+  flowJson = migrateLegacyIds(flowJson);
+  nodes = [];
+  edges = [];
+  selectedNodeId = null;
+
+  flowJson.forEach(n => {
+    const def = defOf(n.type);
+    if (!def) { logLine('❌ tipo de nodo desconocido: ' + n.type, true); return; }
+    const preset = { __id: n.id, __notes: n.notes || '', __name: n.name || '' };
+    Object.keys(def.defaults || {}).forEach(k => { preset[k] = n[k]; });
+    addNode(n.type, n.x || 100, n.y || 100, preset);
+  });
+
+  flowJson.forEach(n => {
+    (n.wires || []).forEach((targets, outIndex) => {
+      targets.forEach(targetId => {
+        if (!nodes.find(x => x.id === n.id) || !nodes.find(x => x.id === targetId)) return;
+        edges.push({ id: uid('e'), from: n.id, fromOutput: outIndex, to: targetId });
+      });
+    });
+  });
+
+  resyncIdCounterFromLoadedIds([...nodes.map(n => n.id), ...edges.map(e => e.id)]);
+
+  selectedNodeId = null;
+  renderCanvas();
+  renderConfig();
+  markFlowSaved();
+}
+
+// --- acciones de la barra superior ---
+
+async function loadFlow(name) {
+  if (isFlowDirty()) {
+    const r = await Swal.fire({
+      icon: 'warning',
+      title: 'Cambios sin guardar',
+      text: 'Vas a cambiar de flujo y hay cambios que no se han guardado en el servidor. Si continúas, se pierden.',
+      showCancelButton: true,
+      confirmButtonText: 'Descartar y continuar',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#e06c75',
+    });
+    if (!r.isConfirmed) return;
+  }
+  flowName = name || flowName || 'example';
+  const flowJson = await apiFetch('/_editor/api/flows/' + flowName);
+  if (!flowJson || flowJson.error) { logLine('⚠ no existe el flow "' + flowName + '" todavía', true); return; }
+  loadFlowJsonInto(flowJson);
+  logLine('✔ flujo "' + flowName + '" cargado');
+  setStatus('Flujo "' + flowName + '" cargado.', nodes.length + ' nodo(s)');
+}
+
+async function saveFlow() {
+  const flowJson = toFlowJson();
+  await apiFetch('/_editor/api/flows/' + flowName, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(flowJson),
+  });
+  markFlowSaved();
+  logLine('✔ flujo "' + flowName + '" guardado');
+  setStatus('Flujo "' + flowName + '" guardado.', '');
+}
+
+function clearCanvas() {
+  nodes = [];
+  edges = [];
+  selectedNodeId = null;
+  renderCanvas();
+  renderConfig();
+}
+
+async function runFlow(entryId) {
+  const flowJson = toFlowJson();
+  if (!flowJson.length) { setStatus('No hay nodos para ejecutar.', ''); return; }
+  setStatus('Ejecutando flujo "' + flowName + '"…', '');
+  const data = await apiFetch('/_editor/api/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ flow: flowJson, entryId: entryId || null, flowName }),
+  });
+  if (data.error) { logLine('❌ ' + data.error, true); setStatus('Error al ejecutar.', ''); return; }
+  (data.logs || []).forEach(l => logLine(l));
+  logLine('🐛 [resultado] ' + JSON.stringify(data.result));
+  setStatus('Flujo "' + flowName + '" ejecutado.', 'completado');
+  switchConfigPanelTab('debug');
+}
+
+function triggerEntryNode(nodeId) {
+  runFlow(nodeId);
+}
+
+document.getElementById('canvas-wrap').addEventListener('mousedown', (e) => {
+  if (e.target.id === 'canvas-wrap' || e.target.id === 'canvas' || e.target.id === 'wires') deselectEdge();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') deselectEdge();
+  
+  const isEditingText = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) || 
+                        document.activeElement.isContentEditable;
+
+  if ((e.key === 'Delete' || e.key === 'Backspace') && !isEditingText) {
+    if (selectedEdgeId) {
+      deleteEdge(selectedEdgeId);
+    } else if (selectedNodeId) {
+      deleteNode(selectedNodeId);
+    }
+  }
+});
+
+window.addEventListener('beforeunload', (e) => {
+  if (!isFlowDirty()) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
+
+init();
+</script>
+</body>
+</html>

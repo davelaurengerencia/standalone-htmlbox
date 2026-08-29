@@ -14,6 +14,7 @@
     "dev:runtime": "npm run dev -w @htmlbox/runtime",
     "dev:landing": "npm run dev -w @htmlbox/landing",
     "dev:auth": "npm run dev -w @htmlbox/auth",
+    "dev:studio": "npm run dev -w @htmlbox/sivostudio",
     "migrate:remote": "bash scripts/migrate-remote.sh",
     "deploy": "bash scripts/deploy.sh",
     "test": "npm test --workspaces --if-present"

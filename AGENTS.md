@@ -29,16 +29,23 @@ Tres Workers + 3 docs canónicos:
 htmlbox/
 ├── packages/
 │   ├── shared/         constantes, validadores, schema SQL por box, versioning
-│   ├── control-plane/  Worker D1-bound  — auth plataforma, registry, AI, internal API
+│   ├── control-plane/  Worker D1-bound  — registry, AI, internal API (auth vive aparte)
+│   ├── auth/           Worker separado — magic links, login, sesión cross-subdomain
 │   ├── portal/         Worker reverse-proxy — SPA Alpine.js del tenant
 │   ├── runtime-core/   pieza pura de runtime (sirve HTML, resuelve boxes, helpers auth control-plane) — sin bindings propios, sin auth de customer
 │   ├── runtime-box-worker/  per-box script WFP (bundle ESM, deploya al dispatch namespace)
-│   └── runtime/        Worker box-local   — sirve HTML, Data API, app-auth, consume @htmlbox/runtime-core
+│   ├── runtime/        Worker box-local   — sirve HTML, Data API, app-auth, consume @htmlbox/runtime-core
+│   ├── landing/        Worker apex de sivocloud.dev (Coming Soon + forward a runtime)
+│   └── sivostudio/     EXPERIMENTO aislado — cada box se crea como Worker WFP real
+│                        y se edita a sí mismo bajo /box/:boxId/editor/*. Paquete
+│                        totalmente separado: NO comparte DB ni bindings con el resto.
+│                        Ver `docs/htmlbox-spec-sivostudio-IMPLEMENTED.md`.
 ├── scripts/
-│   ├── dev.sh          lanza los 3 workers en background con colores
-│   ├── migrate-remote.sh wrangler d1 migrations apply --remote
-│   ├── setup-wfp.sh    prepara Workers for Platforms (crea namespace + guía para token)
-│   └── wipe-demo.sh    borra TODO el contenido de demo (D1 + R2 + WFP) — usar solo en dev
+│   ├── dev.sh                  lanza los 6 workers en background con colores
+│   ├── migrate-remote.sh       wrangler d1 migrations apply --remote (control-plane + sivostudio)
+│   ├── setup-wfp.sh            prepara WFP prod (namespace `htmlbox-boxes`)
+│   ├── setup-wfp-experiments.sh prepara WFP para sivostudio (namespace `sivostudio-experiments`)
+│   └── wipe-demo.sh            borra TODO el contenido de demo (D1 + R2 + WFP) — usar solo en dev
 ├── package.json        workspaces npm (packages/*)
 └── htmlbox-spec-*.md   specs (las -IMPLEMENTED ya están implementadas)
 ```
@@ -49,6 +56,8 @@ htmlbox/
 | `htmlbox-portal` | 8782 | `studio.localhost` | `--remote` |
 | `htmlbox-runtime` | 8783 | `runtime.localhost` | `--remote` |
 | `htmlbox-landing` | 8784 | `sivocloud.localhost` | `--remote` |
+| `htmlbox-auth` | 8785 | `auth.localhost` | `--remote` |
+| `htmlbox-sivostudio` | 8786 | `studiov2.localhost` | `--remote` |
 
 **Todos los workers corren `--remote`** — único source of truth, mismas tablas / bindings
 que prod. Cada worker levanta un preview en el edge de Cloudflare y la proxy local
@@ -170,17 +179,39 @@ Sin esos 4 pasos, `htmlbox_boxes.wfp_status` queda en `'failed'` para
 todo box nuevo y el dispatcher cae al path viejo (fetchActiveHtml +
 serveBoxHtml, comportamiento idéntico al pre-WFP).
 
+### WFP — sivostudio (namespace separado)
+
+El experimento de sivostudio corre en un dispatch namespace DISTINTO
+(`sivostudio-experiments`), aislado por completo del de prod. Setup
+análogo con `./scripts/setup-wfp-experiments.sh`:
+
+1. Crear el namespace `sivostudio-experiments`.
+2. Generar un Scoped API Token con scope SOLO a ese namespace.
+3. Guardar el token: `cd packages/sivostudio && wrangler secret put WFP_DEPLOY_TOKEN`.
+4. Crear la D1: `wrangler d1 create htmlbox-sivostudio` y actualizar
+   `database_id` en `packages/sivostudio/wrangler.jsonc`.
+
+Si la D1 todavía no existe, `npm run migrate:remote` la skipea con
+warning (idempotente). Ver `docs/htmlbox-spec-sivostudio-IMPLEMENTED.md`.
+
 Subdominios `*.localhost`: en macOS resuelven solos a 127.0.0.1. En Linux
 hay que agregar a `/etc/hosts`.
+
+**Aislamiento de sivostudio (experimento separado)**: el worker
+`htmlbox-sivostudio` usa `studiov2.localhost` (dev) / `studiov2.sivocloud.dev`
+(prod) — distinto de `studio.*` que pertenece al portal. Refuerza el
+aislamiento a nivel de origen (sin CORS ni cookies cruzadas con el portal).
 
 ## 4. Comandos
 
 | Comando | Qué hace |
 |---|---|
-| `npm run dev` | `bash scripts/dev.sh` — lanza los 3 workers con log tail mergeado |
-| `npm run dev:control` / `:portal` / `:runtime` | Levanta UN worker solo (debug rápido) |
-| `npm run migrate:remote` | Aplica migrations D1 remotas (`wrangler d1 migrations apply --remote`) |
-| `npm test` | Corre tests de los 3 workspaces (control-plane: node + vitest, runtime/shared: node --test) |
+| `npm run dev` | `bash scripts/dev.sh` — lanza los 6 workers con log tail mergeado |
+| `npm run dev:control` / `:portal` / `:runtime` / `:landing` / `:auth` / `:studio` | Levanta UN worker solo (debug rápido) |
+| `npm run migrate:remote` | Aplica migrations D1 remotas (`wrangler d1 migrations apply --remote`) — control-plane + sivostudio |
+| `npm run build -w @htmlbox/sivostudio` | Inlinea App Studio + bundlea el box-template per-box → `dist/box-worker.mjs` |
+| `npm run build:editor -w @htmlbox/sivostudio` | Solo regenera `box-template/editors/app-studio.html.txt` desde `Chats/projects/repl-svelte/` |
+| `npm test` | Corre tests de los workspaces (control-plane: node + vitest, runtime/shared: node --test) |
 | `npm test -w <pkg>` | Solo el workspace `<pkg>` |
 
 ### Tests por workspace
@@ -249,6 +280,7 @@ Specs ya implementadas:
 - `htmlbox-spec-migracion-apifetch-IMPLEMENTED.md`
 - `htmlbox-spec-monaco-editor-IMPLEMENTED.md` (HISTÓRICO — superseded por codemirror-editor)
 - `htmlbox-spec-partials-htmlrewriter-IMPLEMENTED.md`
+- `htmlbox-spec-sivostudio-IMPLEMENTED.md`
 
 Anexo cerrado (mismo sufijo `-IMPLEMENTED` significa "todos los
 hallazgos cerrados con tests"):
@@ -404,7 +436,7 @@ bug de seguridad**. Reference test:
 - **Push a GitHub NO funciona desde el sandbox**: el sandbox resuelve DNS pero
   el TCP es rechazado. El usuario hace `git push` desde su máquina local.
 - **Wrangler dev SÍ corre** si hay auth (`wrangler login` o `CLOUDFLARE_API_TOKEN`).
-- **`wrangler dev` abre puertos locales**: 8781/8782/8783 + 9229/9230/9231 (inspector).
+- **`wrangler dev` abre puertos locales**: 8781/8782/8783/8784/8785/8786 + 9229/9230/9231/9232/9235/9236 (inspector).
   Si hay conflicto, `dev.sh` los limpia al inicio.
 
 ## 11. NO hacer

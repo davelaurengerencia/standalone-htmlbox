@@ -1,0 +1,74 @@
+{
+  // wrangler.jsonc — SivoStudio Worker.
+  //
+  // En esta fase consolidamos launcher + front-worker en UN solo Worker
+  // (`htmlbox-sivostudio`). El spec habla de dos workers separados, pero
+  // wrangler no soporta múltiples entry points en un mismo wrangler.jsonc —
+  // cada Worker necesita su propio deploy. Para mantener una sola unidad
+  // deployable, ruteamos internamente:
+  //
+  //   GET  /                  → launcher (botón "Crear box")
+  //   POST /api/studio/...    → launcher (endpoints de creación)
+  //   /box/:boxId/*           → front-worker (despacha al box via WFP)
+  //
+  // Si en el futuro hace falta separar (ej: launcher en dominio aparte
+  // para evitar acoplamiento de cookies/origen), se duplica wrangler.jsonc
+  // y se divide el router. Por ahora un solo Worker alcanza.
+  //
+  // Bindings:
+  //   - STUDIO_DISPATCH  → dispatch namespace `sivostudio-experiments`.
+  //                        Diferente del de prod (`htmlbox-boxes`) para
+  //                        aislamiento total.
+  //   - STUDIO_D1        → D1 `htmlbox-sivostudio` con tabla de metadata
+  //                        de boxes (boxId, script_name, last_seen).
+  //   - HTMLBOX_CLOUDFLARE_ACCOUNT_ID → cuenta de Cloudflare (para wfpDeployer).
+  //   - WFP_DEPLOY_TOKEN → scoped API token para deployar scripts al namespace.
+
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "htmlbox-sivostudio",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-08-01",
+
+  "dev": {
+    "ip": "::",
+    "port": 8786,
+    "inspector_port": 9236,
+    "inspector_ip": "127.0.0.1"
+  },
+
+  // === TOP-LEVEL (PROD) ===
+  // Custom domain: studiov2.sivocloud.dev. DISTINTO del portal (que usa
+  // studio.sivocloud.dev) — sivostudio es un experimento aislado y no debe
+  // compartir origen con nada de prod. El prefijo "studiov2" es deliberado
+  // y va junto con el subdominio dev studiov2.localhost.
+  //
+  // El routing path-based /box/:boxId/* lo maneja el MISMO worker (rutas
+  // internas según URL.pathname). El spec proponía dos workers separados
+  // (launcher + front), pero wrangler no soporta eso en un solo
+  // wrangler.jsonc — ver comentario al inicio del archivo.
+  "routes": [
+    { "pattern": "studiov2.sivocloud.dev/*", "zone_name": "sivocloud.dev" }
+  ],
+
+  "dispatch_namespaces": [
+    {
+      "binding": "STUDIO_DISPATCH",
+      "namespace": "sivostudio-experiments"
+    }
+  ],
+
+  "d1_databases": [
+    {
+      "binding": "STUDIO_D1",
+      "database_name": "htmlbox-sivostudio",
+      "database_id": "dfff244f-749c-4976-ac92-e63ad2445291"
+    }
+  ],
+
+  "vars": {
+    "HTMLBOX_CLOUDFLARE_ACCOUNT_ID": "bbd6bb71e68887eb0fa9cc8e872ed588",
+    "HTMLBOX_STUDIO_NAMESPACE": "sivostudio-experiments"
+  },
+
+  "observability": { "enabled": true }
+}
