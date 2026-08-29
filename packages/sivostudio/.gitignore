@@ -1,4 +1,10 @@
 # Wrangler dev / deploy artifacts
 .wrangler/
+
+# Intermediate bundle (regenerable con `npm run build`).
+# NO gitignorear src/box-worker-bundle.mjs.js — es el artefacto que
+# src/worker.js importa como string para subirlo a WFP. Sin él, el worker
+# no compila. Se commitea pese a ser grande (~370 KB).
 dist/box-worker.mjs
 dist/box-worker.mjs.js
+dist/box-worker.inlined.mjs

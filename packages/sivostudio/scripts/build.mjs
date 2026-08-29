@@ -5,16 +5,17 @@
 //   1. Lee box-template/editors/app-studio.html.txt y editor-vanilla.html.txt.
 //   2. Reemplaza los placeholders __APP_STUDIO_HTML_PLACEHOLDER__ y
 //      __EDITOR_VANILLA_HTML_PLACEHOLDER__ en box-template/worker.js por
-//      strings JSON-escaped del contenido de cada editor.
+//      template literals (backticks) del contenido de cada editor, escapando
+//      `\`, `` ` `` y `$` para que sean JS-safe.
 //   3. Bundlea con esbuild → dist/box-worker.mjs (formato ESM, target esnext,
 //      minify — Workers for Platforms acepta hasta 1 MB).
-//   4. Genera dist/box-worker.mjs.js (un wrapper que exporta el bundle como
-//      string) para que el launcher-worker lo importe como módulo regular
-//      y lo suba a WFP vía wfpDeployer (Workers no tienen node:fs).
+//   4. Genera src/box-worker-bundle.mjs.js (un wrapper que exporta el bundle
+//      como string) para que src/worker.js lo importe como módulo regular
+//      y wfpDeployer lo suba a WFP. Workers no tienen node:fs.
 //
-// Patrón idéntico a packages/runtime-box-worker/scripts/build.mjs — lo
-// duplicamos intencionalmente porque sivostudio no comparte código con
-// control-plane/runtime (aislamiento total por diseño del experimento).
+// src/box-worker-bundle.mjs.js SE COMMITEA (es el artefacto importable por
+// el launcher-worker); dist/box-worker.mjs es intermediate y se regenera.
+// Mismo patrón que packages/runtime-box-worker/scripts/build.mjs.
 
 import { build } from 'esbuild'
 import fs from 'node:fs/promises'
@@ -30,7 +31,7 @@ const EDITOR_VANILLA_PATH = path.join(root, 'box-template', 'editors', 'editor-v
 
 const OUT_DIR = path.join(root, 'dist')
 const BUNDLE_PATH = path.join(OUT_DIR, 'box-worker.mjs')
-const STRING_WRAPPER_PATH = path.join(OUT_DIR, 'box-worker.mjs.js')
+const STRING_WRAPPER_PATH = path.join(root, 'src', 'box-worker-bundle.mjs.js')
 
 // 1) Leer fuentes.
 const [template, appStudioHtml, editorVanillaHtml] = await Promise.all([
@@ -91,6 +92,22 @@ await fs.mkdir(OUT_DIR, { recursive: true })
 await fs.writeFile(inlinedPath, inlined, 'utf8')
 
 // 3) Bundle con esbuild.
+//
+// Truco importante: `external: ['node:*']` deja los imports `node:fs/promises`,
+// `node:path`, `node:url` (que usa flow-engine internamente) TAL CUAL en el
+// bundle. Esbuild NO intenta resolverlos como paquetes npm (lo cual falla
+// con `platform: 'neutral'`). En runtime, Workers con `nodejs_compat` los
+// resuelve nativo. El `compatibility_flags: ['nodejs_compat']` está en
+// wfpDeployer.js (metadata del PUT al namespace WFP).
+//
+// Truco 2: `loader: { '.html': 'text' }` para que esbuild pueda resolver
+// el dynamic import `await import('./editor-vanilla/index.html')` que hace
+// flow-engine en runtime='worker'. Sin esto, esbuild tira "No loader is
+// configured for .html files". wrangler tiene `rules: [{type: Text, ...}]`
+// para lo mismo, pero acá bundleamos con esbuild directo.
+//
+// Truco 3: `loader: { '.flow.json': 'json' }` por si flow-engine importa
+// flows como JSON modules.
 await build({
   entryPoints: [inlinedPath],
   outfile: BUNDLE_PATH,
@@ -98,6 +115,18 @@ await build({
   format: 'esm',
   target: 'esnext',
   platform: 'neutral',
+  // mainFields explícito: con `platform: 'neutral'`, esbuild NO respeta
+  // automáticamente el `main`/`module` field de los package.json de las
+  // dependencias. Acá le decimos: probá `module` primero (ESM moderno),
+  // después `main` (CJS legacy). Sin esto, jsonata (que tiene `main` pero
+  // no `module`) no se resuelve.
+  mainFields: ['module', 'main'],
+  conditions: ['import', 'module', 'default'],
+  external: ['node:*'],
+  loader: {
+    '.html': 'text',
+    '.json': 'json',
+  },
   minify: true,
   sourcemap: false,
   banner: { js: '// htmlbox sivostudio box-template (built ' + new Date().toISOString() + ')' },

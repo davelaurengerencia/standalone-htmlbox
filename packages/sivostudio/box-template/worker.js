@@ -21,9 +21,28 @@
 // embebidos como strings — generados por scripts/build.mjs a partir de
 // box-template/editors/*.html.txt. El bundler los inlinea como constantes
 // en el bundle final.
+//
+// Flow-engine:
+//   - createFlowEngineApp() se monta con mountPath='/editor/backend' y
+//     httpNodeRoot='/api'. Ver nota en docs/htmlbox-spec-sivostudio.md §2
+//     sobre por qué mountPath evita el rewrite/proxy manual.
+//   - Esta fase arranca con `flows: []` (sin flows). Cuando Fase 5
+//     agregue POST /editor/api/flow, los flows se persisten en R2 y se
+//     rehidratan al iniciar.
+
+import { createFlowEngineApp, extractPlatformBindings } from 'flow-engine/app'
+import { coreNodes } from 'flow-engine/nodes'
 
 const APP_STUDIO_HTML = '__APP_STUDIO_HTML_PLACEHOLDER__'
 const EDITOR_VANILLA_HTML = '__EDITOR_VANILLA_HTML_PLACEHOLDER__'
+
+// Flows iniciales — objeto vacío. Cuando el usuario guarde flows en
+// /editor/backend (Fase 5), se persisten en R2 y se rehidratan al iniciar
+// el box worker. Recordá: en `runtime: 'worker'` el editor es SOLO LECTURA
+// (POST /_editor/api/* devuelve 501 fijo — ver AGENTS.md de flow-engine),
+// así que el endpoint custom /editor/api/flow es el que escribe.
+// Estructura esperada: { [nombreDelFlow]: flowJsonArray }.
+const FLOWS = {}
 
 const EMPTY_APP_HTML = `<!doctype html>
 <html lang="es">
@@ -104,23 +123,64 @@ function dispatchZone(pathname) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url)
-    const { zone } = dispatchZone(url.pathname)
+    const { zone, subpath } = dispatchZone(url.pathname)
 
     switch (zone) {
       case 'editor-frontend':
         return htmlResponse(APP_STUDIO_HTML)
-      case 'editor-backend':
-        // TODO Fase 4: createFlowEngineApp({ mountPath: '/editor/backend', httpNodeRoot: '/api' })
-        return htmlResponse(PLACEHOLDER_HTML)
+
+      case 'editor-backend': {
+        // Flow Editor (vanilla) + flow-engine con mountPath.
+        // mountPath='/editor/backend' resuelve el "rewrite/proxy" del spec §2
+        // nativamente: GET /editor/backend sirve editor-vanilla/index.html,
+        // GET /editor/backend/_editor/api/* sirve la API del editor.
+        const app = await createFlowEngineApp({
+          runtime: 'worker',
+          flows: FLOWS,
+          mountPath: '/editor/backend',
+          httpNodeRoot: '/api',
+          nodes: coreNodes,
+          // platformBindings: extractPlatformBindings(env) — necesario para que
+          // los nodos cloudflare-* (D1, KV, R2, Email) lean bindings del env.
+          // AGENTS.md de flow-engine: "Pasale `platformBindings:
+          // extractPlatformBindings(env)` si tu Worker los expone directo en
+          // `env` (caso single-tenant)".
+          platformBindings: extractPlatformBindings(env),
+        })
+        // Rewritear la URL para que flow-engine vea paths relativos al mountPath
+        // (porque flow-engine matchea contra pathname.startsWith(mountPath)).
+        const editorReq = new Request(
+          new URL(subpath, request.url).toString(),
+          request,
+        )
+        const editorRes = await app.handleWorker(editorReq, env, ctx)
+        if (editorRes) return editorRes
+        return htmlResponse(PLACEHOLDER_HTML, 404)
+      }
+
       case 'editor-variables':
         // TODO Fase 5: form real con vars/secrets del box
         return htmlResponse(PLACEHOLDER_HTML)
+
       case 'editor-api':
         // TODO Fase 5: POST /editor/api/{frontend,flow,variables,deploy}
         return new Response('Not implemented yet', { status: 501 })
-      case 'api':
-        // TODO Fase 4: flow-engine httpNodeRoot
-        return new Response('Not implemented yet', { status: 501 })
+
+      case 'api': {
+        // Backend real: http nodes de flow-engine.
+        const app = await createFlowEngineApp({
+          runtime: 'worker',
+          flows: FLOWS,
+          mountPath: '/editor/backend',
+          httpNodeRoot: '/api',
+          nodes: coreNodes,
+          platformBindings: extractPlatformBindings(env),
+        })
+        const apiRes = await app.handleHttp(request, env, ctx)
+        if (apiRes) return apiRes
+        return notFound()
+      }
+
       case 'app':
       default:
         return htmlResponse(EMPTY_APP_HTML)

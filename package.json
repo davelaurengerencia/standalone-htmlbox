@@ -24,5 +24,8 @@
   },
   "devDependencies": {
     "jsdom": "^30.0.1"
+  },
+  "dependencies": {
+    "jsonata": "^2.2.2"
   }
 }
