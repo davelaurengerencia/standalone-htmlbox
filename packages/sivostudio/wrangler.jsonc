@@ -67,7 +67,16 @@
 
   "vars": {
     "HTMLBOX_CLOUDFLARE_ACCOUNT_ID": "bbd6bb71e68887eb0fa9cc8e872ed588",
-    "HTMLBOX_STUDIO_NAMESPACE": "sivostudio-experiments"
+    "HTMLBOX_STUDIO_NAMESPACE": "sivostudio-experiments",
+    "HTMLBOX_STUDIO_CLEANUP_DAYS": "30"
+  },
+
+  // Cron trigger para Fase 6: limpieza de boxes abandonados.
+  // Cada 6 horas, runCleanup() lista boxes con last_seen > 30 días
+  // y los borra (WFP DELETE + UPDATE deleted=1 en D1).
+  // Override el threshold con HTMLBOX_STUDIO_CLEANUP_DAYS.
+  "triggers": {
+    "crons": ["0 */6 * * *"]
   },
 
   "observability": { "enabled": true }

@@ -12,7 +12,8 @@
 // Aislamiento total del resto del monorepo: NO importa nada de control-plane,
 // runtime, portal. Único módulo externo: src/lib/wfpDeployer.js (propio).
 
-import { deployStudioBoxWorker, deleteStudioBoxWorker } from './lib/wfpDeployer.js'
+import { deployStudioBoxWorker } from './lib/wfpDeployer.js'
+import { runCleanup } from './lib/cleanup.js'
 
 const LAUNCHER_HTML = `<!doctype html>
 <html lang="es">
@@ -324,8 +325,14 @@ export default {
   },
 
   // Cron trigger para Fase 6: limpieza de boxes abandonados.
-  // Por ahora no declaramos ningún schedule — se agrega cuando Fase 6 esté lista.
-  // async scheduled(event, env, ctx) { ... }
+  // Declarado en wrangler.jsonc#triggers como cron("0 */6 * * *") — corre
+  // cada 6 horas. runCleanup() es best-effort: un box con problemas no
+  // impide que el resto se limpie.
+  async scheduled(event, env, ctx) {
+    const result = await runCleanup(env)
+    // Logueamos para debugging vía wrangler tail / Cloudflare logs.
+    console.log('[sivostudio cleanup]', JSON.stringify(result))
+  },
 }
 
 // Export extra para tests node --test.
