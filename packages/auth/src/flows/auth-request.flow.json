@@ -1,0 +1,151 @@
+[
+  {
+    "id": "in",
+    "type": "http-in",
+    "x": 80,
+    "y": 80,
+    "method": "POST",
+    "path": "/auth-request",
+    "wires": [
+      [
+        "validate"
+      ]
+    ]
+  },
+  {
+    "id": "validate",
+    "type": "function",
+    "x": 280,
+    "y": 80,
+    "code": "msg.payload = msg.payload || {}; const email = String(msg.payload.email||'').trim().toLowerCase(); msg.payload.email = email; msg.payload.rateLimitBind = [email]; const valid = /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email); msg._skip = !valid; return msg;",
+    "wires": [
+      [
+        "ratelimit"
+      ]
+    ]
+  },
+  {
+    "id": "ratelimit",
+    "type": "cloudflare-d1-sql",
+    "x": 480,
+    "y": 80,
+    "binding": "DB",
+    "operation": "first",
+    "sql": "SELECT COUNT(*) AS n FROM htmlbox_magic_links WHERE email = ?1 AND created_at > datetime('now', '-60 seconds')",
+    "bind": "{{payload.rateLimitBind}}",
+    "responseProperty": "rateLimit",
+    "wires": [
+      [
+        "check_rate"
+      ]
+    ]
+  },
+  {
+    "id": "check_rate",
+    "type": "function",
+    "x": 680,
+    "y": 80,
+    "code": "msg.payload = msg.payload || {}; const n = Number((msg.payload.rateLimit && msg.payload.rateLimit.row && msg.payload.rateLimit.row.n) || 0); if (n >= 3) msg._skip = true; if (msg._skip) msg.payload = {ok:true, message:'Si el email est\u00e1 registrado, recibir\u00e1s un link.'}; return msg;",
+    "wires": [
+      [
+        "skip_switch"
+      ]
+    ]
+  },
+  {
+    "id": "skip_switch",
+    "type": "switch",
+    "x": 880,
+    "y": 80,
+    "rules": "[{\"property\":\"_skip\",\"operator\":\"==\",\"value\":true},{\"property\":\"_skip\",\"operator\":\"==\",\"value\":false}]",
+    "wires": [
+      [
+        "apply_fix3"
+      ],
+      [
+        "gen_token"
+      ]
+    ]
+  },
+  {
+    "id": "gen_token",
+    "type": "function",
+    "x": 1080,
+    "y": 200,
+    "code": "msg.payload = msg.payload || {}; const crypto = globalThis.crypto; const bytes = new Uint8Array(32); crypto.getRandomValues(bytes); const tokenId = Array.from(bytes).map(function(b){return b.toString(16).padStart(2,'0');}).join(''); const expiresAt = new Date(Date.now() + 15*60*1000).toISOString().slice(0,19).replace('T',' '); const devHost = (ctx && ctx.env && ctx.env.HTMLBOX_AUTH_PUBLIC_HOST) || ''; let hostFull, proto; if (devHost) {   hostFull = devHost.replace(/^https?:\\/\\//, '');   proto = devHost.startsWith('https:') ? 'https:' : 'http:'; } else {   hostFull = (msg.headers && msg.headers.host) || '';   const hostNoPort = hostFull.split(':')[0];   proto = (hostNoPort === 'localhost' || hostNoPort.endsWith('.localhost')) ? 'http:' : 'https:'; } const origin = hostFull ? (proto + '//' + hostFull) : ''; const magicLink = origin ? (origin + '/api/auth/verify?token=' + tokenId) : ('/api/auth/verify?token=' + tokenId); msg.payload.tokenId = tokenId; msg.payload.expiresAt = expiresAt; msg.payload.magicLink = magicLink; msg.payload.insertBind = [tokenId, msg.payload.email, expiresAt, 'portal']; return msg;",
+    "wires": [
+      [
+        "insert_link"
+      ]
+    ]
+  },
+  {
+    "id": "insert_link",
+    "type": "cloudflare-d1-sql",
+    "x": 1280,
+    "y": 200,
+    "binding": "DB",
+    "operation": "run",
+    "sql": "INSERT INTO htmlbox_magic_links (id, email, expires_at, origin) VALUES (?1, ?2, ?3, ?4)",
+    "bind": "{{payload.insertBind}}",
+    "responseProperty": "insertResult",
+    "wires": [
+      [
+        "render_email"
+      ]
+    ]
+  },
+  {
+    "id": "render_email",
+    "type": "function",
+    "x": 1480,
+    "y": 200,
+    "code": "msg.payload = msg.payload || {}; const escapeHtml = function(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;');}; const email = msg.payload.email; const magicLink = msg.payload.magicLink; const subject = 'Tu link de ingreso a HTMLBox'; const textBody = 'Hola,\\n\\nRecibimos un pedido de magic link para ' + email + '.\\n\\nClick ac\u00e1 para ingresar (v\u00e1lido por 15 minutos):\\n' + magicLink + '\\n\\nSi no pediste este link, ignor\u00e1 este mail.\\n\\n\u2014 HTMLBox'; const htmlBody = '<!doctype html><html><body style=\"font-family: -apple-system, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 20px; color: #1f2637;\"><h2 style=\"color: #6366f1; margin: 0 0 20px;\">HTMLBox</h2><p>Hola,</p><p>Recibimos un pedido de magic link para <strong>' + escapeHtml(email) + '</strong>.</p><p style=\"margin: 28px 0;\"><a href=\"' + escapeHtml(magicLink) + '\" style=\"background: #6366f1; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; display: inline-block;\">Ingresar a HTMLBox</a></p><p style=\"color: #666; font-size: 13px;\">O copi\u00e1 y peg\u00e1 este link en tu navegador (v\u00e1lido por 15 minutos):<br><br><code style=\"background: #f4f6fb; padding: 6px 10px; border-radius: 4px; word-break: break-all;\">' + escapeHtml(magicLink) + '</code></p><hr style=\"border: none; border-top: 1px solid #eee; margin: 28px 0;\"><p style=\"color: #999; font-size: 12px;\">Si no pediste este link, ignor\u00e1 este mail.</p></body></html>'; msg.payload.to = email; msg.payload.subject = subject; msg.payload.text = textBody; msg.payload.html = htmlBody; return msg;",
+    "wires": [
+      [
+        "send_email"
+      ]
+    ]
+  },
+  {
+    "id": "send_email",
+    "type": "cloudflare-email",
+    "x": 1680,
+    "y": 200,
+    "to": "{{payload.to}}",
+    "cc": "",
+    "bcc": "",
+    "replyTo": "",
+    "from": "no-reply@sivocloud.dev",
+    "fromName": "SivoCloud",
+    "subject": "{{payload.subject}}",
+    "text": "{{payload.text}}",
+    "html": "{{payload.html}}",
+    "useAttachment": "no",
+    "wires": [
+      [
+        "apply_fix3"
+      ]
+    ]
+  },
+  {
+    "id": "apply_fix3",
+    "type": "function",
+    "x": 1480,
+    "y": 80,
+    "code": "msg.payload = msg.payload || {}; if (msg._skip) { return msg; } const isProd = (ctx && ctx.env && ctx.env.HTMLBOX_ENV) === 'production'; const generic = {ok:true, message:'Si el email est\u00e1 registrado, recibir\u00e1s un link.'}; msg.payload = isProd ? generic : Object.assign({}, generic, {_dev_preview: msg.payload.magicLink}); return msg;",
+    "wires": [
+      [
+        "out"
+      ]
+    ]
+  },
+  {
+    "id": "out",
+    "type": "http-response",
+    "x": 1680,
+    "y": 80,
+    "statusCode": "200",
+    "headers": "{\"Content-Type\":\"application/json\"}"
+  }
+]

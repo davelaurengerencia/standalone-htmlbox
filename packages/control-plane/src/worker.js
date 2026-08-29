@@ -1,20 +1,25 @@
+import { handleAuthExchange, whoamiFromCookie } from '@htmlbox/shared'
+
 // src/worker.js — entry point de htmlbox-control-plane.
 //
 // Rutas:
-//   /api/auth/*         auth.js
 //   /api/me/*, /api/tenants/:id/workspaces, /api/tenants  tenants.js
 //   /api/boxes/:id + subrutas                              boxes.js, uploads.js
 //   /admin/                                                UI admin (Alpine)
 //   /api/admin/*                                           endpoints admin (placeholder)
 //   /api/boxes/:id/upload-url | /api/boxes/:id/html | /api/boxes/:id/versions[/..] | /rollback/:n | /active-html
+//   /api/internal/*                                        internal.js (runtime → control-plane, requiere X-HTMLBox-Internal-Secret)
+//   /api/tenant-app-users                                  tenantAppUsers.js (admin)
+//   /api/ai/*                                              ai.js (Fase 4)
+//   /auth/exchange                                         handleAuthExchange (canje ticket → cookie, ver @htmlbox/shared)
 //
 // Variables de entorno (wrangler.jsonc):
 //   DB         — D1 binding (htmlbox-control-plane)
 //   BUCKET     — R2 binding (htmlbox-content)
 //   CACHE      — KV binding (htmlbox-cache)
+//   LOADER     — Worker Loader (para flow-engine, ver wrangler.jsonc#worker_loaders)
 //   HTMLBOX_*  — vars y secrets
 
-import { handleAuth } from './routes/auth.js'
 import { handleTenants } from './routes/tenants.js'
 import { handleBoxes } from './routes/boxes.js'
 import { handleTenantAppUsers } from './routes/tenantAppUsers.js'
@@ -22,6 +27,7 @@ import { handleUploads } from './routes/uploads.js'
 import { handleInternal } from './routes/internal.js'
 import { handleAi } from './routes/ai.js'
 import { handleAdmin } from './routes/admin.js'
+import { handleFlowWorker } from './lib/flows.js'
 import { renderShell } from './lib/partials.js'
 
 import ADMIN_SHELL_HTML from './ui-partials/shell.html.txt'
@@ -81,6 +87,17 @@ export default {
       return new Response(null, { status: 204, headers: corsHeaders(request) })
     }
 
+    // Flow-engine webhooks: delega al flow-engine (Fase 2 smoke test).
+    // Si retorna null, el path NO pertenece al flow-engine → seguimos con
+    // las rutas locales del control-plane. handleFlowWorker internamente
+    // cachea el app por signature de env keys (no re-bootstrap por fetch).
+    if (path.startsWith('/api/flows/')) {
+      const flowRes = await handleFlowWorker(request, env, ctx)
+      if (flowRes) return withCors(flowRes, request)
+      // Si devuelve null, no es un path del flow-engine — sigue con las
+      // rutas locales.
+    }
+
     // Endpoint interno para uploads R2.
     //
     //   - Dev (HTMLBOX_R2_MODE=local-fake): acepta cualquier PUT con key que
@@ -131,7 +148,8 @@ export default {
       if (assetPath === '/index.html') {
         const safeEnv = JSON.stringify(env.HTMLBOX_ENV || 'production')
         const safeVersion = JSON.stringify(env.HTMLBOX_ADMIN_VERSION || 'dev')
-        const injection = `<script>window.HTMLBOX_ENV=${safeEnv};window.HTMLBOX_ADMIN_VERSION=${safeVersion};</script>`
+        const safeAuthOrigin = JSON.stringify(env.HTMLBOX_AUTH_ORIGIN || '').replace(/</g, '\\u003c')
+        const injection = `<script>window.HTMLBOX_ENV=${safeEnv};window.HTMLBOX_ADMIN_VERSION=${safeVersion};window.HTMLBOX_AUTH_ORIGIN=${safeAuthOrigin};</script>`
         const rewritten = renderShell(ADMIN_SHELL_HTML, ADMIN_PARTIALS, injection)
         const headers = new Headers(rewritten.headers)
         headers.set('Content-Type', 'text/html; charset=utf-8')
@@ -152,6 +170,26 @@ export default {
       return new Response(JSON.stringify({ ok: true, env: env.HTMLBOX_ENV || 'unknown' }), {
         headers: { 'Content-Type': 'application/json', ...corsHeaders(request) },
       })
+    }
+
+    // Endpoint /auth/exchange — canje del ticket de auth.* por cookie sid
+    // host-only en este dominio (controlplane.*). Ver
+    // @htmlbox/shared/src/authExchange.js.
+    if (path === '/auth/exchange') {
+      return await handleAuthExchange(request, env)
+    }
+
+    // Endpoint público /api/auth/me — quién soy? La UI admin y el portal
+    // lo llaman para saber si hay sesión activa. Lee la cookie `sid`
+    // (que fue seteada por /auth/exchange) y devuelve los datos del user.
+    if (path === '/api/auth/me' && method === 'GET') {
+      const me = await whoamiFromCookie(env, request)
+      return json({ user: me ? {
+        id: me.userId,
+        email: me.email,
+        tenant_id: me.tenantId,
+        is_platform_owner: me.isPlatformOwner,
+      } : null })
     }
 
     // Reporte de errores del browser (portal admin, y portal vía proxy /api/*).
@@ -175,12 +213,6 @@ export default {
     }
 
     try {
-      // Auth
-      if (path.startsWith('/api/auth/')) {
-        const res = await handleAuth(request, env, ctx, path)
-        return withCors(res, request)
-      }
-
       // Tenants / workspaces / me
       if (path.startsWith('/api/me/') || path.startsWith('/api/tenants')) {
         // sub: el segmento después de /api/tenants/:id si aplica

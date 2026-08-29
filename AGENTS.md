@@ -56,8 +56,9 @@ que prod. Cada worker levanta un preview en el edge de Cloudflare y la proxy loc
 antes de arrancar dev.
 
 **Inter-worker calls vía service bindings** (NO HTTP fetch público):
-- `portal → control-plane` via `env.CONTROL_PLANE.fetch(request)`
-- `landing → runtime` via `env.RUNTIME.fetch(request)`
+- `portal → control-plane` vía `env.CONTROL_PLANE.fetch(request)` **solo en prod**
+  (ver más abajo — en dev el portal usa fetch HTTP directo, no el binding).
+- `landing → runtime` vía `env.RUNTIME.fetch(request)`
 
 Workaround para bug de wrangler 4.127+ donde fetches worker-to-worker via custom
 domain en la misma zona hanguean 20s (522). Service binding es interno (no sale
@@ -68,6 +69,71 @@ al edge público), zero-latency, sin loop.
 sobreescribir vía `.dev.vars` cuando el worker corre en `--local` — pero
 `--remote` no carga `.dev.vars`. Sol: editar el magic link manualmente en dev
 (reemplazar el host) o aceptar que el link apunte a prod.
+
+**Causa raíz confirmada — service bindings NO conectan con sesiones `--remote`
+ajenas (2026-08-28)**: cuando `portal` corre `wrangler dev --remote` y llama a
+`env.CONTROL_PLANE.fetch()`, ese binding **no** se conecta con la sesión
+`--remote` local de `control-plane` — Cloudflare resuelve el binding contra el
+script que está REALMENTE deployado en la cuenta con el nombre
+`htmlbox-control-plane` (el de prod, vía `npm run deploy` / `wrangler deploy`),
+no contra tu preview de dev. Confirmado contra
+[`cloudflare/workers-sdk#5578`](https://github.com/cloudflare/workers-sdk/issues/5578)
+("Allow local Service Bindings to proxy to a `wrangler dev --remote` session" —
+cerrado como "not planned": la plataforma no soporta esto).
+
+Esto **no** es un problema de headers perdidos/strip-eados — es que el código
+que responde del otro lado del binding directamente no es el código de dev, es
+el código deployado en prod. Evidencia real que confirmó esto: un smoke test
+del equipo vía proxy del portal devolvió `mode: 'prod-fallback'`, un valor que
+ya no existe en ningún path de `packages/control-plane/src/lib/magic-link.js`
+(reemplaza a `email.js`) — solo puede venir de una versión vieja, deployada,
+del control-plane. (Nota aparte: `X-Forwarded-Host` tampoco es un header
+hop-by-hop de RFC 7230, así que esa hipótesis previa también era incorrecta —
+mencionado acá para que quede el registro, aunque ya no es relevante con el
+fix de abajo.)
+
+**Fix aplicado (`packages/portal/src/worker.js` — `proxyToControlPlane`)**: en
+dev (request con host `*.localhost` + `HTMLBOX_CONTROL_PLANE_ORIGIN` seteado en
+`.dev.vars`), el portal usa **siempre** fetch HTTP directo a
+`HTMLBOX_CONTROL_PLANE_ORIGIN` (`http://controlplane.localhost:8781` — el proxy
+local de la sesión `--remote` real de control-plane), nunca el service binding.
+El service binding se sigue usando tal cual en prod y en cualquier caso no-dev,
+donde sí hay una sola versión deployada y el binding resuelve correcto.
+`injectForwardedHost()` se mantiene (sigue siendo útil como señal explícita
+para `magic-link.js::buildMagicLinkUrl`) pero ya no es lo que resuelve este
+bug — el fetch HTTP directo sí llega al código de dev real.
+
+**Testear el magic link vía curl directo** a controlplane.localhost:8781
+(que sí pasa por la preview con vars dev) sigue siendo válido como diagnóstico
+rápido, sin pasar por el portal en absoluto:
+```bash
+curl -X POST http://controlplane.localhost:8781/api/auth/request \
+  -H "Content-Type: application/json" \
+  -H "Origin: http://studio.localhost:8782" \
+  -d '{"email":"tu@email.com"}'
+```
+Este path sí devuelve `_dev_preview: http://studio.localhost:8782/...`.
+
+**Segunda capa de defensa — fix client-side (`packages/portal/src/ui-partials/app-script.html.txt`)**:
+como el server-side (control-plane) arma el host del link con heurísticas
+sobre headers que dependen de la capa de transporte (binding vs. HTTP directo,
+y de que quien llame preserve Origin/Referer/X-Forwarded-Host), agregamos una
+segunda capa que no depende de nada de eso: `localizeDevPreviewLink()` en el
+browser reescribe el host del `_dev_preview` recibido para que coincida con
+`window.location` de la pestaña actual, siempre que esa pestaña esté en
+`*.localhost`. El browser sabe con certeza absoluta en qué host está — no hay
+heurística que pueda fallar acá. Esto es lo que arma el panel "Magic link
+generado" y lo que copia el botón "Copiar"; el botón "Entrar" ya no dependía
+de esto (consume el token vía `apiFetch('/api/auth/consume', ...)`, un path
+relativo que siempre resuelve contra el host actual).
+
+**Forward-compat (DBs exclusivas de dev)**: cuando quieras D1 / Turso DBs
+separadas para dev, agregá un bloque `env.dev` en `wrangler.jsonc` con
+`d1_databases: [{...database_id: "DEV_DB_ID"...}]`. PERO requiere que TODOS
+los workers que llamen al control-plane via service binding corran con
+`--env dev` también (mismo nombre de script wrangler). Por ahora wrangler 4
+NO propaga env-specific vars cross-binding, así que esa separación queda
+pendiente.
 
 **Nota DNS macOS**: `*.localhost` resuelve a `::1` (IPv6) por defecto. Los
 wrangler configs tienen `dev.ip = "::"` (IPv6 dual-stack) para que funcione
@@ -209,6 +275,68 @@ No hay specs pendientes — todos los `htmlbox-spec-*.md` están en estado `-IMP
 - Patrón de URL: `/api/{scope}/{boxId}/{op}` (box-scoped) o `/api/{scope}/...`
   (tenant-scoped). `{boxId}` SIEMPRE matchea `^[a-z0-9]{16}$`.
 
+### Emails via flow-engine (Fase 3+)
+
+TODO el envío de emails transaccionales pasa por el **flow-engine**
+corrriendo como librería dentro del control-plane (`PROJECTS/_flow-engine/`,
+módulo linkeado via `"flow-engine": "file:../../../../_flow-engine"` en
+`packages/control-plane/package.json`).
+
+- Flows viven en `packages/control-plane/src/flows/*.flow.json`. Cada uno
+  es un array de nodos compatible con flow-engine.
+- `src/lib/flows.js` bootstrapea el flow-engine app (singleton
+  memoizado por signature de env) y expone:
+  - `handleFlowWorker(req, env, ctx)` para HTTP requests externos
+    (webhooks, smoke tests via curl).
+  - `runFlow(flowName, payload, env, ctx)` para llamadas in-process
+    desde `routes/*.js`. Construye un Request sintético y delega a
+    `app.handleWorker` — sin roundtrip HTTP.
+- `src/lib/magic-link.js` construye el magic link URL + render del email
+  (subject, text, html) + invoca `runFlow('magic-link', ...)`. Es la
+  versión "magrelink" de lo que antes era `lib/email.js` (borrado en
+  Fase 3 cuando todo el envío pasó por flow-engine).
+- `src/worker.js` rutea `/api/flows/*` a `handleFlowWorker` antes del
+  bloque try principal — el path nativo del control-plane sigue intacto.
+- Bindings (`EMAIL`) ahora se resuelven vía
+  `extractPlatformBindings(env)` del flow-engine — el binding `EMAIL`
+  en `wrangler.jsonc` (`send_email: [{ name: "EMAIL" }]`) lo inyecta al
+  `ctx.platformBindings` que lee el nodo `cloudflare-email`.
+
+Para agregar un nuevo flow (ej. `app-magic-link`):
+1. Crear `src/flows/<nombre>.flow.json` (mismo formato que magic-link).
+2. Agregar `import` + entry al mapa `FLOWS` en `src/lib/flows.js`.
+3. `runFlow('<nombre>', payload, env, ctx)` desde donde corresponda.
+
+**Política de envío de emails — Fase 4+**: `sendMagicLinkViaFlow` /
+`sendAppMagicLinkViaFlow` SIEMPRE invocan `runFlow`. El gate dev/prod vive
+en `HTMLBOX_EMAIL_MODE` que lee el nodo `cloudflare-email` del flow-engine:
+- `prod` → `env.EMAIL.send(...)` (real, llega al inbox).
+- `dev`  → solo loguea el link (dry-run).
+
+En dev (`.dev.vars`) actualmente `HTMLBOX_EMAIL_MODE=prod` → el email SÍ
+llega al inbox en local. Para volver a dry-run temporal sin tocar
+`.dev.vars`, override en CLI:
+```bash
+npx wrangler dev --remote --port 8781 --var HTMLBOX_EMAIL_MODE:dev
+```
+
+El gate **Fix 3** en `routes/auth.js` decide si el `_dev_preview` se filtra
+en la respuesta según `HTMLBOX_ENV`. En prod (`HTMLBOX_ENV=production`)
+el previewLink es `undefined` aunque se envíe el email — sin leak del
+magic link. En dev, `_dev_preview` se muestra en la SPA para DX.
+
+Para testear un flow via curl:
+```bash
+curl -X POST http://controlplane.localhost:8781/api/flows/<path-del-http-in>   -H "Content-Type: application/json" -d '{...}'
+```
+
+**Monkey-patch de ctx.tenantId / ctx.projectId**: el nodo `cloudflare-email`
+upstream requiere ambos. Como el control-plane es single-tenant en dev,
+no se setean en ninguna capa todavía. `lib/flows.js::ensureCloudflareEmailPatched()`
+envuelve el `execute` del nodo y los inyecta como `'single-tenant-dev'`.
+Forward-compat: cuando `createFlowEngineApp` acepte defaults, ese patch
+se vuelve trivial de remover.
+
 ### Schema
 - Box schema se aplica con `applyBoxSchema()` desde `packages/shared/src/boxSchema.js`.
 - App-users schema se aplica on-demand con `applyAppUsersSchema()` — la
@@ -250,6 +378,26 @@ No hay specs pendientes — todos los `htmlbox-spec-*.md` están en estado `-IMP
 - Internal endpoints SIEMPRE gateados por `X-HTMLBox-Internal-Secret` (ver
   `requiresInternalSecret` en `routes/internal.js`).
 - Magic links: `AUTH_REQUEST_WINDOW_SEC=60`, `AUTH_REQUEST_MAX_PER_EMAIL=3`.
+
+### Gate de `_dev_preview` (NEVER leak prod)
+
+**Regla**: nunca devolver `_dev_preview` (que contiene el magic link) en
+respuestas de endpoints `/api/auth/*` o `/api/internal/tenant-app-auth/*`
+cuando `env.HTMLBOX_ENV === 'production'`. La razón: si el envío de email
+falla en prod (modo `prod-fallback`), el preview seguiría siendo el token
+del magic link — bypass de auth completo (cualquiera puede pedir el link
+de cualquier email y obtenerlo en la respuesta HTTP).
+
+**Implementación**: ambas rutas (`routes/auth.js::postRequest` y
+`routes/internal.js::postTenantAppRequest`) gatean `includePreview` con
+`!isProd && previewLink != null`. En dev (HTMLBOX_ENV='development' | 'dev'
+| undefined) el preview sigue funcionando para el ciclo de feedback.
+En prod la respuesta es literal `GENERIC_RESPONSE` (= `{ ok, message }`)
+sin campos de dev.
+
+**SI ves un endpoint de auth exponiendo `_dev_preview` en prod: es un
+bug de seguridad**. Reference test:
+`packages/control-plane/src/__tests__/authPreviewGating.test.js`.
 
 ## 10. Sandbox / environment
 

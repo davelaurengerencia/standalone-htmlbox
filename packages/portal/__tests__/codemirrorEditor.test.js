@@ -588,6 +588,6 @@ test('shell.html.txt: Alpine sigue cargándose (sin regresión)', () => {
 
 test('spec htmlbox-spec-codemirror-editor-IMPLEMENTED.md existe en docs/', () => {
   const repoRoot = path.join(here, '..', '..', '..')
-  const specPath = path.join(repoRoot, 'docs', 'htmlbox-spec-codemirror-editor-IMPLEMENTED.md')
+  const specPath = path.join(repoRoot, 'docs', 'implemented', 'htmlbox-spec-codemirror-editor-IMPLEMENTED.md')
   assert.ok(fs.existsSync(specPath), `spec debe existir en ${specPath}`)
 })

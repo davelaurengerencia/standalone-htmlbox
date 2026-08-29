@@ -12,6 +12,7 @@
 // cache stale en el edge.
 
 import { renderShell } from './lib/partials.js'
+import { handleAuthExchange } from '@htmlbox/shared'
 
 import PORTAL_SHELL_HTML from './ui-partials/shell.html.txt'
 import HEADER_HTML from './ui-partials/header.html.txt'
@@ -23,7 +24,6 @@ import MODAL_SHARE_HTML from './ui-partials/modal-share.html.txt'
 import MODAL_NEW_TENANT_HTML from './ui-partials/modal-new-tenant.html.txt'
 import TOAST_HTML from './ui-partials/toast.html.txt'
 import MODAL_AI_SCHEMA_HTML from './ui-partials/modal-ai-schema.html.txt'
-import DEV_PREVIEW_OVERLAY_HTML from './ui-partials/dev-preview-overlay.html.txt'
 import APP_SCRIPT_HTML from './ui-partials/app-script.html.txt'
 
 // Shell del portal ensamblado en request-time con HTMLRewriter (ver
@@ -38,7 +38,6 @@ const PORTAL_PARTIALS = {
   'modal-new-tenant': MODAL_NEW_TENANT_HTML,
   toast: TOAST_HTML,
   'modal-ai-schema': MODAL_AI_SCHEMA_HTML,
-  'dev-preview-overlay': DEV_PREVIEW_OVERLAY_HTML,
   'app-script': APP_SCRIPT_HTML,
 }
 
@@ -52,25 +51,107 @@ function corsHeaders(origin) {
   }
 }
 
+// Helper: clona el request agregando X-Forwarded-Host con el host actual
+// del request (ej. http://studio.localhost:8782). Se sigue usando aunque
+// ya no dependamos del service binding en dev (ver más abajo) porque
+// control-plane también lo lee cuando se le pega directo (curl, otros
+// callers) y sirve como señal explícita adicional a Origin/Referer.
+//
+// Idempotente — si ya viene X-Forwarded-Host NO lo sobrescribe (prioriza
+// el valor que el cliente explícitamente pasó).
+function injectForwardedHost(request) {
+  const headers = new Headers(request.headers)
+  if (!headers.has('X-Forwarded-Host')) {
+    const url = new URL(request.url)
+    headers.set('X-Forwarded-Host', `${url.protocol}//${url.host}`)
+  }
+  return new Request(request.url, {
+    method: request.method,
+    headers,
+    body: request.body,
+    redirect: request.redirect,
+  })
+}
+
+// Fetch HTTP directo al origin configurado en HTMLBOX_CONTROL_PLANE_ORIGIN
+// (en dev: http://controlplane.localhost:8781, el proxy local de la sesión
+// `wrangler dev --remote` de control-plane; en prod: https://controlplane.sivocloud.dev).
+// Extraído a helper porque ahora tiene DOS callers: el path de dev (que lo
+// usa siempre) y el fallback histórico cuando no hay binding CONTROL_PLANE.
+async function fetchControlPlaneHttp(request, env) {
+  const origin = env.HTMLBOX_CONTROL_PLANE_ORIGIN
+  if (!origin) return null
+  const forwardedReq = request.url.includes('localhost') ? injectForwardedHost(request) : request
+  const url = new URL(forwardedReq.url)
+  const upstreamUrl = `${origin}${url.pathname}${url.search}`
+  const headers = new Headers()
+  for (const [k, v] of forwardedReq.headers.entries()) {
+    if (k.toLowerCase() === 'host') continue
+    headers.set(k, v)
+  }
+  const init = { method: forwardedReq.method, headers }
+  if (!['GET', 'HEAD'].includes(forwardedReq.method.toUpperCase())) {
+    init.body = forwardedReq.body
+  }
+  try {
+    const res = await fetch(upstreamUrl, init)
+    const resHeaders = new Headers(res.headers)
+    resHeaders.delete('access-control-allow-origin')
+    resHeaders.delete('access-control-allow-credentials')
+    resHeaders.delete('vary')
+    resHeaders.delete('content-encoding')
+    resHeaders.delete('content-length')
+    const body = await res.arrayBuffer()
+    return new Response(body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers: resHeaders,
+    })
+  } catch (e) {
+    return new Response(JSON.stringify({ error: 'control_plane_fetch_failed', detail: String(e?.message || e) }), {
+      status: 502,
+      headers: { 'Content-Type': 'application/json', ...corsHeaders(request.headers.get('Origin')) },
+    })
+  }
+}
+
 // Proxy de /api/* al control-plane.
-// Reenvía método, headers, body y devuelve la respuesta (incluyendo Set-Cookie).
 //
-// Implementación: SERVICE BINDING preferentemente, HTTP fetch como fallback.
-// Por qué service binding: en wrangler 4.127+, los fetches worker-to-worker
-// via custom domain en la misma zona cuelgan en 20s (522). El service
-// binding es interno (no sale al edge público), zero-latency, y bypassa
-// ese bug. Mismo patrón que `landing → runtime` (env.RUNTIME.fetch).
+// (1) DEV (*.localhost + HTMLBOX_CONTROL_PLANE_ORIGIN seteado, ver .dev.vars):
+// SIEMPRE fetch HTTP directo, NUNCA service binding. Causa raíz confirmada
+// (no es un problema de headers perdidos): con `wrangler dev --remote`, un
+// service binding de un worker a otro NO se conecta a la sesión --remote
+// local del worker de destino — Cloudflare resuelve el binding contra el
+// script REALMENTE deployado en la cuenta con ese nombre (`htmlbox-control-plane`
+// en prod), nunca contra tu preview de dev. Confirmado contra
+// cloudflare/workers-sdk#5578 (cerrado "not planned" — la plataforma no
+// soporta bindear un service binding a una sesión `--remote` ajena). Por eso
+// `injectForwardedHost` solo, sin este cambio, nunca alcanzaba: el código
+// que respondía del otro lado directamente no era el código de dev, así que
+// ningún forwarding de headers lo podía arreglar. Ver AGENTS.md.
 //
-// Fallback HTTP: cuando wrangler dev corre el portal en --local y el
-// control-plane en --remote, el service binding no se resuelve (wrangler
-// 4 no bridge bindings local→remote). En ese caso caemos a fetch HTTP
-// al origin configurado en HTMLBOX_CONTROL_PLANE_ORIGIN.
+// (2) PROD y cualquier otro caso: service binding — interno, sin salir al
+// edge público, sin el bug de 522 de fetches worker-to-worker por dominio
+// custom (wrangler 4.127+). Ahí sí hay una sola versión deployada, así que
+// el binding resuelve correctamente contra ella.
+//
+// (3) Fallback HTTP genérico si no hay binding (compat con setups viejos).
 async function proxyToControlPlane(request, env) {
-  // (1) Preferir service binding — funciona en prod y cuando ambos workers
-  // corren local. Si el binding existe pero falla, devolvemos 502.
+  const isLocalDev = request.url.includes('localhost') && !!env.HTMLBOX_CONTROL_PLANE_ORIGIN
+  if (isLocalDev) {
+    const res = await fetchControlPlaneHttp(request, env)
+    if (res) return res
+    // HTMLBOX_CONTROL_PLANE_ORIGIN no debería faltar acá (ya se chequeó arriba),
+    // pero por las dudas seguimos al binding en vez de devolver 502 directo.
+  }
+
+  // (2) Service binding — prod, o cualquier caso no-dev.
   if (env.CONTROL_PLANE) {
     try {
-      return await env.CONTROL_PLANE.fetch(request)
+      const forwardedReq = request.url.includes('localhost')
+        ? injectForwardedHost(request)
+        : request
+      return await env.CONTROL_PLANE.fetch(forwardedReq)
     } catch (e) {
       return new Response(JSON.stringify({ error: 'control_plane_proxy_failed', detail: String(e?.message || e) }), {
         status: 502,
@@ -79,44 +160,11 @@ async function proxyToControlPlane(request, env) {
     }
   }
 
-  // (2) Fallback HTTP al origin configurado (dev con portal --local y
-  // control-plane --remote, donde el service binding no se resuelve).
-  const origin = env.HTMLBOX_CONTROL_PLANE_ORIGIN
-  if (origin) {
-    const url = new URL(request.url)
-    const upstreamUrl = `${origin}${url.pathname}${url.search}`
-    const headers = new Headers()
-    for (const [k, v] of request.headers.entries()) {
-      if (k.toLowerCase() === 'host') continue
-      headers.set(k, v)
-    }
-    const init = { method: request.method, headers }
-    if (!['GET', 'HEAD'].includes(request.method.toUpperCase())) {
-      init.body = request.body
-    }
-    try {
-      const res = await fetch(upstreamUrl, init)
-      const resHeaders = new Headers(res.headers)
-      resHeaders.delete('access-control-allow-origin')
-      resHeaders.delete('access-control-allow-credentials')
-      resHeaders.delete('vary')
-      resHeaders.delete('content-encoding')
-      resHeaders.delete('content-length')
-      const body = await res.arrayBuffer()
-      return new Response(body, {
-        status: res.status,
-        statusText: res.statusText,
-        headers: resHeaders,
-      })
-    } catch (e) {
-      return new Response(JSON.stringify({ error: 'control_plane_fetch_failed', detail: String(e?.message || e) }), {
-        status: 502,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders(request.headers.get('Origin')) },
-      })
-    }
-  }
+  // (3) Fallback HTTP al origin configurado (sin binding CONTROL_PLANE en absoluto).
+  const res = await fetchControlPlaneHttp(request, env)
+  if (res) return res
 
-  // (3) Sin binding ni origin — solo posible en tests sin wrangler.
+  // (4) Sin binding ni origin — solo posible en tests sin wrangler.
   return new Response(
     'Portal: ni service binding CONTROL_PLANE ni HTMLBOX_CONTROL_PLANE_ORIGIN configurados.',
     { status: 502, headers: { 'Content-Type': 'text/plain' } }
@@ -144,6 +192,12 @@ export default {
       return await proxyToControlPlane(request, env)
     }
 
+    // Endpoint /auth/exchange — canje del ticket de auth.* por cookie sid
+    // host-only en este dominio. Ver @htmlbox/shared/src/authExchange.js.
+    if (path === '/auth/exchange') {
+      return await handleAuthExchange(request, env)
+    }
+
     // Sirve la SPA desde el bundle (importado como texto). No depende del cache
 // edge de ASSETS — cada deploy rebuilds el bundle con la última versión.
     if (!path.startsWith('/api/') && !path.includes('.')) {
@@ -156,7 +210,9 @@ export default {
       const safeOrigin = JSON.stringify(runtimeOrigin).replace(/</g, '\\u003c')
       const safeEnv = JSON.stringify(env.HTMLBOX_ENV || 'production')
       const safeVersion = JSON.stringify(env.HTMLBOX_PORTAL_VERSION || 'dev')
-      const injection = `<script>window.HTMLBOX_RUNTIME_ORIGIN=${safeOrigin};window.HTMLBOX_ENV=${safeEnv};window.HTMLBOX_PORTAL_VERSION=${safeVersion};</script>`
+      const authOrigin = env.HTMLBOX_AUTH_ORIGIN || ''
+      const safeAuthOrigin = JSON.stringify(authOrigin).replace(/</g, '\\u003c')
+      const injection = `<script>window.HTMLBOX_RUNTIME_ORIGIN=${safeOrigin};window.HTMLBOX_AUTH_ORIGIN=${safeAuthOrigin};window.HTMLBOX_ENV=${safeEnv};window.HTMLBOX_PORTAL_VERSION=${safeVersion};</script>`
       const rewritten = renderShell(PORTAL_SHELL_HTML, PORTAL_PARTIALS, injection)
       const headers = new Headers(rewritten.headers)
       headers.set('Content-Type', 'text/html; charset=utf-8')

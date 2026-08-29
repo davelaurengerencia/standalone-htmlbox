@@ -1,0 +1,78 @@
+[
+  {
+    "id": "in",
+    "type": "http-in",
+    "x": 80,
+    "y": 80,
+    "method": "GET",
+    "path": "/auth-verify",
+    "wires": [["parse"]]
+  },
+
+  {
+    "id": "parse",
+    "type": "function",
+    "x": 280,
+    "y": 80,
+    "code": "msg.payload = msg.payload || {}; const token = String(msg.payload.token || '').trim(); msg.payload.token = token; msg._invalid = !token; return msg;",
+    "wires": [["peek_token"]]
+  },
+
+  {
+    "id": "peek_token",
+    "type": "cloudflare-d1-sql",
+    "x": 480,
+    "y": 80,
+    "binding": "DB",
+    "operation": "first",
+    "sql": "SELECT email, used_at FROM htmlbox_magic_links WHERE id = ?1 AND datetime(expires_at) > datetime('now')",
+    "bind": "{{payload.token}}",
+    "responseProperty": "peekResult",
+    "wires": [["check_token"]]
+  },
+
+  {
+    "id": "check_token",
+    "type": "function",
+    "x": 680,
+    "y": 80,
+    "code": "msg.payload = msg.payload || {}; const row = msg.payload.peekResult && msg.payload.peekResult.row; if (!row || !row.email) { msg._invalid = true; msg._reason = 'invalid_or_expired_token'; return msg; } if (row.used_at) { msg._invalid = true; msg._reason = 'already_used'; return msg; } msg.payload.email = row.email; msg._invalid = false; return msg;",
+    "wires": [["token_switch"]]
+  },
+
+  {
+    "id": "token_switch",
+    "type": "switch",
+    "x": 880,
+    "y": 80,
+    "rules": "[{\"property\":\"_invalid\",\"operator\":\"==\",\"value\":true},{\"property\":\"_invalid\",\"operator\":\"==\",\"value\":false}]",
+    "wires": [["render_invalid"], ["render_confirm"]]
+  },
+
+  {
+    "id": "render_invalid",
+    "type": "function",
+    "x": 1080,
+    "y": 0,
+    "code": "function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;');} const reason = escapeHtml(msg._reason || 'invalid_token'); msg.payload = '<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>Link no v\\u00e1lido</title></head><body style=\"font-family:-apple-system,sans-serif;max-width:480px;margin:60px auto;padding:0 20px;text-align:center;color:#1f2637\"><h2 style=\"color:#dc2626\">Link no v\\u00e1lido</h2><p>Este link ya fue usado o expir\\u00f3. Ped\\u00ed uno nuevo desde el portal.</p><p style=\"color:#666;font-size:12px\">Motivo: ' + reason + '</p></body></html>'; msg.headers = msg.headers || {}; msg.headers['Content-Type'] = 'text/html; charset=utf-8'; return msg;",
+    "wires": [["out"]]
+  },
+
+  {
+    "id": "render_confirm",
+    "type": "function",
+    "x": 1080,
+    "y": 160,
+    "code": "const safeToken = JSON.stringify(msg.payload.token).replace(/</g, '\\\\u003c').replace(/>/g, '\\\\u003e').replace(/&/g, '\\\\u0026'); const html = '<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Verificando\\u2026</title></head><body style=\"font-family:-apple-system,sans-serif;max-width:480px;margin:60px auto;padding:0 20px;text-align:center;color:#1f2637\"><h2 style=\"color:#6366f1\">Verificando tu link</h2><p id=\"status\">Un momento\\u2026</p><script>(async function(){try{var res=await fetch(\"/api/auth/consume\",{method:\"POST\",headers:{\"Content-Type\":\"application/json\"},credentials:\"include\",body:JSON.stringify({token:' + safeToken + '})});var data=await res.json().catch(function(){return {}});if(res.ok&&data.ok){document.getElementById(\"status\").textContent=\"Listo \\u2014 te estamos redirigiendo\\u2026\";window.location.href=data.destUrl;}else{document.getElementById(\"status\").textContent=\"Error: \"+(data.error||res.status);}}catch(err){document.getElementById(\"status\").textContent=\"Error: \"+err.message;}})();<\\/script></body></html>'; msg.payload = html; msg.headers = msg.headers || {}; msg.headers['Content-Type'] = 'text/html; charset=utf-8'; return msg;",
+    "wires": [["out"]]
+  },
+
+  {
+    "id": "out",
+    "type": "http-response",
+    "x": 1280,
+    "y": 80,
+    "statusCode": "200",
+    "headers": "{\"Content-Type\":\"text/html; charset=utf-8\"}"
+  }
+]

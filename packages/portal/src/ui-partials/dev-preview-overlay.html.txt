@@ -1,22 +1,30 @@
-  <div x-show="showDevPreview" x-transition.opacity class="fixed bottom-4 right-4 z-50 max-w-sm bg-slate-900 border border-emerald-500/40 rounded-2xl shadow-2xl shadow-emerald-500/10 p-4 space-y-3" x-cloak>
-    <div class="flex items-center justify-between gap-2">
-      <p class="font-bold text-emerald-400 text-sm flex items-center gap-2">
-        <i class="fa-solid fa-wand-magic-sparkles"></i>
-        Magic link generado
-      </p>
-      <button @click="dismissDevPreview()" class="text-slate-500 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
-    </div>
-    <p class="text-xs text-slate-400">
-      Modo dev: el email no se envía. Tocá <strong class="text-emerald-300">Entrar</strong> para autenticarte sin abrir la terminal.
-    </p>
-    <div class="break-all text-emerald-200 bg-slate-950/70 p-2.5 rounded-lg font-mono text-[11px] leading-relaxed border border-emerald-500/20" x-text="previewLink"></div>
-    <div class="flex gap-2">
-      <button @click="copyPreviewLink()" class="flex-1 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition">
-        <i class="fa-solid fa-copy"></i>
-        <span x-text="copyButtonLabel"></span>
-      </button>
-      <button @click="enterViaPreview()" class="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition">
-        <i class="fa-solid fa-arrow-right"></i> Entrar
-      </button>
-    </div>
+<div
+  x-show="previewLink"
+  x-transition.opacity
+  class="fixed bottom-5 right-5 w-[420px] max-w-[92vw] bg-slate-900/95 backdrop-blur border border-emerald-500/40 rounded-2xl shadow-2xl p-5 z-50"
+>
+  <div class="flex items-start justify-between gap-3 mb-3">
+    <h3 class="text-sm font-bold text-emerald-300 flex items-center gap-2">
+      <i class="fa-solid fa-wand-magic-sparkles"></i>
+      Magic link generado
+    </h3>
+    <button @click="previewLink = null" class="text-slate-500 hover:text-slate-300 transition" aria-label="Cerrar">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
   </div>
+  <p class="text-xs text-slate-400 mb-2">
+    Modo dev: el magic link aparece acá. Si <code class="text-emerald-300">HTMLBOX_EMAIL_MODE=prod</code> en el control-plane, también se envía por email — chequeá spam si no llega.
+  </p>
+  <p class="text-xs text-slate-400 mb-3">
+    Para entrar sin abrir el email, copiá el link o tocá <strong class="text-emerald-300">Entrar</strong>.
+  </p>
+  <div class="break-all text-emerald-200 bg-slate-950/70 p-2.5 rounded-lg font-mono text-[11px] leading-relaxed border border-emerald-500/20" x-text="previewLink"></div>
+  <div class="flex gap-2 mt-3">
+    <button @click="copyPreviewLink()" class="flex-1 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition">
+      <i class="fa-regular fa-copy"></i> Copiar
+    </button>
+    <button @click="enterViaPreview()" class="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition">
+      <i class="fa-solid fa-arrow-right"></i> Entrar
+    </button>
+  </div>
+</div>

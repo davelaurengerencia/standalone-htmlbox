@@ -7,84 +7,27 @@
 //   - Magic links = random 32 bytes hex. TTL 15 min.
 //   - Rate limit: 1 magic link pedido cada 60s por email.
 //   - Consumo del magic link en POST (no GET).
+//
+// Fase 4 (auth-centralizado): los helpers de cookie + crypto (randomToken,
+// buildSessionCookie, buildClearCookie, getSessionIdFromRequest,
+// getCookieDomain, shouldUseSecureCookie) se movieron a
+// @htmlbox/shared/src/sessionCookies.js. Acá solo quedan los helpers que
+// tocan D1 (magic links, sessions, users, tenant-app-users).
 
 import {
-  SESSION_COOKIE_NAME, SESSION_COOKIE_DOMAIN,
-  AUTH_MAGICLINK_TTL_SEC, AUTH_SESSION_TTL_DAYS,
+  SESSION_COOKIE_NAME,
   AUTH_REQUEST_WINDOW_SEC, AUTH_REQUEST_MAX_PER_EMAIL,
   ROLE_OWNER, ROLE_EDITOR, ROLE_VIEWER,
+  randomToken, buildSessionCookie, buildClearCookie, getSessionIdFromRequest,
+  getCookieDomain, shouldUseSecureCookie,
+  MAGIC_LINK_TTL_MS, SESSION_TTL_SECONDS,
 } from '@htmlbox/shared'
 
-// --- Constantes exportadas ---
+// --- Constantes exportadas (back-compat) ---
 
-export const SESSION_TTL_SECONDS = AUTH_SESSION_TTL_DAYS * 24 * 60 * 60
-export const MAGIC_LINK_TTL_MS = AUTH_MAGICLINK_TTL_SEC * 1000
-export const RATE_LIMIT_WINDOW_MS = AUTH_REQUEST_WINDOW_SEC * 1000
 export const SESSION_COOKIE = SESSION_COOKIE_NAME
-
-// --- Crypto ---
-
-export function randomToken() {
-  const bytes = new Uint8Array(32)
-  crypto.getRandomValues(bytes)
-  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
-}
-
-// Devuelve si la cookie de sesión debe llevar el flag `Secure`.
-//
-// En `wrangler dev --remote` request.url refleja el protocolo del edge
-// (https:) aunque el browser esté hablando HTTP con controlplane.localhost.
-// Si mandamos Secure, el browser rechaza el Set-Cookie porque él ve http://.
-//
-// Reglas:
-//   - Si HTMLBOX_COOKIE_SECURE está seteado explícito ('true'/'false'), gana.
-//   - Si el hostname del request es *.localhost o localhost, NO usar Secure.
-//   - Si no, deferir a request.url.protocol.
-function shouldUseSecureCookie(request, env) {
-  if (env.HTMLBOX_COOKIE_SECURE === 'true')  return true
-  if (env.HTMLBOX_COOKIE_SECURE === 'false') return false
-  const url = new URL(request.url)
-  if (url.hostname === 'localhost' || url.hostname.endsWith('.localhost')) return false
-  return url.protocol === 'https:'
-}
-
-// Devuelve el valor del atributo Domain de la cookie. '' = host-only (dev).
-//
-// Reglas:
-//   1. Si el request viene proxied desde un portal en un dominio que NO es
-//      *.sivocloud.dev (ej: htmlbox-portal.sivocloud-latam.workers.dev), el
-//      browser rechaza cookies con Domain que no matchea el origen del
-//      response. Usamos host-only para que la cookie se guarde en el
-//      origen actual del usuario.
-//   2. Si el env var HTMLBOX_SESSION_DOMAIN está explícitamente set, gana.
-//   3. Si el hostname del request es *.sivocloud.dev, usamos ".sivocloud.dev"
-//      para compartir sesión entre subdomains.
-//   4. Si nada matchea, host-only (dev).
-function getCookieDomain(request, env) {
-  const url = new URL(request.url)
-  const origin = request.headers.get('Origin') || ''
-  const referer = request.headers.get('Referer') || ''
-  const userHost = extractHost(origin) || extractHost(referer)
-
-  // (1) Portal en dominio no-sivocloud.dev → host-only
-  if (userHost && !userHost.endsWith('.sivocloud.dev') && !userHost.endsWith('.localhost')) {
-    return ''
-  }
-
-  // (2) Override por env var
-  if (env.HTMLBOX_SESSION_DOMAIN) return env.HTMLBOX_SESSION_DOMAIN
-
-  // (3) Producción *.sivocloud.dev
-  if (url.hostname.endsWith('.sivocloud.dev')) return '.sivocloud.dev'
-
-  // (4) Default
-  return ''
-}
-
-function extractHost(url) {
-  if (!url) return ''
-  try { return new URL(url).hostname } catch { return '' }
-}
+export const RATE_LIMIT_WINDOW_MS = AUTH_REQUEST_WINDOW_SEC * 1000
+export { randomToken, buildSessionCookie, buildClearCookie, getSessionIdFromRequest, MAGIC_LINK_TTL_MS, SESSION_TTL_SECONDS }
 
 // --- Magic links ---
 
@@ -178,47 +121,6 @@ export async function validateSession(env, sessionId) {
       is_platform_owner: row.is_platform_owner === 1,
     },
   }
-}
-
-// --- Cookies ---
-
-export function buildSessionCookie(request, sessionId, env) {
-  const domain = getCookieDomain(request, env)
-  const parts = [
-    `${SESSION_COOKIE}=${sessionId}`,
-    `Max-Age=${SESSION_TTL_SECONDS}`,
-    'Path=/',
-    'HttpOnly',
-    'SameSite=Lax',
-  ]
-  if (domain) parts.push(`Domain=${domain}`)
-  if (shouldUseSecureCookie(request, env)) parts.push('Secure')
-  return parts.join('; ')
-}
-
-export function buildClearCookie(request, env) {
-  const domain = getCookieDomain(request, env)
-  const parts = [
-    `${SESSION_COOKIE}=`,
-    'Max-Age=0',
-    'Path=/',
-    'HttpOnly',
-    'SameSite=Lax',
-  ]
-  if (domain) parts.push(`Domain=${domain}`)
-  if (shouldUseSecureCookie(request, env)) parts.push('Secure')
-  return parts.join('; ')
-}
-
-export function getSessionIdFromRequest(request) {
-  const cookieHeader = request.headers.get('Cookie') || request.headers.get('cookie') || ''
-  for (const part of cookieHeader.split(/;\s*/)) {
-    const eq = part.indexOf('=')
-    if (eq === -1) continue
-    const name = part.slice(0, eq).trim()
-    if (name === SESSION_COOKIE) return part.slice(eq + 1).trim()
-  }
-  return null
 }
 
 // --- Scoping (HTMLBox) ---

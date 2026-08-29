@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HTMLBox — Iniciar sesión</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-4">
+  <div class="w-full max-w-md">
+    <div class="flex items-center gap-3 mb-6">
+      <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center font-black text-white text-xl shadow-lg shadow-indigo-500/20">
+        <i class="fa-solid fa-box-open"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-xl bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">HTMLBox</h1>
+        <p class="text-xs text-slate-400">Iniciar sesión</p>
+      </div>
+    </div>
+
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-2xl">
+      <p class="text-sm text-slate-300">Te enviaremos un link mágico a tu email. Sin contraseñas.</p>
+
+      <form id="login-form" class="space-y-3">
+        <div>
+          <label for="email" class="text-xs font-medium text-slate-300 block mb-1">Email</label>
+          <input type="email" id="email" name="email" required placeholder="tu@email.com"
+                 class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500">
+        </div>
+        <input type="hidden" id="return-to" name="return_to" value="">
+        <button type="submit" id="submit-btn"
+                class="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-medium text-sm transition flex items-center justify-center gap-2">
+          <i class="fa-solid fa-paper-plane"></i>
+          <span>Enviar magic link</span>
+        </button>
+      </form>
+
+      <div id="status" class="text-xs text-slate-400 min-h-[1.5em]"></div>
+      <div id="preview" class="hidden mt-3 p-3 bg-slate-950/70 border border-emerald-500/30 rounded-xl">
+        <p class="text-[11px] text-emerald-300 mb-2 font-semibold flex items-center gap-1">
+          <i class="fa-solid fa-wand-magic-sparkles"></i> Modo dev — link generado
+        </p>
+        <div id="preview-link" class="break-all text-emerald-200 font-mono text-[11px] leading-relaxed"></div>
+        <div class="flex gap-2 mt-3">
+          <button id="copy-btn" type="button" class="flex-1 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold transition">
+            <i class="fa-regular fa-copy"></i> Copiar
+          </button>
+          <button id="enter-btn" type="button" class="flex-1 px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition">
+            <i class="fa-solid fa-arrow-right"></i> Entrar
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <p class="text-[11px] text-slate-500 text-center mt-4">
+      <i class="fa-solid fa-lock text-indigo-400"></i>
+      Sesión segura vía cookies host-only. No almacenamos contraseñas.
+    </p>
+  </div>
+
+  <script>
+    (function () {
+      const params = new URLSearchParams(window.location.search)
+      const returnTo = params.get('return') || ''
+      const returnInput = document.getElementById('return-to')
+      if (returnTo) returnInput.value = returnTo
+
+      const form = document.getElementById('login-form')
+      const status = document.getElementById('status')
+      const preview = document.getElementById('preview')
+      const previewLink = document.getElementById('preview-link')
+      const submitBtn = document.getElementById('submit-btn')
+
+      form.addEventListener('submit', async function (ev) {
+        ev.preventDefault()
+        const email = document.getElementById('email').value.trim()
+        if (!email) return
+
+        submitBtn.disabled = true
+        submitBtn.innerHTML = '<i class="fa-solid fa-spinner animate-spin"></i> <span>Enviando…</span>'
+        status.textContent = ''
+        preview.classList.add('hidden')
+
+        try {
+          const res = await fetch('/api/auth/request', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ email: email, return_to: returnInput.value || '' }),
+          })
+          const data = await res.json().catch(() => ({}))
+
+          if (res.ok && data.ok) {
+            status.textContent = data.message || 'Si el email está registrado, recibirás un link.'
+            if (data._dev_preview) {
+              previewLink.textContent = data._dev_preview
+              preview.classList.remove('hidden')
+            }
+          } else {
+            status.textContent = 'Error: ' + (data.error || res.status)
+          }
+        } catch (err) {
+          status.textContent = 'Error: ' + err.message
+        } finally {
+          submitBtn.disabled = false
+          submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> <span>Enviar magic link</span>'
+        }
+      })
+
+      document.getElementById('copy-btn').addEventListener('click', async function () {
+        const text = previewLink.textContent
+        try {
+          await navigator.clipboard.writeText(text)
+          status.textContent = 'Link copiado al portapapeles.'
+        } catch (err) {
+          status.textContent = 'No se pudo copiar: ' + err.message
+        }
+      })
+
+      document.getElementById('enter-btn').addEventListener('click', function () {
+        const text = previewLink.textContent
+        if (text) window.location.href = text
+      })
+    })()
+  </script>
+</body>
+</html>

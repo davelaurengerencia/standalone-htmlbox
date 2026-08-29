@@ -1,0 +1,260 @@
+[
+  {
+    "id": "in",
+    "type": "http-in",
+    "x": 80,
+    "y": 80,
+    "method": "POST",
+    "path": "/auth-consume",
+    "wires": [
+      [
+        "parse"
+      ]
+    ]
+  },
+  {
+    "id": "parse",
+    "type": "function",
+    "x": 280,
+    "y": 80,
+    "code": "msg.payload = msg.payload || {}; const token = String(msg.payload.token || '').trim(); msg.payload.token = token; msg._invalidToken = !token; msg._reason = token ? '' : 'missing_token'; return msg;",
+    "wires": [
+      [
+        "peek_token"
+      ]
+    ]
+  },
+  {
+    "id": "peek_token",
+    "type": "cloudflare-d1-sql",
+    "x": 480,
+    "y": 80,
+    "binding": "DB",
+    "operation": "first",
+    "sql": "SELECT email FROM htmlbox_magic_links WHERE id = ?1 AND used_at IS NULL AND datetime(expires_at) > datetime('now')",
+    "bind": "{{payload.token}}",
+    "responseProperty": "peekResult",
+    "wires": [
+      [
+        "check_token"
+      ]
+    ]
+  },
+  {
+    "id": "check_token",
+    "type": "function",
+    "x": 680,
+    "y": 80,
+    "code": "msg.payload = msg.payload || {}; const row = msg.payload.peekResult && msg.payload.peekResult.row; if (!row || !row.email) { msg._invalidToken = true; msg._reason = 'invalid_or_expired_token'; return msg; } msg.payload.email = row.email; const crypto = globalThis.crypto; const sBytes = new Uint8Array(32); crypto.getRandomValues(sBytes); msg.payload.sessionId = Array.from(sBytes).map(function(b){return b.toString(16).padStart(2,'0');}).join(''); msg.payload.sessionExpiresAt = new Date(Date.now() + 30*24*60*60*1000).toISOString().slice(0,19).replace('T',' '); return msg;",
+    "wires": [
+      [
+        "token_switch"
+      ]
+    ]
+  },
+  {
+    "id": "token_switch",
+    "type": "switch",
+    "x": 880,
+    "y": 80,
+    "rules": "[{\"property\":\"_invalidToken\",\"operator\":\"==\",\"value\":true},{\"property\":\"_invalidToken\",\"operator\":\"==\",\"value\":false}]",
+    "wires": [
+      [
+        "build_invalid"
+      ],
+      [
+        "consume_token"
+      ]
+    ]
+  },
+  {
+    "id": "build_invalid",
+    "type": "function",
+    "x": 1080,
+    "y": 0,
+    "code": "msg.payload = msg.payload || {}; msg.payload = {error: (msg._reason || 'invalid_or_expired_token')}; return msg;",
+    "wires": [
+      [
+        "out"
+      ]
+    ]
+  },
+  {
+    "id": "consume_token",
+    "type": "cloudflare-d1-sql",
+    "x": 1080,
+    "y": 160,
+    "binding": "DB",
+    "operation": "run",
+    "sql": "UPDATE htmlbox_magic_links SET used_at = datetime('now') WHERE id = ?1 AND used_at IS NULL",
+    "bind": "{{payload.token}}",
+    "responseProperty": "consumeResult",
+    "wires": [
+      [
+        "find_user"
+      ]
+    ]
+  },
+  {
+    "id": "find_user",
+    "type": "cloudflare-d1-sql",
+    "x": 1280,
+    "y": 160,
+    "binding": "DB",
+    "operation": "first",
+    "sql": "SELECT id, is_platform_owner FROM htmlbox_users WHERE email = ?1",
+    "bind": "{{payload.email}}",
+    "responseProperty": "userResult",
+    "wires": [
+      [
+        "resolve_user"
+      ]
+    ]
+  },
+  {
+    "id": "resolve_user",
+    "type": "function",
+    "x": 1480,
+    "y": 160,
+    "code": "msg.payload = msg.payload || {}; const row = msg.payload.userResult && msg.payload.userResult.row; msg._userFound = !!(row && row.id); if (msg._userFound) { msg.payload.userId = row.id; msg.payload.isPlatformOwner = !!(row.is_platform_owner === 1 || row.is_platform_owner === true); } return msg;",
+    "wires": [
+      [
+        "user_switch"
+      ]
+    ]
+  },
+  {
+    "id": "user_switch",
+    "type": "switch",
+    "x": 1680,
+    "y": 160,
+    "rules": "[{\"property\":\"_userFound\",\"operator\":\"==\",\"value\":true},{\"property\":\"_userFound\",\"operator\":\"==\",\"value\":false}]",
+    "wires": [
+      [
+        "prepare_session_bind"
+      ],
+      [
+        "count_users"
+      ]
+    ]
+  },
+  {
+    "id": "count_users",
+    "type": "cloudflare-d1-sql",
+    "x": 1880,
+    "y": 280,
+    "binding": "DB",
+    "operation": "first",
+    "sql": "SELECT count(*) AS n FROM htmlbox_users",
+    "responseProperty": "countUsers",
+    "wires": [
+      [
+        "build_new_user"
+      ]
+    ]
+  },
+  {
+    "id": "build_new_user",
+    "type": "function",
+    "x": 2080,
+    "y": 280,
+    "code": "msg.payload = msg.payload || {}; const n = Number(msg.payload.countUsers && msg.payload.countUsers.row && msg.payload.countUsers.row.n) || 0; msg.payload.isPlatformOwner = (n === 0); const userId = 'user_' + crypto.randomUUID().replace(/-/g,'').slice(0,20); msg.payload.userId = userId; msg.payload.insertUserBind = [userId, msg.payload.email, msg.payload.isPlatformOwner ? 1 : 0]; return msg;",
+    "wires": [
+      [
+        "insert_user"
+      ]
+    ]
+  },
+  {
+    "id": "insert_user",
+    "type": "cloudflare-d1-sql",
+    "x": 2280,
+    "y": 280,
+    "binding": "DB",
+    "operation": "run",
+    "sql": "INSERT INTO htmlbox_users (id, email, is_platform_owner) VALUES (?1, ?2, ?3)",
+    "bind": "{{payload.insertUserBind}}",
+    "responseProperty": "insertUserResult",
+    "wires": [
+      [
+        "prepare_session_bind"
+      ]
+    ]
+  },
+  {
+    "id": "prepare_session_bind",
+    "type": "function",
+    "x": 1880,
+    "y": 80,
+    "code": "msg.payload = msg.payload || {}; msg.payload.sessionBind = [msg.payload.sessionId, msg.payload.userId, msg.payload.sessionExpiresAt]; return msg;",
+    "wires": [
+      [
+        "create_session"
+      ]
+    ]
+  },
+  {
+    "id": "create_session",
+    "type": "cloudflare-d1-sql",
+    "x": 2080,
+    "y": 80,
+    "binding": "DB",
+    "operation": "run",
+    "sql": "INSERT INTO htmlbox_sessions (id, user_id, expires_at) VALUES (?1, ?2, ?3)",
+    "bind": "{{payload.sessionBind}}",
+    "responseProperty": "sessionResult",
+    "wires": [
+      [
+        "prepare_response"
+      ]
+    ]
+  },
+  {
+    "id": "prepare_response",
+    "type": "function",
+    "x": 2280,
+    "y": 80,
+    "code": "msg.payload = msg.payload || {}; const crypto = globalThis.crypto; const tBytes = new Uint8Array(32); crypto.getRandomValues(tBytes); const ticketId = Array.from(tBytes).map(function(b){return b.toString(16).padStart(2,'0');}).join(''); const ticketExpiresAt = new Date(Date.now() + 60*1000).toISOString().slice(0,19).replace('T',' '); msg.payload.ticketId = ticketId; msg.payload.ticketBind = [ticketId, msg.payload.sessionId, ticketExpiresAt]; const sub = msg.payload.isPlatformOwner ? 'controlplane' : 'studio'; const cpOverride = (ctx && ctx.env && ctx.env.HTMLBOX_CONTROLPLANE_ORIGIN) || ''; const stOverride = (ctx && ctx.env && ctx.env.HTMLBOX_STUDIO_ORIGIN) || ''; const overrideOrigin = (sub === 'controlplane') ? cpOverride : stOverride; let destOrigin = ''; if (overrideOrigin) {   destOrigin = overrideOrigin; } else {   const devHost = (ctx && ctx.env && ctx.env.HTMLBOX_AUTH_PUBLIC_HOST) || '';   let hostFull, proto;   if (devHost) {     hostFull = devHost.replace(/^https?:\\/\\//, '');     proto = devHost.startsWith('https:') ? 'https:' : 'http:';   } else {     hostFull = (msg.headers && msg.headers.host) || '';     const hostNoPort = hostFull.split(':')[0];     proto = (hostNoPort === 'localhost' || hostNoPort.endsWith('.localhost')) ? 'http:' : 'https:';   }   const hostNoPort = hostFull.split(':')[0];   const dotIdx = hostNoPort.indexOf('.');   const rootDomain = dotIdx >= 0 ? hostNoPort.slice(dotIdx + 1) : '';   destOrigin = hostFull ? (proto + '//' + sub + '.' + rootDomain) : ''; } const destUrl = destOrigin ? (destOrigin + '/auth/exchange?st=' + ticketId) : ('/auth/exchange?st=' + ticketId); msg.payload.destUrl = destUrl; const cookieParts = ['sid=' + msg.payload.sessionId, 'Max-Age=2592000', 'Path=/', 'HttpOnly', 'SameSite=Lax']; if (destOrigin.startsWith('https:')) cookieParts.push('Secure'); msg.payload.cookieHeader = cookieParts.join('; '); msg.headers = msg.headers || {}; msg.headers['Set-Cookie'] = msg.payload.cookieHeader; return msg;",
+    "wires": [
+      [
+        "insert_ticket"
+      ]
+    ]
+  },
+  {
+    "id": "insert_ticket",
+    "type": "cloudflare-d1-sql",
+    "x": 2480,
+    "y": 80,
+    "binding": "DB",
+    "operation": "run",
+    "sql": "INSERT INTO htmlbox_login_tickets (id, session_id, expires_at) VALUES (?1, ?2, ?3)",
+    "bind": "{{payload.ticketBind}}",
+    "responseProperty": "ticketInsertResult",
+    "wires": [
+      [
+        "finalize"
+      ]
+    ]
+  },
+  {
+    "id": "finalize",
+    "type": "function",
+    "x": 2680,
+    "y": 80,
+    "code": "msg.payload = msg.payload || {}; const finalPayload = { ok: true, user: { email: msg.payload.email }, destUrl: msg.payload.destUrl }; msg.payload = finalPayload; return msg;",
+    "wires": [
+      [
+        "out"
+      ]
+    ]
+  },
+  {
+    "id": "out",
+    "type": "http-response",
+    "x": 2880,
+    "y": 80,
+    "statusCode": "200",
+    "headers": "{\"Content-Type\":\"application/json\"}"
+  }
+]

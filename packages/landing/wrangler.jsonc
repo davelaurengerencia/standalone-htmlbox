@@ -11,6 +11,7 @@
     "inspector_ip": "127.0.0.1"
   },
 
+  // === TOP-LEVEL (PROD) ===
   // Custom domain — apex sivocloud.dev.
   // Este worker es el front del apex: responde la landing (Coming Soon)
   // y forwardea los paths de runtime (shares, boxes path-based) al

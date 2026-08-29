@@ -75,9 +75,6 @@
     </div>
   </template>
 
-  <!-- ============ DEV PREVIEW OVERLAY ============ -->
-  <htmlbox-partial name="dev-preview-overlay"></htmlbox-partial>
-
   <htmlbox-partial name="app-script"></htmlbox-partial>
 </body>
 </html>

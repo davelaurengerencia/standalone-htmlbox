@@ -12,13 +12,7 @@
     "inspector_ip": "127.0.0.1"
   },
 
-  "vars": {
-    "HTMLBOX_ENV": "production",
-    "HTMLBOX_CONTROL_PLANE_ORIGIN": "https://controlplane.sivocloud.dev",
-    "HTMLBOX_RUNTIME_ORIGIN": "https://sivocloud.dev",
-    "HTMLBOX_PORTAL_VERSION": "0.1.0"
-  },
-
+  // === TOP-LEVEL (PROD) ===
   // Custom domain — studio.sivocloud.dev.
   // El patrón DEBE terminar en `/*` para matchear subpaths.
   // NO usamos custom_domain: true (mismo motivo que control-plane:
@@ -37,6 +31,14 @@
   "services": [
     { "binding": "CONTROL_PLANE", "service": "htmlbox-control-plane" }
   ],
+
+  "vars": {
+    "HTMLBOX_ENV": "production",
+    "HTMLBOX_CONTROL_PLANE_ORIGIN": "https://controlplane.sivocloud.dev",
+    "HTMLBOX_RUNTIME_ORIGIN": "https://sivocloud.dev",
+    "HTMLBOX_PORTAL_VERSION": "0.1.0",
+    "HTMLBOX_AUTH_ORIGIN": "https://auth.sivocloud.dev"
+  },
 
   "rules": [
     { "type": "Text", "globs": ["src/ui/*.txt", "src/ui-partials/*.txt"], "fallthrough": true }

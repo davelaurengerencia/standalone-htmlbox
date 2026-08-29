@@ -16,7 +16,7 @@
 // se llaman desde el runtime worker con la cookie de sesión cuando aplica.
 
 import { retrySchema } from './boxes.js'
-import { sendAppMagicLinkEmail } from '../lib/email.js'
+import { sendAppMagicLinkViaFlow } from '../lib/magic-link.js'
 import { deployBoxWorker } from '../lib/wfpDeployer.js'
 import {
   isTenantAppRateLimited, createTenantAppMagicLink, consumeTenantAppMagicLink,
@@ -150,8 +150,12 @@ async function postTenantAppRequest(request, env) {
   const magicLink = `${magicLinkBase}${tokenId}`
 
   const tenant = await env.DB.prepare(`SELECT name FROM htmlbox_tenants WHERE id = ?1`).bind(tenantId).first()
-  const emailResult = await sendAppMagicLinkEmail(env, { toEmail: email, magicLink, boxName: tenant?.name || null })
-  return json({ ...GENERIC, _dev_preview: emailResult?.previewLink, _email_mode: emailResult?.mode })
+  const emailResult = await sendAppMagicLinkViaFlow(env, { toEmail: email, magicLink, boxName: tenant?.name || null })
+  // Mismo gate que /api/auth/request (auth.js) — nunca exponer preview en
+  // prod. Ver comentario en auth.js para la razón de seguridad completa.
+  const isProd = env.HTMLBOX_ENV === 'production'
+  const previewLink = isProd ? undefined : emailResult?.previewLink
+  return json({ ...GENERIC, _dev_preview: previewLink, _email_mode: emailResult?.mode })
 }
 
 // POST /api/internal/tenant-app-auth/consume
@@ -205,7 +209,7 @@ async function postTenantAppAccessCheck(request, env) {
 
 // POST /api/internal/send-app-magic-link
 // Body: { toEmail, magicLink, boxName }
-// Devuelve el mismo shape que sendAppMagicLinkEmail: { sent, previewLink?, mode, error? }
+// Devuelve el mismo shape que sendAppMagicLinkViaFlow: { sent, previewLink?, mode, error? }
 async function postSendAppMagicLink(request, env) {
   let body
   try { body = await request.json() } catch { return json({ error: 'invalid_body' }, 400) }
@@ -215,7 +219,7 @@ async function postSendAppMagicLink(request, env) {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(toEmail) || !magicLink) {
     return json({ error: 'invalid_body' }, 400)
   }
-  const result = await sendAppMagicLinkEmail(env, { toEmail, magicLink, boxName })
+  const result = await sendAppMagicLinkViaFlow(env, { toEmail, magicLink, boxName })
   return json(result)
 }
 

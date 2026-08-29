@@ -1,0 +1,42 @@
+# Secrets para wrangler dev / producción. NO commitear el .dev.vars real.
+# Copia este archivo a .dev.vars y rellena los valores.
+#
+# El Worker `auth` comparte D1 con control-plane y runtime (mismo
+# database_id en wrangler.jsonc) — las tablas htmlbox_users,
+# htmlbox_sessions, htmlbox_magic_links son las mismas. Las migraciones
+# se corren desde el repo root con `npm run migrate:remote` (que aplica
+# las migrations de packages/control-plane/migrations/, NO las de acá).
+
+# En dev querés HTMLBOX_ENV=development para que `_dev_preview` siga
+# funcionando en la respuesta de /api/auth/request (Fix 3, ver AGENTS.md §9).
+# En prod debe ser 'production' — sino se filtra el magic link en la respuesta
+# y eso es un bypass de auth completo.
+HTMLBOX_ENV=development
+
+# Secreto compartido entre auth, control-plane y runtime. Se usa para gatear
+# /api/auth/exchange (server-to-server desde studio.*/controlplane.*, no desde
+# el browser). Generá uno con: openssl rand -hex 32
+# En prod: wrangler secret put HTMLBOX_INTERNAL_SECRET (en este Worker, con
+# el MISMO valor que control-plane y runtime).
+HTMLBOX_INTERNAL_SECRET=
+
+# Modo email: prod en dev también (querés que el magic link llegue al inbox
+# real). El flow-engine lee HTMLBOX_EMAIL_MODE en el nodo `cloudflare-email`.
+# Para tests sin binding (CI, mocks), override en CLI:
+#   npx wrangler dev --remote --port 8785 --var HTMLBOX_EMAIL_MODE:dev
+HTMLBOX_EMAIL_MODE=prod
+
+# Override del host público del Worker `auth`. En producción se usa el
+# host real del edge (`auth.sivocloud.dev`), pero en `wrangler dev --remote`
+# el tunel reescribe el host al del edge aunque el browser esté en localhost.
+# Si esta var está seteada, los flows `auth-request` y `auth-consume` la
+# usan para armar el magic link y el `destUrl` post-consume, en lugar del
+# host del request. Específicamente para que en dev el link generado apunte
+# a `auth.localhost:8785` y el browser pueda seguir el ciclo.
+HTMLBOX_AUTH_PUBLIC_HOST=http://auth.localhost:8785
+
+# En dev, controlplane y studio escuchan en puertos distintos (8781 y 8782).
+# En prod ambos comparten puerto 443 (HTTPS). Estas vars permiten que el
+# flow `auth-consume` arme el destUrl con el puerto correcto.
+HTMLBOX_CONTROLPLANE_ORIGIN=http://controlplane.localhost:8781
+HTMLBOX_STUDIO_ORIGIN=http://studio.localhost:8782

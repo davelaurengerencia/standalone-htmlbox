@@ -1,14 +1,17 @@
 // src/lib/flows.js — bootstrap del flow-engine dentro del control-plane.
 //
-// ARQUITECTURA ACTUAL (post-Fase 3):
+// ARQUITECTURA ACTUAL (post-Fase 4 / auth-centralizado):
 //
-//   routes/auth.js        ┐
+//   routes/internal.js    ┐
 //                         ├──► runFlow() ──┐
-//   routes/internal.js    ┘                  │
 //                                            ├──► app.handleWorker(req, env, ctx)
 //                                            │
-//   flows/magic-link.flow.json ──────────────────┤
 //   flows/app-magic-link.flow.json ─────────────┘
+//
+// El envío de magic links de PLATAFORMA se migró al paquete `auth`
+// (ver docs/htmlbox-spec-auth-centralizado.md §8). Acá queda solo el flow
+// de tenant-app-users, que es el que invoca runtime vía
+// /api/internal/send-app-magic-link.
 //
 // Todo el envío de emails pasa por el flow-engine corriendo como librería
 // dentro del control-plane. El binding `EMAIL` (Cloudflare Email Sending)
@@ -23,12 +26,10 @@
 import { createFlowEngineApp } from 'flow-engine/app'
 import { coreNodes as flowCoreNodes } from 'flow-engine/nodes'
 
-import magicLinkFlow from '../flows/magic-link.flow.json' with { type: 'json' }
 import appMagicLinkFlow from '../flows/app-magic-link.flow.json' with { type: 'json' }
 
 // Mapa nombre → flow.json. Agregar nuevos flows acá.
 export const FLOWS = {
-  'magic-link': magicLinkFlow,
   'app-magic-link': appMagicLinkFlow,
 }
 

@@ -1,0 +1,91 @@
+[
+  {
+    "id": "in",
+    "type": "http-in",
+    "x": 80,
+    "y": 80,
+    "method": "POST",
+    "path": "/auth-exchange",
+    "wires": [["parse"]]
+  },
+
+  {
+    "id": "parse",
+    "type": "function",
+    "x": 280,
+    "y": 80,
+    "code": "msg.payload = msg.payload || {}; const ticket = String(msg.payload.ticket || '').trim(); msg.payload.ticket = ticket; msg._invalid = !ticket; return msg;",
+    "wires": [["consume_ticket"]]
+  },
+
+  {
+    "id": "consume_ticket",
+    "type": "cloudflare-d1-sql",
+    "x": 480,
+    "y": 80,
+    "binding": "DB",
+    "operation": "run",
+    "sql": "UPDATE htmlbox_login_tickets SET consumed_at = datetime('now') WHERE id = ?1 AND consumed_at IS NULL AND datetime(expires_at) > datetime('now')",
+    "bind": "{{payload.ticket}}",
+    "responseProperty": "consumeResult",
+    "wires": [["check_consume"]]
+  },
+
+  {
+    "id": "check_consume",
+    "type": "function",
+    "x": 680,
+    "y": 80,
+    "code": "msg.payload = msg.payload || {}; const changes = Number((msg.payload.consumeResult && msg.payload.consumeResult.changes) || 0); msg._invalid = (changes === 0); return msg;",
+    "wires": [["ticket_switch"]]
+  },
+
+  {
+    "id": "ticket_switch",
+    "type": "switch",
+    "x": 880,
+    "y": 80,
+    "rules": "[{\"property\":\"_invalid\",\"operator\":\"==\",\"value\":true},{\"property\":\"_invalid\",\"operator\":\"==\",\"value\":false}]",
+    "wires": [["build_error"], ["get_session"]]
+  },
+
+  {
+    "id": "build_error",
+    "type": "function",
+    "x": 1080,
+    "y": 0,
+    "code": "msg.payload = { error: 'invalid_or_expired_ticket' }; return msg;",
+    "wires": [["out"]]
+  },
+
+  {
+    "id": "get_session",
+    "type": "cloudflare-d1-sql",
+    "x": 1080,
+    "y": 160,
+    "binding": "DB",
+    "operation": "first",
+    "sql": "SELECT session_id FROM htmlbox_login_tickets WHERE id = ?1",
+    "bind": "{{payload.ticket}}",
+    "responseProperty": "sessionResult",
+    "wires": [["build_response"]]
+  },
+
+  {
+    "id": "build_response",
+    "type": "function",
+    "x": 1280,
+    "y": 160,
+    "code": "msg.payload = msg.payload || {}; const row = msg.payload.sessionResult && msg.payload.sessionResult.row; const sessionId = row && row.session_id; if (!sessionId) { msg.payload = { error: 'ticket_session_not_found' }; return msg; } msg.payload = { sessionId: sessionId }; return msg;",
+    "wires": [["out"]]
+  },
+
+  {
+    "id": "out",
+    "type": "http-response",
+    "x": 1480,
+    "y": 80,
+    "statusCode": "200",
+    "headers": "{\"Content-Type\":\"application/json\"}"
+  }
+]

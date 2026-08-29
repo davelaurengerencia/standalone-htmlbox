@@ -1,5 +1,13 @@
 # Secrets para htmlbox-portal. NO commitear el .dev.vars real.
-# El portal NO tiene secretos — habla con el control-plane vía fetch con cookies.
+# El portal NO tiene secretos — habla con el control-plane y el Worker
+# `auth` vía fetch con cookies / header X-HTMLBox-Internal-Secret.
+
+# Habilita el preview del magic link en dev (Fix 3, ver AGENTS.md §9).
+# Si HTMLBOX_ENV === 'production' en runtime, NUNCA se devuelve _dev_preview
+# en respuestas de auth. En dev lo seteamos en 'development' para que el
+# preview siga funcionando.
+HTMLBOX_ENV=development
 
 HTMLBOX_CONTROL_PLANE_ORIGIN=http://controlplane.localhost:8781
 HTMLBOX_RUNTIME_ORIGIN=http://runtime.localhost:8783
+HTMLBOX_AUTH_ORIGIN=http://auth.localhost:8785

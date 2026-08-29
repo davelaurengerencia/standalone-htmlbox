@@ -175,28 +175,23 @@
         },
 
         async requestMagicLink() {
-          this.busy = true
-          this.lastMessage = ''
-          this.previewLink = null
-          try {
-            const data = await apiFetch('/api/auth/request', {
-              method: 'POST',
-              body: { email: this.email, from: 'admin' },
-            })
-            this.lastMessage = data.message || 'Listo. Revisá tu email.'
-            if (data._dev_preview) this.previewLink = data._dev_preview
-          } catch (err) {
-            this.lastMessage = 'Error: ' + err.message
-          } finally {
-            this.busy = false
-          }
+          // El admin ya NO maneja el request de magic link. El form de
+          // login redirige a auth.*/login (ver packages/control-plane/src/
+          // ui-partials/login.html.txt). Esta función queda como no-op
+          // por compatibilidad con referencias viejas.
         },
 
         async logout() {
-          try {
-            await apiFetch('/api/auth/logout', { method: 'POST' })
-          } catch (err) {
-            debugLog('logout:', err)
+          // El admin NO tiene /api/auth/logout — esa ruta vive en el
+          // Worker `auth`. Redirigimos a auth.* que limpia la cookie y
+          // vuelve al admin via /auth/exchange.
+          var authOrigin = (typeof window.HTMLBOX_AUTH_ORIGIN === 'string' && window.HTMLBOX_AUTH_ORIGIN) || '';
+          if (!authOrigin) {
+            debugLog('logout: HTMLBOX_AUTH_ORIGIN no definido');
+            return;
+          }
+          window.location.href = authOrigin + '/api/auth/logout?return=' + encodeURIComponent(window.location.href);
+        },
           }
           this.user = null
           this.tenants = []

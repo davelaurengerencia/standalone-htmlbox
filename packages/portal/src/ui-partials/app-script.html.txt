@@ -13,6 +13,10 @@
       if (HBX_DEBUG) console.log('[HTMLBox]', ...args)
     }
 
+    // Fuerza el host del magic link de dev-preview al host REAL del browser
+    // actual (window.location), sin importar qué host haya armado el
+    // control-plane server-side. El server-side heurístico (Origin/Referer/
+    // X-Forwarded-Host, a través de un service binding o un proxy HTTP) puede
     // Manda un error del browser al control-plane para que quede en Workers
     // Logs del lado servidor, no solo en la consola del usuario (que nadie va
     // a ver). Best-effort: si el propio reporte falla, no hace nada más — un
@@ -216,12 +220,8 @@
         // sesión
         user: null,
         userMenuOpen: false,
-        email: '',
         busy: false,
-        lastMessage: '',
-        previewLink: null,
-        showDevPreview: false,
-        copyButtonLabel: 'Copiar',
+        copyButtonLabel: 'Copiar', // legacy: lo dejaba copyPreviewLink (borrado)
         syncStatusText: 'R2 + D1 + Turso Sync',
 
         // tenants / workspaces / boxes
@@ -294,7 +294,6 @@
             const data = await apiFetch('/api/auth/me')
             this.user = data.user
             if (this.user) {
-              this.showDevPreview = false
               await this.loadTenants()
             }
           } catch (err) {
@@ -303,101 +302,20 @@
         },
 
         async requestMagicLink() {
-          this.busy = true
-          this.lastMessage = ''
-          this.previewLink = null
-          this.showDevPreview = false
-          try {
-            const data = await apiFetch('/api/auth/request', {
-              method: 'POST',
-              body: { email: this.email, from: 'portal' },
-            })
-            this.lastMessage = data.message || 'Listo. Revisá tu email.'
-            if (data._dev_preview) {
-              this.previewLink = data._dev_preview
-              this.showDevPreview = true
-              this.showToast('Link generado. Tocá Entrar para autenticarte.')
-            }
-          } catch (err) {
-            this.lastMessage = 'Error: ' + err.message
-          } finally {
-            this.busy = false
-          }
+          // No-op: el portal ya NO maneja el request de magic link (ver
+          // login.html.txt — redirige a auth.*/login). Dejado por compat.
         },
 
         async logout() {
-          try {
-            await apiFetch('/api/auth/logout', { method: 'POST' })
-          } catch (err) {
-            debugLog('logout:', err)
+          // El portal NO tiene /api/auth/logout — esa ruta vive en el
+          // Worker `auth` (que es el dueño de la cookie sid). Redirigimos
+          // a auth.* que limpia su cookie y vuelve al portal via /auth/exchange.
+          var authOrigin = (typeof window.HTMLBOX_AUTH_ORIGIN === 'string' && window.HTMLBOX_AUTH_ORIGIN) || '';
+          if (!authOrigin) {
+            debugLog('logout: HTMLBOX_AUTH_ORIGIN no definido');
+            return;
           }
-          this.user = null
-          this.tenants = []
-          this.workspaces = []
-          this.boxes = []
-          this.currentBox = null
-          this._resetEditorState('')
-          this.previewLink = null
-          this.showDevPreview = false
-          this.userMenuOpen = false
-        },
-
-        dismissDevPreview() {
-          this.showDevPreview = false
-        },
-
-        async copyPreviewLink() {
-          if (!this.previewLink) return
-          try {
-            await navigator.clipboard.writeText(this.previewLink)
-            this.copyButtonLabel = '¡Copiado!'
-            setTimeout(() => { this.copyButtonLabel = 'Copiar' }, 2000)
-          } catch {
-            const ta = document.createElement('textarea')
-            ta.value = this.previewLink
-            ta.style.position = 'fixed'
-            ta.style.opacity = '0'
-            document.body.appendChild(ta)
-            ta.select()
-            document.execCommand('copy')
-            document.body.removeChild(ta)
-            this.copyButtonLabel = '¡Copiado!'
-            setTimeout(() => { this.copyButtonLabel = 'Copiar' }, 2000)
-          }
-        },
-
-        async enterViaPreview() {
-          if (!this.previewLink) return
-          let token = null
-          try {
-            token = new URL(this.previewLink).searchParams.get('token')
-          } catch {
-            window.location.href = this.previewLink
-            return
-          }
-          if (!token) {
-            window.location.href = this.previewLink
-            return
-          }
-          this.busy = true
-          try {
-            const data = await apiFetch('/api/auth/consume', {
-              method: 'POST',
-              body: { token },
-            })
-            if (data.ok) {
-              this.showDevPreview = false
-              this.previewLink = null
-              await this.loadMe()
-              this.showToast(`Bienvenido, ${data.user.email}`)
-            } else {
-              this.showToast('Error consumiendo link: ' + (data.error || 'desconocido'))
-            }
-          } catch (err) {
-            this.showToast('Error: ' + err.message)
-          } finally {
-            this.busy = false
-          }
+          window.location.href = authOrigin + '/api/auth/logout?return=' + encodeURIComponent(window.location.href);
         },
 
         // --------- Tenants / Workspaces / Boxes ---------

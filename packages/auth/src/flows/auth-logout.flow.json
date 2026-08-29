@@ -1,0 +1,51 @@
+[
+  {
+    "id": "in",
+    "type": "http-in",
+    "x": 80,
+    "y": 80,
+    "method": "POST",
+    "path": "/auth-logout",
+    "wires": [["extract_sid"]]
+  },
+
+  {
+    "id": "extract_sid",
+    "type": "function",
+    "x": 280,
+    "y": 80,
+    "code": "msg.payload = msg.payload || {}; const cookieHeader = (msg.headers && (msg.headers.cookie || msg.headers.Cookie)) || ''; let sid = null; for (const part of cookieHeader.split(/;\\s*/)) { const eq = part.indexOf('='); if (eq === -1) continue; const name = part.slice(0, eq).trim(); if (name === 'sid') { sid = part.slice(eq + 1).trim(); break; } } msg.payload.sid = sid; msg._hasSid = !!sid; return msg;",
+    "wires": [["delete_session"]]
+  },
+
+  {
+    "id": "delete_session",
+    "type": "cloudflare-d1-sql",
+    "x": 480,
+    "y": 80,
+    "binding": "DB",
+    "operation": "run",
+    "sql": "DELETE FROM htmlbox_sessions WHERE id = ?1",
+    "bind": "{{payload.sid}}",
+    "responseProperty": "deleteResult",
+    "wires": [["build_response"]]
+  },
+
+  {
+    "id": "build_response",
+    "type": "function",
+    "x": 680,
+    "y": 80,
+    "code": "msg.payload = msg.payload || {}; const hostFull = (msg.headers && msg.headers.host) || ''; const hostNoPort = hostFull.split(':')[0]; const proto = (hostNoPort === 'localhost' || hostNoPort.endsWith('.localhost')) ? 'http:' : 'https:'; const cookieParts = ['sid=', 'Max-Age=0', 'Path=/', 'HttpOnly', 'SameSite=Lax']; if (proto === 'https:') cookieParts.push('Secure'); const clearCookie = cookieParts.join('; '); msg.headers = msg.headers || {}; msg.headers['Set-Cookie'] = clearCookie; msg.payload = { ok: true }; return msg;",
+    "wires": [["out"]]
+  },
+
+  {
+    "id": "out",
+    "type": "http-response",
+    "x": 880,
+    "y": 80,
+    "statusCode": "200",
+    "headers": "{\"Content-Type\":\"application/json\"}"
+  }
+]

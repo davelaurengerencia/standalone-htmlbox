@@ -1,7 +1,17 @@
 # Secrets para wrangler dev / producción. NO commitear el .dev.vars real.
 # Copia este archivo a .dev.vars y rellena los valores.
 
-HTMLBOX_ENV=dev
+# Habilita el preview del magic link en dev (Fix 3, ver AGENTS.md §9).
+# Si HTMLBOX_ENV === 'production' en runtime, NUNCA se devuelve _dev_preview
+# en respuestas de auth (evita bypass de auth cuando el email service falla
+# en prod-fallback). En dev lo seteamos en 'development' para que el preview
+# siga funcionando.
+HTMLBOX_ENV=development
+
+# Auth: origen del Worker `auth` para el flujo de exchange (ticket → cookie).
+# El control-plane hace fetch server-to-server a este origen cuando llega un
+# `?st=...` de /auth/exchange. Mismo valor que portal y runtime.
+HTMLBOX_AUTH_ORIGIN=http://auth.localhost:8785
 
 # Auth: clave HMAC para firmar/verificar cookies de sesión sid
 HTMLBOX_SESSION_SECRET=dev-secret-change-me-please-32chars-min
@@ -29,3 +39,14 @@ HTMLBOX_PORTAL_ORIGIN=http://studio.localhost:8782
 # En prod usá:  wrangler secret put HTMLBOX_INTERNAL_SECRET
 # (en ambos Workers, control-plane y runtime, con el MISMO valor).
 HTMLBOX_INTERNAL_SECRET=
+
+# Modo email: prod en dev también.
+# Por qué: el flow-engine lee esta var (en el nodo `cloudflare-email`) para
+# decidir si invoca el binding `EMAIL` (prod = real) o solo loguea el link
+# (dev = dry-run). Querés que en dev el email también llegue al inbox real
+# (no más "consolá y copiá el link" — operativo desde el browser).
+# El gate Fix 3 sigue protegiendo prod: HTMLBOX_ENV=production hace que
+# routes/auth.js NO incluya `_dev_preview` en la respuesta.
+# Para tests sin binding (CI, mocks), podés volver al dry-run vía override:
+#   npx wrangler dev --remote --port 8781 --var HTMLBOX_EMAIL_MODE:dev
+HTMLBOX_EMAIL_MODE=prod

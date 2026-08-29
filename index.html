@@ -1,0 +1,3353 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SIVO App Studio</title>
+<meta name="description" content="Crea apps con Svelte 5 desde el navegador, sin instalar nada.">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+<style>
+  /* Solo estilos específicos que Bootstrap no cubre directamente */
+  /* Prueba de sync*/
+  html, body { height: 100%; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+
+  /* Header brand badge */
+  .brand-badge {
+    width: 22px; height: 22px; border-radius: 5px;
+    background: var(--bs-primary);
+    color: white;
+    font-size: 0.75rem; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+    line-height: 1;
+  }
+
+  /* File tree (Bootstrap no tiene componente árbol nativo) */
+  .file-tree { font-size: 0.85rem; }
+  .file-tree ul { list-style: none; padding: 0; margin: 0; }
+  .file-tree li { user-select: none; }
+  .file-tree .file {
+    padding: 0.3rem 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+    position: relative;
+  }
+  .file-tree .file:hover { background: var(--bs-secondary-bg); }
+  .file-tree .file.active {
+    background: var(--bs-primary-bg-subtle);
+    color: var(--bs-primary);
+    font-weight: 500;
+  }
+  .file-tree .file .icon {
+    width: 14px; height: 14px; flex-shrink: 0;
+    opacity: 0.7; font-size: 0.75rem;
+  }
+  .file-tree .file .name {
+    flex: 1; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .file-tree .file .delete {
+    visibility: hidden;
+    background: transparent;
+    border: none;
+    color: var(--bs-secondary-color);
+    cursor: pointer;
+    padding: 0 0.3rem;
+    font-size: 0.95rem;
+    line-height: 1;
+    border-radius: 3px;
+  }
+  .file-tree .file:hover .delete { visibility: visible; }
+  .file-tree .file .delete:hover {
+    background: var(--bs-danger-bg-subtle);
+    color: var(--bs-danger);
+  }
+  .file-tree .file[draggable="true"] { cursor: grab; }
+  .file-tree .file.drop-target {
+    background: var(--bs-primary-bg-subtle);
+    box-shadow: inset 0 0 0 2px var(--bs-primary);
+  }
+  .file-tree .folder-row {
+    padding: 0.3rem 0.75rem;
+    font-size: 0.75rem;
+    color: var(--bs-secondary-color);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    user-select: none;
+  }
+  .file-tree .folder-row:hover { background: var(--bs-secondary-bg); }
+  .file-tree .folder-row.drop-target { background: var(--bs-primary-bg-subtle); }
+  .file-tree .folder-children.collapsed { display: none; }
+  .file-tree .indented { padding-left: 1.4rem; }
+  .file-tree .indented-2 { padding-left: 2.1rem; }
+
+  /* Monaco editor: forzar bordes rectos y altura mínima */
+  .monaco-container { width: 100%; height: 100%; min-height: 200px; }
+  .monaco-container .monaco-editor,
+  .monaco-container .monaco-editor .overflow-guard { border-radius: 0; }
+
+  /* Console: estilo monoespaciado para mensajes */
+  .console-body {
+    font-family: ui-monospace, "SF Mono", Monaco, Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+  .console-msg {
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.5;
+  }
+  .console-msg.error {
+    border-left: 3px solid var(--bs-danger);
+  }
+  .console-msg.warn {
+    border-left: 3px solid var(--bs-warning);
+  }
+  .console-msg .file-ref,
+  .console-msg .line-ref {
+    display: inline-block;
+    font-weight: 600;
+    margin-right: 0.4rem;
+  }
+
+  /* Panel de errores: tarjeta estructurada con archivo, línea y mensaje.
+     Click en la tarjeta abre el archivo en el editor. */
+  .error-card {
+    border-left: 3px solid var(--bs-danger);
+    background: var(--bs-danger-bg-subtle);
+    color: var(--bs-body-color);
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+    border-radius: 0 var(--bs-border-radius) var(--bs-border-radius) 0;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .error-card:hover { background: var(--bs-danger-bg-subtle); filter: brightness(0.97); }
+  .error-card.warn {
+    border-left-color: var(--bs-warning);
+    background: var(--bs-warning-bg-subtle);
+  }
+  .error-card .error-loc {
+    font-family: ui-monospace, "SF Mono", Monaco, Menlo, Consolas, monospace;
+    font-size: 11px;
+    color: var(--bs-secondary-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.25rem;
+  }
+  .error-card .error-loc strong { color: var(--bs-body-color); }
+  .error-card .error-loc .goto {
+    color: var(--bs-primary);
+    font-weight: 600;
+  }
+  .error-card .error-msg {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    margin: 0;
+  }
+  .error-card .error-source {
+    font-family: ui-monospace, "SF Mono", Monaco, Menlo, Consolas, monospace;
+    font-size: 11px;
+    color: var(--bs-secondary-color);
+    margin-top: 0.25rem;
+    padding-left: 1rem;
+    border-left: 2px solid var(--bs-border-color);
+  }
+
+  /* Pestañas de documentos abiertos (encima del viewer-pane, dentro de él) */
+  .document-tabs { min-height: 36px; flex-shrink: 0; }
+  .document-tabs:empty { display: none !important; }
+  .tab-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.6rem 0.3rem 0.7rem;
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius) var(--bs-border-radius) 0 0;
+    font-size: 0.8rem;
+    color: var(--bs-secondary-color);
+    cursor: pointer;
+    white-space: nowrap;
+    border-bottom-color: transparent;
+    position: relative;
+    top: 1px;
+  }
+  .tab-item:hover { color: var(--bs-body-color); }
+  .tab-item.active {
+    color: var(--bs-primary);
+    font-weight: 600;
+    background: var(--bs-body);
+    border-bottom-color: var(--bs-body-bg);
+  }
+  .tab-item .tab-close {
+    background: transparent;
+    border: none;
+    color: var(--bs-secondary-color);
+    padding: 0 0.15rem;
+    font-size: 0.95rem;
+    line-height: 1;
+    border-radius: 3px;
+    cursor: pointer;
+    opacity: 0.6;
+  }
+  .tab-item:hover .tab-close { opacity: 1; }
+  .tab-item .tab-close:hover { background: var(--bs-danger-bg-subtle); color: var(--bs-danger); }
+  .tab-item .tab-icon { font-size: 0.7rem; opacity: 0.7; }
+
+  /* Placeholder del viewer cuando el archivo activo no es previsualizable. */
+  .viewer-placeholder {
+    background: var(--bs-body-bg);
+  }
+
+  /* FAB "Editar este componente": posicionado dentro del viewer-pane,
+     visible solo cuando el viewer muestra un componente aislado y el editor
+     está cerrado. */
+  .viewer-pane { position: relative; }
+  #edit-component-fab {
+    position: absolute;
+    right: 16px;
+    bottom: 16px;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    z-index: 50;
+    pointer-events: auto;
+  }
+  #edit-component-fab:not(.d-none) { display: inline-flex !important; }
+
+  /* Status indicator pulse para "compilando" */
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .is-compiling .status-dot { animation: pulse 1s infinite; }
+
+  /* Native <dialog>: aplicar estilos de Bootstrap modal sin reescribir el componente */
+  dialog.modal-dialog {
+    border: none;
+    padding: 0;
+    max-width: 480px;
+    width: 100%;
+    margin: 1.75rem auto;
+    background: transparent;
+  }
+  dialog.modal-dialog::backdrop { background: rgba(0,0,0,0.5); }
+  dialog.modal-dialog[open] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  dialog .modal-content {
+    background: var(--bs-body-bg);
+    color: var(--bs-body-color);
+    border-radius: var(--bs-border-radius-lg);
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,0.15);
+    width: 100%;
+  }
+
+  /* Responsive: stack vertical en pantallas pequeñas */
+  @media (max-width: 880px) {
+    .layout { flex-direction: column !important; }
+    aside.sidebar { width: 100% !important; max-height: 180px; }
+    main.content { flex-direction: column !important; }
+  }
+
+  /* UX viewer-primero: editor oculto por defecto (vía d-none en el HTML).
+     El body gana la clase .editor-open al pulsar "Editar"; entonces
+     el JS intercambia d-none ↔ d-flex en el editor-pane. */
+  body.editor-open .editor-pane {
+    flex: 1 1 40%;
+    border-left: 1px solid var(--bs-border-color);
+  }
+  body.editor-open .viewer-pane { flex: 1 1 60%; }
+  @media (max-width: 880px) {
+    body.editor-open main.content { flex-direction: column !important; }
+    body.editor-open .viewer-pane,
+    body.editor-open .editor-pane { flex: 1 1 50% !important; border-left: 0 !important; border-top: 1px solid var(--bs-border-color); }
+  }
+
+  /* Modal de prueba de rendimiento: más ancho que el resto */
+  dialog#stressReport.modal-dialog {
+    max-width: 880px;
+  }
+  .stress-kpi {
+    border: 1px solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius);
+    padding: 0.75rem 1rem;
+    background: var(--bs-body-bg);
+  }
+  .stress-kpi .label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--bs-secondary-color);
+    margin-bottom: 0.25rem;
+  }
+  .stress-kpi .value {
+    font-size: 1.4rem;
+    font-weight: 700;
+    font-family: ui-monospace, "SF Mono", Monaco, Menlo, Consolas, monospace;
+  }
+  .stress-kpi .unit {
+    font-size: 0.85rem;
+    color: var(--bs-secondary-color);
+    font-weight: 500;
+    margin-left: 0.2rem;
+  }
+  #stressTable tbody tr td {
+    font-family: ui-monospace, "SF Mono", Monaco, Menlo, Consolas, monospace;
+    font-size: 12px;
+    vertical-align: middle;
+  }
+  #stressTable tbody tr td.path {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 12px;
+  }
+  #stressTable th.sortable {
+    cursor: pointer;
+    user-select: none;
+  }
+  #stressTable th.sortable:hover { background: var(--bs-secondary-bg); }
+  #stressTable .sort-arrow { opacity: 0.5; margin-left: 0.25rem; font-size: 0.7rem; }
+  #stressTable .outlier { background: var(--bs-warning-bg-subtle); }
+  .stress-table-wrap {
+    max-height: 320px;
+    overflow: auto;
+    border: 1px solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius);
+  }
+</style>
+</head>
+<body class="d-flex flex-column vh-100 overflow-hidden">
+
+<header class="navbar navbar-expand bg-body-tertiary border-bottom px-3 py-2 flex-shrink-0 gap-2">
+  <h1 class="navbar-brand mb-0 h6 d-flex align-items-center gap-2 fw-bold text-primary">
+    <span class="brand-badge">S</span>
+    SIVO App Studio
+  </h1>
+  <select id="templates" class="form-select form-select-sm w-auto" aria-label="Cargar plantilla">
+    <option value="">— Plantillas —</option>
+    <option value="counter">Contador</option>
+    <option value="todo">Lista de tareas</option>
+    <option value="form">Formulario</option>
+    <option value="fetch">Consumir API</option>
+    <option value="tabs">Pestañas</option>
+    <option value="modal">Modal</option>
+    <option value="multifile">Multi-archivo (con Header)</option>
+    <option value="dashboard">Dashboard (con /components)</option>
+    <option value="starter">Starter (con utils.js y styles.css)</option>
+    <option value="stress50">Prueba de rendimiento (50 componentes)</option>
+    <option value="erp50">Prueba ERP (50 componentes pesados)</option>
+  </select>
+  <button id="reset" type="button" class="btn btn-sm btn-outline-secondary" title="Volver al contador inicial">Restablecer</button>
+  <button id="help-btn" type="button" class="btn btn-sm btn-outline-secondary" title="¿Cómo funciona?">?</button>
+  <button id="export" type="button" class="btn btn-sm btn-primary ms-auto">
+    <i class="bi bi-download"></i> Exportar HTML
+  </button>
+</header>
+
+<div class="layout flex-grow-1 d-flex overflow-hidden" style="min-height:0">
+  <aside class="sidebar bg-body-tertiary border-end d-flex flex-column flex-shrink-0" style="width:220px">
+    <div class="d-flex align-items-center justify-content-between px-3 py-2 border-bottom bg-body text-uppercase small fw-bold text-secondary">
+      <span>Archivos</span>
+      <button id="new-file" class="btn btn-sm btn-outline-secondary py-0 px-2" title="Crear archivo">
+        <i class="bi bi-plus-lg"></i>
+      </button>
+    </div>
+    <div class="file-tree flex-grow-1 overflow-auto py-1" id="file-tree"></div>
+  </aside>
+
+  <main class="content flex-grow-1 d-flex overflow-hidden" style="min-width:0;min-height:0">
+    <section class="viewer-pane flex-grow-1 d-flex flex-column overflow-hidden" style="min-width:0;min-height:0">
+      <div class="viewer-header d-flex align-items-center justify-content-between px-3 py-2 bg-body-secondary border-bottom text-uppercase small fw-bold text-secondary">
+        <span class="d-flex align-items-center gap-2 text-truncate">
+          <i class="bi bi-eye"></i>
+          <span class="fw-normal" style="text-transform:none;letter-spacing:0;font-size:.75rem">Vista previa</span>
+          <span class="fw-normal text-secondary" style="text-transform:none;letter-spacing:0;font-size:.75rem">·</span>
+          <span id="viewer-document-label" class="fw-normal text-secondary" style="text-transform:none;letter-spacing:0;font-size:.75rem">Tu aplicación</span>
+        </span>
+        <button id="toggle-editor" type="button" class="btn btn-sm btn-outline-secondary" title="Editar (Ctrl/⌘+.)">
+          <i class="bi bi-pencil"></i> Editar
+        </button>
+      </div>
+      <!-- Pestañas de documentos abiertos. Vacía (y oculta) si solo hay un archivo. -->
+      <div id="document-tabs" class="document-tabs d-none d-flex align-items-center gap-1 px-2 bg-body-tertiary border-bottom overflow-auto"></div>
+      <iframe id="preview" sandbox="allow-scripts" class="flex-grow-1 w-100 border-0 bg-white" title="Vista previa de la app"></iframe>
+      <!-- Placeholder para archivos no previsualizables (.js, .css, .json) -->
+      <div id="viewer-placeholder" class="viewer-placeholder d-none flex-grow-1 d-flex flex-column align-items-center justify-content-center text-center p-4">
+        <i class="bi bi-file-earmark-text text-secondary mb-3" style="font-size:3rem"></i>
+        <h3 class="h5 text-secondary mb-2">No se puede previsualizar</h3>
+        <p class="text-secondary mb-3">Este archivo no es una pantalla.<br>Pulsa <strong>Editar</strong> para abrirlo en el editor.</p>
+        <button id="open-current" type="button" class="btn btn-primary">
+          <i class="bi bi-pencil"></i> Editar
+        </button>
+      </div>
+      <!-- FAB: editar el componente aislado mostrado en el viewer.
+           Solo visible cuando el viewer muestra un componente (.svelte distinto
+           de App.svelte) y el editor no está abierto. -->
+      <button id="edit-component-fab" type="button"
+              class="btn btn-primary rounded-circle shadow d-none"
+              title="Editar este componente (Ctrl/⌘+.)"
+              aria-label="Editar este componente">
+        <i class="bi bi-pencil"></i>
+      </button>
+    </section>
+    <section class="editor-pane d-none flex-column overflow-hidden" style="min-width:0;min-height:0">
+      <div class="editor-header d-flex align-items-center justify-content-between px-3 py-2 bg-body-secondary border-bottom text-uppercase small fw-bold text-secondary">
+        <span id="active-document-name" class="text-truncate">App</span>
+        <span class="fw-normal text-muted" style="font-size:.7rem;text-transform:none;letter-spacing:0">Los cambios se reflejan al guardar</span>
+      </div>
+      <div class="editor-host flex-grow-1" style="min-height:0">
+        <div id="monaco" class="monaco-container h-100" aria-label="Editor de código"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer class="console border-top bg-body-tertiary flex-shrink-0 d-flex flex-column" style="height:150px">
+  <div id="console-header" class="console-header d-flex align-items-center gap-2 px-3 py-2 border-bottom bg-body text-uppercase small fw-bold text-secondary">
+    <span class="status-dot d-inline-block rounded-circle bg-success" style="width:8px;height:8px"></span>
+    <span id="console-title">Listo</span>
+  </div>
+  <div id="console-body" class="console-body flex-grow-1 overflow-auto px-3 py-2">
+    <div class="empty text-muted fst-italic">Elige una plantilla o empieza a escribir. La vista previa se actualizará sola.</div>
+  </div>
+</footer>
+
+<dialog id="help" class="modal-dialog">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h5 class="modal-title text-primary">SIVO App Studio</h5>
+      <button type="button" class="btn-close" onclick="document.getElementById('help').close()" aria-label="Cerrar"></button>
+    </div>
+    <div class="modal-body">
+      <p>Construye tu aplicación desde el navegador: empiezas viendo siempre tu app, y solo cuando quieras modificar el código abres el editor.</p>
+      <ul class="mb-2">
+        <li>Elige una <strong>plantilla</strong> en el menú superior para empezar rápido.</li>
+        <li>Crea archivos nuevos con el botón <strong>+</strong> del panel izquierdo.</li>
+        <li>Cuando algo no funcione, el panel inferior te dice <strong>dónde</strong> está el problema. Haz clic en el mensaje para abrir el archivo.</li>
+        <li>Pulsa <strong>Editar</strong> cuando quieras cambiar el código. Los cambios se reflejan en tu app al guardar.</li>
+        <li>Tu proyecto se guarda solo en este navegador.</li>
+        <li>Cuando esté listo, pulsa <strong>Exportar HTML</strong> para descargar un archivo único que se abre con doble clic.</li>
+      </ul>
+      <p class="text-secondary small mb-0">Dentro del editor puedes usar las clases de Bootstrap 5.3 directamente en el HTML de tus pantallas.</p>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-primary" onclick="document.getElementById('help').close()">Entendido</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="newFileDialog" class="modal-dialog">
+  <form id="new-file-form" class="modal-content">
+    <div class="modal-header">
+      <h5 class="modal-title">Crear archivo</h5>
+      <button type="button" class="btn-close" data-cancel aria-label="Cerrar"></button>
+    </div>
+    <div class="modal-body">
+      <label for="new-file-name" class="form-label">Nombre (puede incluir subcarpeta, p.ej. <code>components/Header.svelte</code>)</label>
+      <input id="new-file-name" type="text" class="form-control" placeholder="Header.svelte" required>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-outline-secondary" data-cancel>Cancelar</button>
+      <button type="submit" class="btn btn-primary">Crear</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="renameDialog" class="modal-dialog">
+  <form id="rename-form" class="modal-content">
+    <div class="modal-header">
+      <h5 class="modal-title">Renombrar archivo</h5>
+      <button type="button" class="btn-close" data-cancel aria-label="Cerrar"></button>
+    </div>
+    <div class="modal-body">
+      <label for="rename-input" class="form-label">Nuevo nombre (puede incluir subcarpeta)</label>
+      <input id="rename-input" type="text" class="form-control" required>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-outline-secondary" data-cancel>Cancelar</button>
+      <button type="submit" class="btn btn-primary">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="stressReport" class="modal-dialog">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h5 class="modal-title text-primary d-flex align-items-center gap-2">
+        <i class="bi bi-speedometer2"></i>
+        Reporte de rendimiento
+      </h5>
+      <button type="button" class="btn-close" data-stress-close aria-label="Cerrar"></button>
+    </div>
+    <div class="modal-body">
+      <p class="text-secondary small mb-3" id="stressSummary">
+        Compilación de <strong id="stressFileCount">0</strong> componentes.
+        Mide el tiempo de compilación, el tamaño del bundle, la hidratación del iframe y la memoria usada.
+      </p>
+
+      <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3">
+          <div class="stress-kpi">
+            <div class="label">Tiempo total</div>
+            <div class="value"><span id="stressTotalMs">—</span><span class="unit">ms</span></div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="stress-kpi">
+            <div class="label">Bundle (usuario)</div>
+            <div class="value"><span id="stressBundleKb">—</span><span class="unit">KB</span></div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="stress-kpi">
+            <div class="label">Hidratación iframe</div>
+            <div class="value"><span id="stressHydrationMs">—</span><span class="unit">ms</span></div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="stress-kpi">
+            <div class="label">Δ memoria</div>
+            <div class="value"><span id="stressMemDelta">—</span><span class="unit" id="stressMemUnit">MB</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <strong class="small text-uppercase text-secondary">Tiempos por archivo</strong>
+        <span class="small text-secondary" id="stressSortHint">Ordena haciendo clic en una columna</span>
+      </div>
+      <div class="stress-table-wrap">
+        <table class="table table-sm table-hover mb-0" id="stressTable">
+          <thead class="table-light sticky-top">
+            <tr>
+              <th class="sortable" data-sort="idx">#</th>
+              <th class="sortable" data-sort="path">Archivo</th>
+              <th class="sortable text-end" data-sort="lines">Líneas</th>
+              <th class="sortable text-end" data-sort="bytes">Tamaño</th>
+              <th class="sortable text-end" data-sort="ms">Tiempo</th>
+            </tr>
+          </thead>
+          <tbody id="stressTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-footer d-flex justify-content-between">
+      <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="stressCopyJson">
+          <i class="bi bi-clipboard"></i> Copiar JSON
+        </button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="stressDownloadCsv">
+          <i class="bi bi-filetype-csv"></i> Descargar CSV
+        </button>
+        <button type="button" class="btn btn-outline-primary btn-sm" id="stressRerun" title="Borra la caché y vuelve a compilar para obtener tiempos reales">
+          <i class="bi bi-arrow-clockwise"></i> Volver a correr
+        </button>
+      </div>
+      <button type="button" class="btn btn-primary btn-sm" data-stress-close>Cerrar</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- AMD loader de Monaco (cargado como script clásico para definir require global) -->
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs/loader.js"></script>
+<script>
+  // Configurar workers antes de cargar Monaco. Devolvemos un worker vacío
+  // para silenciar los 404 y la creación de workers que no usamos (TS, etc.).
+  self.MonacoEnvironment = {
+    getWorker: function () {
+      const blob = new Blob(['self.onmessage=()=>{};'], { type: 'application/javascript' });
+      return new Worker(URL.createObjectURL(blob));
+    }
+  };
+  require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.52.0/min/vs' } });
+</script>
+
+  <script src="./erp-build.js"></script>
+<script type="module">
+  import { compile as svelteCompile } from 'https://esm.sh/svelte@5/compiler';
+
+  // ════════════════════════════════════════════════════════════
+  // FileSystem — CRUD + persistencia + observer
+  // ════════════════════════════════════════════════════════════
+  const fs = {
+    _files: new Map(),
+    _subs: new Set(),
+    _key: 'sivo-app-studio:project:v1',
+    _legacyKey: 'repl-svelte:project:v3',
+
+    /** Carga desde localStorage. Llamar una vez al inicio. */
+    load() {
+      try {
+        let raw = localStorage.getItem(this._key);
+        // Migración automática desde la key vieja (repl-svelte) si la nueva no existe.
+        if (!raw && this._legacyKey) {
+          raw = localStorage.getItem(this._legacyKey);
+          if (raw) {
+            try { localStorage.setItem(this._key, raw); } catch {}
+            try { localStorage.removeItem(this._legacyKey); } catch {}
+          }
+        }
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        for (const path in data) {
+          this._files.set(path, { content: data[path], mtime: 0 });
+        }
+      } catch (e) {
+        console.warn('localStorage corrupto, ignorando:', e);
+        localStorage.removeItem(this._key);
+      }
+    },
+
+    /** Devuelve true si existe el archivo. */
+    exists(path) { return this._files.has(path); },
+
+    /** Devuelve el contenido o lanza si no existe. */
+    read(path) {
+      if (!this._files.has(path)) throw new Error('No existe: ' + path);
+      return this._files.get(path).content;
+    },
+
+    /** Escribe. Dispara observers si cambió el contenido. */
+    write(path, content) {
+      const wasNew = !this._files.has(path);
+      const prev = wasNew ? null : this._files.get(path).content;
+      this._files.set(path, { content, mtime: Date.now() });
+      this._save();
+      if (wasNew || prev !== content) {
+        this._notify({ type: 'write', path, prev, next: content });
+      }
+    },
+
+    rename(from, to) {
+      if (this._files.has(to)) throw new Error('Ya existe: ' + to);
+      if (!this._files.has(from)) throw new Error('No existe: ' + from);
+      const entry = this._files.get(from);
+      this._files.delete(from);
+      this._files.set(to, entry);
+      this._save();
+      this._notify({ type: 'rename', from, to, content: entry.content });
+    },
+
+    delete(path) {
+      if (!this._files.has(path)) return;
+      const entry = this._files.get(path);
+      this._files.delete(path);
+      this._save();
+      this._notify({ type: 'delete', path, content: entry.content });
+    },
+
+    /** Lista los paths ordenados. */
+    list() { return [...this._files.keys()].sort(); },
+
+    /** Suscribe a cambios. Devuelve función para desuscribir. */
+    subscribe(cb) {
+      this._subs.add(cb);
+      return () => this._subs.delete(cb);
+    },
+
+    _save() {
+      try {
+        const data = {};
+        for (const [path, entry] of this._files) data[path] = entry.content;
+        localStorage.setItem(this._key, JSON.stringify(data));
+      } catch (e) {
+        if (e.name === 'QuotaExceededError') {
+          throw new Error('Proyecto demasiado grande para guardar');
+        }
+        throw e;
+      }
+    },
+
+    _notify(event) {
+      for (const cb of this._subs) {
+        try { cb(event); } catch (e) { console.error('fs subscriber error:', e); }
+      }
+    },
+  };
+
+  // ════════════════════════════════════════════════════════════
+  // Resolver — paths + extensión opcional
+  // ════════════════════════════════════════════════════════════
+  const resolver = {
+    /** Une base + relative normalizando (./ ../ /). */
+    _join(base, relative) {
+      if (relative.startsWith('./')) relative = relative.slice(2);
+      const parts = (base + relative).split('/');
+      const stack = [];
+      for (const p of parts) {
+        if (p === '..') stack.pop();
+        else if (p !== '.' && p !== '') stack.push(p);
+      }
+      return '/' + stack.join('/');
+    },
+
+    /** Resuelve './X' o '../X' o '/abs' a un path absoluto. Sin extensión opcional. */
+    resolve(importer, spec) {
+      if (spec.startsWith('/')) return this._normalize(spec);
+      const dir = importer.substring(0, importer.lastIndexOf('/') + 1);
+      if (spec.startsWith('./') || spec.startsWith('../')) {
+        return this._normalize(this._join(dir, spec));
+      }
+      return null;
+    },
+
+    /** Resuelve y busca extensión si no la tiene. */
+    resolveWithExt(importer, spec) {
+      const resolved = this.resolve(importer, spec);
+      if (!resolved) return null;
+      if (this.ext(resolved)) return fs.exists(resolved) ? resolved : null;
+
+      const candidates = [
+        resolved + '.svelte',
+        resolved + '.svelte.js',
+        resolved + '.svelte.ts',
+        resolved + '.js',
+        resolved + '.ts',
+        resolved + '.css',
+        resolved + '.json',
+        resolved + '/index.svelte',
+        resolved + '/index.js',
+      ];
+      for (const c of candidates) {
+        if (fs.exists(c)) return c;
+      }
+      return null;
+    },
+
+    ext(path) {
+      const last = path.split('/').pop();
+      const dot = last.lastIndexOf('.');
+      return dot <= 0 ? '' : last.slice(dot + 1);
+    },
+
+    _normalize(path) {
+      let out = path;
+      while (out.includes('//')) out = out.replace(/\/\//g, '/');
+      if (out.length > 1 && out[0] !== '/') out = '/' + out;
+      return out;
+    },
+  };
+
+  // ════════════════════════════════════════════════════════════
+  // Hash rápido (djb2) para detectar cambios en caché
+  // ════════════════════════════════════════════════════════════
+  function hashOf(content) {
+    let h = 5381;
+    for (let i = 0; i < content.length; i++) {
+      h = ((h << 5) + h + content.charCodeAt(i)) | 0;
+    }
+    return 'h' + (h >>> 0).toString(36);
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // toDataUrl — codifica un string como data: URL
+  // ════════════════════════════════════════════════════════════
+  function toDataUrl(code) {
+    // Antes: spread operator sobre Uint8Array → "Maximum call stack size exceeded"
+    // para bundles > ~50KB. Acumulamos en string con loop.
+    let bin = '';
+    const bytes = new TextEncoder().encode(code);
+    const chunk = 8192;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return 'data:text/javascript;base64,' + btoa(bin);
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // Loaders — procesan cada extensión a un módulo
+  // ════════════════════════════════════════════════════════════
+  const loaders = {
+    /** @param {string} path @param {string} content */
+    svelte(path, content) {
+      try {
+        const r = svelteCompile(content, { generate: 'client', filename: path, dev: false });
+        return {
+          ok: true,
+          kind: 'svelte',
+          js: r.js.code,
+          css: r.css?.code || '',
+          warnings: r.warnings || [],
+        };
+      } catch (e) {
+        return {
+          ok: false,
+          kind: 'svelte',
+          errors: [{
+            file: path,
+            message: e.message || String(e),
+            start: e.start,
+            position: e.position,
+            frame: e.frame,
+          }],
+        };
+      }
+    },
+
+    js(path, content) {
+      return { ok: true, kind: 'js', js: content, css: '', warnings: [] };
+    },
+
+    /** Genera un módulo side-effect que inyecta un <style> en runtime. */
+    css(path, content) {
+      const escapedPath = JSON.stringify(path);
+      const escapedCss = JSON.stringify(content);
+      const js =
+        `const __path=${escapedPath};const __css=${escapedCss};` +
+        `if(typeof document!=='undefined'){` +
+        `const __old=document.querySelector('style[data-repl-style="'+__path+'"]');` +
+        `if(__old)__old.remove();` +
+        `const __s=document.createElement('style');` +
+        `__s.setAttribute('data-repl-style',__path);` +
+        `__s.textContent=__css;` +
+        `document.head.appendChild(__s);}` +
+        `export default __css;`;
+      return { ok: true, kind: 'css', js, css: '', warnings: [] };
+    },
+
+    json(path, content) {
+      try {
+        const parsed = JSON.parse(content);
+        return { ok: true, kind: 'json', js: `export default ${JSON.stringify(parsed)};`, css: '', warnings: [] };
+      } catch (e) {
+        return {
+          ok: false,
+          kind: 'json',
+          errors: [{ file: path, message: 'JSON inválido: ' + e.message, start: { line: e.lineNumber || 1, column: (e.columnNumber || 1) - 1 } }],
+        };
+      }
+    },
+  };
+
+// (Función maskStringsAndComments removida — usamos parser AST)
+
+  // ════════════════════════════════════════════════════════════
+  // Parser — extracción de imports via AST real (acorn)
+  // Cubre correctamente:
+  //   - ImportDeclaration:   import X from './Y', import './Y'
+  //   - ImportExpression:    import('./Y') (dynamic)
+  //   - ExportNamed+source:  export { x } from './Y'
+  //   - ExportAllDeclaration: export * from './Y'
+  // Ignora correctamente strings, comentarios y template literals.
+  // Devuelve [] si el código no parsea (no lanza).
+  // ════════════════════════════════════════════════════════════
+  const parser = {
+    _acorn: null,
+
+    /** Carga acorn desde esm.sh. Llamar una vez al inicio. */
+    async load() {
+      if (this._acorn) return this._acorn;
+      const m = await import('https://esm.sh/acorn@8.14.0');
+      this._acorn = m.default || m;
+      return this._acorn;
+    },
+
+    /** Parsea código JS y devuelve [{ spec, start, end, kind }].
+     *  start/end son offsets absolutos sobre `code` original (NO sobre los strings
+     *  de los sources; son los offsets del nodo AST). */
+    extractImports(code) {
+      if (!this._acorn) return [];
+      let ast;
+      try {
+        ast = this._acorn.parse(code, { ecmaVersion: 'latest', sourceType: 'module' });
+      } catch (e) {
+        return [];
+      }
+      const out = [];
+      const walk = (node) => {
+        if (!node || typeof node !== 'object' || typeof node.type !== 'string') return;
+
+        if (node.type === 'ImportDeclaration' && node.source && typeof node.source.value === 'string') {
+          out.push({ spec: node.source.value, start: node.source.start, end: node.source.end, kind: 'static' });
+        }
+        else if (node.type === 'ImportExpression' && node.source && node.source.type === 'Literal' && typeof node.source.value === 'string') {
+          out.push({ spec: node.source.value, start: node.source.start, end: node.source.end, kind: 'dynamic' });
+        }
+        else if (node.type === 'ExportNamedDeclaration' && node.source) {
+          out.push({ spec: node.source.value, start: node.source.start, end: node.source.end, kind: 'reexport' });
+        }
+        else if (node.type === 'ExportAllDeclaration' && node.source) {
+          out.push({ spec: node.source.value, start: node.source.start, end: node.source.end, kind: 'reexport' });
+        }
+
+        for (const key in node) {
+          if (key === 'type' || key === 'start' || key === 'end' || key === 'loc' || key === 'range') continue;
+          const v = node[key];
+          if (Array.isArray(v)) v.forEach(walk);
+          else if (v && typeof v === 'object' && typeof v.type === 'string') walk(v);
+        }
+      };
+      walk(ast);
+      return out;
+    },
+  };
+
+
+  // ════════════════════════════════════════════════════════════
+  const compiler = {
+    _nodes: new Map(),  // path → { hash, deps: Set, compiled: { js, css, warnings } | null }
+    /** Hook opcional para instrumentar builds (stress test). Se llama con
+     *  { onFileCompile(path, ms, bytes) } antes del compile(). Pasar null
+     *  para desactivar. */
+    _instrument: null,
+
+    /** Topological walk desde 'entry'. Devuelve { modules: {path → {js, css}}, errors: [...], warnings: [...], order: [paths] }. */
+    build(entry = '/App.svelte') {
+      const errors = [];
+      const order = [];
+      const visiting = new Set();
+      const visited = new Set();
+      const inst = this._instrument;
+
+      const visit = (path) => {
+        if (visited.has(path)) return;
+        if (visiting.has(path)) {
+          errors.push({ file: path, message: 'Import cíclico detectado: ' + path });
+          return;
+        }
+        visiting.add(path);
+
+        if (!fs.exists(path)) {
+          errors.push({ file: path, message: 'Archivo no encontrado: ' + path });
+          visiting.delete(path);
+          return;
+        }
+
+        const content = fs.read(path);
+        const hash = hashOf(content);
+        let node = this._nodes.get(path);
+        const stale = !node || node.hash !== hash;
+
+        if (stale) {
+          if (!node) {
+            node = { hash: '', deps: new Set(), compiled: null };
+            this._nodes.set(path, node);
+          }
+          const ext = resolver.ext(path);
+          const loader = loaders[ext];
+          if (!loader) {
+            errors.push({ file: path, message: 'Extensión no soportada: ' + (ext || '(sin extensión)') });
+            visiting.delete(path);
+            return;
+          }
+          // Instrumentación opcional (solo stress test). Mide el tiempo de
+          // la llamada al loader (svelteCompile) por archivo.
+          let result;
+          if (inst) {
+            const t0 = performance.now();
+            result = loader(path, content);
+            inst.onFileCompile && inst.onFileCompile(path, performance.now() - t0, content.length);
+          } else {
+            result = loader(path, content);
+          }
+          if (!result.ok) {
+            for (const err of result.errors) errors.push(err);
+            node.compiled = null;
+          } else {
+            // Recolectar deps del código compilado (raw, antes de reescribir)
+            const rawDeps = this._extractDeps(path, result.js);
+            node.deps = new Set(rawDeps);
+            node.compiled = result;
+            node.hash = hash;
+          }
+        }
+
+        // Visitar deps en orden topológico
+        for (const dep of node.deps) {
+          visit(dep);
+        }
+
+        visiting.delete(path);
+        visited.add(path);
+        order.push(path);
+      };
+
+      visit(entry);
+
+      // Recolectar warnings de los módulos compilados
+      const warnings = [];
+      for (const path of order) {
+        const node = this._nodes.get(path);
+        if (node?.compiled?.warnings?.length) {
+          for (const w of node.compiled.warnings) warnings.push({ file: path, ...w });
+        }
+      }
+
+      // Construir módulos finales: ahora reescribimos imports a data URLs
+      const modules = {};
+      for (const path of order) {
+        const node = this._nodes.get(path);
+        if (!node?.compiled) continue;
+        modules[path] = {
+          js: this._rewriteImports(node.compiled.js, path),
+          css: node.compiled.css || '',
+          kind: node.compiled.kind,
+        };
+      }
+
+      return { modules, errors, warnings };
+    },
+
+    /** Extrae las rutas que importa un módulo (después del loader, antes del rewrite).
+     *  Usa el AST real (acorn). Solo imports estáticos relativos cuentan como deps. */
+    _extractDeps(importer, code) {
+      const deps = new Set();
+      const imports = parser.extractImports(code);
+      for (const { spec, kind } of imports) {
+        if (kind !== 'static') continue;
+        if (spec.startsWith('.') || spec.startsWith('/')) {
+          const resolved = resolver.resolveWithExt(importer, spec);
+          if (resolved) deps.add(resolved);
+        }
+      }
+      return deps;
+    },
+
+    /** Reescribe imports en código compilado para que funcionen dentro de data: URLs.
+     *  Usa offsets reales del AST (acorn), no regex. Aplicamos reemplazos
+     *  derecha→izquierda para no invalidar offsets.
+     *  Los offsets del AST en acorn para un Literal incluyen las comillas,
+     *  por lo que preservamos el primer y último carácter (la comilla) y
+     *  solo sustituimos el contenido del spec.
+     *  - './X' / '../X' / '/X' → data: URL del módulo compilado (recursivo)
+     *  - 'svelte/internal/...' → URL absoluta del runtime (tomada del import map)
+     *  - Dynamic imports relativos también se reescriben (import('./X'))
+     *  - Strings en comentarios o literales NO se tocan (el parser los ignora) */
+    _rewriteImports(code, importer, depth = 0) {
+      if (depth > 64) return code;
+      const imports = parser.extractImports(code);
+      let result = code;
+      // Aplicar reemplazos de derecha a izquierda para no invalidar offsets.
+      for (let i = imports.length - 1; i >= 0; i--) {
+        const { spec, start, end, kind } = imports[i];
+        let replacement = spec;
+        // start/end apuntan a las comillas; preservarlas y reemplazar solo el spec.
+        const quoteOpen = code[start];
+        const quoteClose = code[end - 1];
+        const specStart = start + 1;
+        const specEnd = end - 1;
+
+        const isRelative = spec.startsWith('.') || spec.startsWith('/');
+        if (kind === 'dynamic' && isRelative) {
+          const resolved = resolver.resolveWithExt(importer, spec);
+          const node = resolved && this._nodes.get(resolved);
+          if (node?.compiled) {
+            replacement = quoteOpen + this._rewriteImports(node.compiled.js, resolved, depth + 1) + quoteClose;
+            result = result.slice(0, start) + replacement + result.slice(end);
+            continue;
+          }
+        } else if (kind === 'static' || kind === 'reexport') {
+          if (isRelative) {
+            const resolved = resolver.resolveWithExt(importer, spec);
+            const node = resolved && this._nodes.get(resolved);
+            if (node?.compiled) {
+              replacement = toDataUrl(this._rewriteImports(node.compiled.js, resolved, depth + 1));
+            }
+          } else {
+            replacement = runtime?.importMap?.imports?.[spec] || spec;
+          }
+        }
+        // Mantener comillas; reemplazar solo el contenido del spec.
+        result = result.slice(0, specStart) + replacement + result.slice(specEnd);
+      }
+      return result;
+    },
+
+    /** Para poner en data URL: el JS ya tiene sus propios imports a data URLs de primer nivel.
+     * Pero los módulos inferiores también necesitan sus imports reescritos.
+     * Como el compiler procesa todos los archivos, sus `compiled.js` ya tiene imports
+     * hacia otros archivos; necesitamos reescribirlos recursivamente antes de meterlos
+     * en data URL. Hacemos esto en build() en vez de aquí. */
+    _stripImportsForUrl(code, importer) {
+      return this._rewriteImports(code, importer);
+    },
+
+    /** Invalida un path y sus dependents. Llamar cuando el fs notifica un cambio. */
+    invalidate(path) {
+      const node = this._nodes.get(path);
+      if (node) {
+        node.hash = '';
+        node.compiled = null;
+      }
+      // También invalidar dependents (los que importan este)
+      for (const [otherPath, otherNode] of this._nodes) {
+        if (otherNode.deps.has(path)) this.invalidate(otherPath);
+      }
+    },
+
+    /** Limpia toda la caché (útil cuando cambia la versión de Svelte). */
+    clear() {
+      this._nodes.clear();
+    },
+  };
+
+  // ════════════════════════════════════════════════════════════
+  // La carga del runtime se ha movido dentro de la clase Runtime.
+  // ════════════════════════════════════════════════════════════
+
+  // ════════════════════════════════════════════════════════════
+  // Preview — monta el bundle en el iframe sandbox
+  // Lee runtime.importMap en cada mount (la referencia es perezosa).
+  // Soporta dos tipos de bundle:
+  //   - .svelte: bundle.entryJs → data URL + importMap + Bootstrap
+  //   - .md / .schema.json: bundle.kind === 'html' → bundle.html ya es srcdoc
+  // ════════════════════════════════════════════════════════════
+  const preview = {
+    el: document.getElementById('preview'),
+
+    mount(bundle) {
+      if (bundle && bundle.kind === 'html') {
+        this.el.srcdoc = bundle.html;
+        return;
+      }
+      const entryDataUrl = toDataUrl(bundle.entryJs);
+      this.el.srcdoc = buildSrcdoc(entryDataUrl, runtime.importMap);
+    },
+
+    reload() {
+      const src = this.el.srcdoc;
+      this.el.srcdoc = '';
+      this.el.srcdoc = src;
+    },
+  };
+
+  function buildSrcdoc(entryDataUrl, importMap) {
+    const importMapJson = JSON.stringify(importMap || { imports: {} });
+    return `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Preview</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <scr` + `ipt type="importmap">${importMapJson}</scr` + `ipt>
+  <style>
+    body { margin: 0; }
+    #root { padding: 1rem; }
+  </style>
+</head>
+<body>
+  <div id="root">cargando…</div>
+  <scr` + `ipt type="module">
+    window.addEventListener('error', (e) => {
+      parent.postMessage({ type: 'iframe-error', error: e.message || String(e), line: e.lineno, col: e.colno }, '*');
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      parent.postMessage({ type: 'iframe-error', error: (e.reason && e.reason.message) || String(e.reason) }, '*');
+    });
+    try {
+      const mod = await import(${JSON.stringify(entryDataUrl)});
+      const { mount } = await import('svelte');
+      const root = document.getElementById('root');
+      root.innerHTML = ''; // limpiar "cargando…" antes de montar (Svelte 5 no lo hace solo)
+      const t0 = performance.now();
+      mount(mod.default, { target: root });
+      // Tiempo interno del iframe: desde el inicio del mount hasta que mount() retorna.
+      // Es una buena aproximación del "tiempo de hidratación" (compilación + render inicial).
+      parent.postMessage({ type: 'stress-hydrated', t: performance.now() - t0 }, '*');
+      parent.postMessage({ type: 'iframe-ready' }, '*');
+    } catch (e) {
+      const msg = (e && e.message) || String(e);
+      parent.postMessage({ type: 'iframe-error', error: 'Error al montar: ' + msg }, '*');
+      const root = document.getElementById('root');
+      root.innerHTML = '<pre style="color:red;padding:1rem;background:#fef2f2;border-radius:6px;white-space:pre-wrap">' + msg + '</pre>';
+    }
+  </scr` + `ipt>
+</body>
+</html>`;
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // Generador de la prueba de rendimiento
+  // Crea 50 componentes sintéticos con variedad extrema:
+  //   10 micro (1-5 líneas)  · 20 small (5-30)  · 15 medium (30-150)  · 5 large (200-500)
+  // Los patrones se eligen por índice, así cada archivo es único.
+  // Se exporta como función para que `loadTemplate` la invoque al cargar
+  // la plantilla "stress-50" — no inflamos el init con 50 strings estáticos.
+  // ════════════════════════════════════════════════════════════
+  function buildStressProject() {
+    const SCR = '<scr' + 'ipt>';
+    const END = '</' + 'script>';
+    const files = {};
+
+    // Paleta de colores determinista por índice
+    const palette = ['#ff3e00','#10b981','#3b82f6','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#ef4444','#6366f1','#84cc16'];
+    const color = (i) => palette[i % palette.length];
+    const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+    // ───────────── 10 micro (1-5 líneas) ─────────────
+    const microPatterns = [
+      (i) => `${SCR}\n  let n = $state(0);\n${END}\n\n<button class="btn btn-sm btn-outline-primary" onclick={() => n++}>M${i}: {n}</button>`,
+      (i) => `${SCR}\n  let { text = 'tag ' + ${i} } = $props();\n${END}\n\n<span class="badge" style="background:${color(i)}">${i} {text}</span>`,
+      (i) => `${SCR}\n  let v = $state(true);\n${END}\n\n<span class="badge text-bg-\${v ? 'success' : 'secondary'}">{v ? 'ON' : 'OFF'} #${i}</span>\n<button class="btn btn-sm btn-link p-0 ms-1" onclick={() => v = !v}>↻</button>`,
+      (i) => `${SCR}\n  let x = $state(${i * 7});\n${END}\n\n<div class="border rounded p-1 small">#${i}: <strong>{x}</strong></div>`,
+      (i) => `${SCR}\n  let { label = 'L${i}' } = $props();\n${END}\n\n<i class="bi bi-star-fill" style="color:${color(i)}"></i> <small>${i} {label}</small>`,
+      (i) => `${SCR}\n  let n = $state(${i});\n${END}\n\n<span class="d-inline-block px-2 rounded text-white" style="background:${color(i)}">${i} · {n}</span>`,
+      (i) => `${SCR}\n  let ok = $state(${i % 2 === 0});\n${END}\n\n<i class="bi bi-\${ok ? 'check-circle' : 'circle'}" style="color:${color(i)}"></i> #${i}`,
+      (i) => `${SCR}\n  let t = $state(${i * 13});\n${END}\n\n<small class="text-muted">${i}: {t.toFixed(0)}ms</small>`,
+      (i) => `${SCR}\n  let { w = ${i} } = $props();\n${END}\n\n<div style="width:{w}px;height:6px;background:${color(i)}"></div>`,
+      (i) => `${SCR}\n  let s = $state('m${i}');\n${END}\n\n<code class="small">${i}: {s}</code>`,
+    ];
+    for (let i = 0; i < 10; i++) {
+      files['/stress/micro_' + String(i).padStart(2, '0') + '.svelte'] = microPatterns[i % microPatterns.length](i);
+    }
+
+    // ───────────── 20 small (5-30 líneas) ─────────────
+    const smallPatterns = [
+      // Contador con etiqueta
+      (i) => `${SCR}\n  let n = $state(0);\n  const label = 'Item ${i}';\n${END}\n\n<div class="border rounded p-2 d-flex align-items-center justify-content-between">\n  <span><strong>{label}</strong></span>\n  <div class="btn-group btn-group-sm">\n    <button class="btn btn-outline-secondary" onclick={() => n--}>−</button>\n    <button class="btn btn-light" disabled>{n}</button>\n    <button class="btn btn-outline-primary" onclick={() => n++}>+</button>\n  </div>\n</div>`,
+      // Badge clickable
+      (i) => `${SCR}\n  let { count = ${i} } = $props();\n  let active = $state(false);\n${END}\n\n<button class="badge text-bg-\${active ? 'primary' : 'light'} border" onclick={() => active = !active}>\n  ${cap(color(i).slice(1))} {count} {active ? '✓' : ''}\n</button>`,
+      // Input + eco
+      (i) => `${SCR}\n  let v = $state('${i}');\n${END}\n\n<div class="input-group input-group-sm">\n  <span class="input-group-text">#${i}</span>\n  <input class="form-control" bind:value={v} />\n</div>\n<small class="text-muted">Eco: {v}</small>`,
+      // Toggle booleano
+      (i) => `${SCR}\n  let on = $state(${i % 2 === 0});\n${END}\n\n<div class="form-check form-switch">\n  <input class="form-check-input" type="checkbox" id="sw-${i}" bind:checked={on} />\n  <label class="form-check-label" for="sw-${i}">Switch ${i}</label>\n</div>`,
+      // Slider con doble
+      (i) => `${SCR}\n  let v = $state(${i * 10});\n  const dbl = $derived(v * 2);\n${END}\n\n<div class="small">\n  <label>${i}: {v} (x2 = {dbl})</label>\n  <input type="range" min="0" max="100" bind:value={v} class="form-range" />\n</div>`,
+      // Lista mini
+      (i) => `${SCR}\n  let items = $state([${i}, ${i + 1}, ${i + 2}]);\n${END}\n\n<div class="small">\n  #${i}:\n  {#each items as it}\n    <span class="badge text-bg-light me-1">{it}</span>\n  {/each}\n  <button class="btn btn-sm btn-link p-0" onclick={() => items = [...items, items.length ? items[items.length - 1] + 1 : 0]}>+</button>\n</div>`,
+      // Card simple
+      (i) => `${SCR}\n  let { title = 'Card ${i}', body = 'Body ${i}' } = $props();\n${END}\n\n<div class="card card-body py-2 px-3">\n  <strong class="small">#{${i}} {title}</strong>\n  <p class="small text-muted mb-0">{body}</p>\n</div>`,
+      // Progress bar
+      (i) => `${SCR}\n  let pct = $state(${(i * 11) % 101});\n${END}\n\n<div class="small">\n  <div class="d-flex justify-content-between"><span>Bar ${i}</span><span>{pct}%</span></div>\n  <div class="progress" style="height:6px"><div class="progress-bar" style="width:{pct}%;background:${color(i)}"></div></div>\n  <button class="btn btn-sm btn-link p-0" onclick={() => pct = (pct + 10) % 110}>+10</button>\n</div>`,
+      // Alert cerrable
+      (i) => `${SCR}\n  let show = $state(true);\n  const kind = ${i % 2 === 0 ? "'info'" : "'warning'"};\n${END}\n\n{#if show}\n<div class="alert alert-{kind} py-1 px-2 small d-flex justify-content-between">\n  <span>Alert ${i} ({kind})</span>\n  <button class="btn-close btn-close-sm" onclick={() => show = false}></button>\n</div>\n{/if}`,
+      // Mini cronómetro
+      (i) => `${SCR}\n  let t = $state(0);\n  let on = $state(false);\n  $effect(() => {\n    if (!on) return;\n    const id = setInterval(() => t++, 1000);\n    return () => clearInterval(id);\n  });\n${END}\n\n<div class="small d-flex gap-2 align-items-center">\n  <span>⏱ ${i}: <strong>{t}s</strong></span>\n  <button class="btn btn-sm btn-outline-primary py-0" onclick={() => on = !on}>{on ? 'stop' : 'start'}</button>\n  <button class="btn btn-sm btn-outline-secondary py-0" onclick={() => { t = 0; on = false; }}>rst</button>\n</div>`,
+      // Etiqueta con derived
+      (i) => `${SCR}\n  let count = $state(${i * 3});\n  const parity = $derived(count % 2 === 0 ? 'par' : 'impar');\n${END}\n\n<div class="small d-flex gap-2">\n  <span class="badge text-bg-\${parity === 'par' ? 'success' : 'warning'}">#{${i}} {parity}</span>\n  <button class="btn btn-sm btn-outline-secondary py-0" onclick={() => count--}>−</button>\n  <span>{count}</span>\n  <button class="btn btn-sm btn-outline-primary py-0" onclick={() => count++}>+</button>\n</div>`,
+      // Texto + char count
+      (i) => `${SCR}\n  let s = $state('Texto ${i}');\n  const len = $derived(s.length);\n${END}\n\n<div class="small">\n  <input class="form-control form-control-sm mb-1" bind:value={s} />\n  <span class="text-muted">${i}: {len} caracteres</span>\n</div>`,
+      // Botón con icono
+      (i) => `${SCR}\n  let clicks = $state(0);\n${END}\n\n<button class="btn btn-sm btn-outline-${i % 2 === 0 ? 'primary' : 'danger'}" onclick={() => clicks++}>\n  <i class="bi bi-hand-thumbs-up"></i> ${i} {clicks}\n</button>`,
+      // Tag removable
+      (i) => `${SCR}\n  let tags = $state(['a${i}', 'b${i}', 'c${i}']);\n  function remove(t) { tags = tags.filter(x => x !== t); }\n${END}\n\n<div class="small">\n  Tags ${i}:\n  {#each tags as t}\n    <span class="badge text-bg-light border me-1">{t} <a href="#" onclick={(e) => { e.preventDefault(); remove(t); }}>✕</a></span>\n  {/each}\n</div>`,
+      // Range + output
+      (i) => `${SCR}\n  let r = $state(${i * 5});\n${END}\n\n<div class="small">\n  <label>${i}: <strong style="color:${color(i)}">{r}</strong></label>\n  <input type="range" class="form-range" min="0" max="100" bind:value={r} />\n</div>`,
+      // Píldora
+      (i) => `${SCR}\n  let { text = 'pill ${i}' } = $props();\n${END}\n\n<span class="badge rounded-pill text-bg-${i % 3 === 0 ? 'primary' : i % 3 === 1 ? 'info' : 'secondary'}">{text}</span>`,
+      // Anchor con contador
+      (i) => `${SCR}\n  let v = $state(0);\n${END}\n\n<a href="#" class="small" onclick={(e) => { e.preventDefault(); v++; }}>\n  Link ${i} <span class="badge text-bg-light">{v}</span>\n</a>`,
+      // Checkbox + label
+      (i) => `${SCR}\n  let items = $state([${i % 2 === 0}, ${i % 3 === 0}, ${i % 5 === 0}]);\n${END}\n\n<div class="small">\n  {#each items as v, idx}\n    <div class="form-check">\n      <input class="form-check-input" type="checkbox" id="chk-${i}-\${idx}" bind:checked={items[idx]} />\n      <label class="form-check-label" for="chk-${i}-\${idx}">Opción ${i}.{idx}</label>\n    </div>\n  {/each}\n</div>`,
+      // Select con derived
+      (i) => `${SCR}\n  let v = $state('${i}');\n  const opts = ['${i}', '${i + 1}', '${i + 2}'];\n${END}\n\n<div class="small d-flex gap-2 align-items-center">\n  <label>${i}:</label>\n  <select class="form-select form-select-sm w-auto" bind:value={v}>\n    {#each opts as o}<option value={o}>{o}</option>{/each}\n  </select>\n  <span class="text-muted">→ {v}</span>\n</div>`,
+      // KPI card mini
+      (i) => `${SCR}\n  let { label = 'KPI ${i}', val = ${i * 7} } = $props();\n${END}\n\n<div class="border rounded p-2 text-center" style="border-color:${color(i)} !important">\n  <div class="small text-muted">{label}</div>\n  <div class="h5 mb-0" style="color:${color(i)}">{val}</div>\n</div>`,
+    ];
+    for (let i = 0; i < 20; i++) {
+      files['/stress/small_' + String(i).padStart(2, '0') + '.svelte'] = smallPatterns[i % smallPatterns.length](i);
+    }
+
+    // ───────────── 15 medium (30-150 líneas) ─────────────
+    const mediumPatterns = [
+      // Tabs internos
+      (i) => {
+        const tabs = ['Inicio', 'Datos', 'Ajustes', 'Histórico'];
+        const bodies = [
+          'Vista principal del panel #' + i + '.',
+          'Aquí verás los datos del día ' + i + '.',
+          'Configuración persistente del usuario ' + i + '.',
+          'Últimos ' + (i + 5) + ' eventos registrados.',
+        ];
+        return `${SCR}\n  let active = $state(0);\n  const tabs = ${JSON.stringify(tabs)};\n  const bodies = ${JSON.stringify(bodies)};\n${END}\n\n<div class="border rounded">\n  <ul class="nav nav-tabs nav-sm">\n    {#each tabs as t, idx}\n      <li class="nav-item">\n        <button class="nav-link {active === idx ? 'active' : ''}" onclick={() => active = idx}>{t}</button>\n      </li>\n    {/each}\n  </ul>\n  <div class="p-3 small">\n    {#each tabs as _, idx}\n      {#if active === idx}<div>{bodies[idx]}</div>{/if}\n    {/each}\n  </div>\n  <div class="px-3 pb-2 small text-muted">Tabla ${i} · activa: <strong>{tabs[active]}</strong></div>\n</div>`;
+      },
+      // Tabla ordenable
+      (i) => {
+        const rows = [];
+        for (let r = 0; r < 8; r++) rows.push({ id: r + 1, name: 'Item ' + (i * 10 + r), value: (i + 1) * (r + 3) });
+        return `${SCR}\n  const initial = ${JSON.stringify(rows)};\n  let rows = $state(initial);\n  let sortKey = $state('id');\n  let sortDir = $state(1);\n  const sorted = $derived([...rows].sort((a, b) => sortDir * (a[sortKey] - b[sortKey])));\n  function sort(k) {\n    if (sortKey === k) sortDir = -sortDir;\n    else { sortKey = k; sortDir = 1; }\n  }\n${END}\n\n<div class="border rounded">\n  <div class="px-2 py-1 small fw-bold bg-light border-bottom">Tabla ${i} · {rows.length} filas</div>\n  <table class="table table-sm mb-0 small">\n    <thead><tr>\n      <th onclick={() => sort('id')} style="cursor:pointer">ID {sortKey === 'id' ? (sortDir > 0 ? '↑' : '↓') : ''}</th>\n      <th>Nombre</th>\n      <th onclick={() => sort('value')} style="cursor:pointer">Valor {sortKey === 'value' ? (sortDir > 0 ? '↑' : '↓') : ''}</th>\n    </tr></thead>\n    <tbody>\n      {#each sorted as r}\n        <tr><td>{r.id}</td><td>{r.name}</td><td>{r.value}</td></tr>\n      {/each}\n    </tbody>\n  </table>\n</div>`;
+      },
+      // Filtro de búsqueda
+      (i) => {
+        const all = [];
+        for (let r = 0; r < 12; r++) all.push('Elemento ' + (i * 100 + r));
+        return `${SCR}\n  let q = $state('');\n  const all = ${JSON.stringify(all)};\n  const filtered = $derived(all.filter(x => x.toLowerCase().includes(q.toLowerCase())));\n  const count = $derived(filtered.length);\n${END}\n\n<div class="border rounded p-2">\n  <input class="form-control form-control-sm mb-2" placeholder="Buscar en ${i}…" bind:value={q} />\n  <div class="small text-muted">{count} / {all.length} resultados</div>\n  <ul class="list-unstyled mb-0 small" style="max-height:120px;overflow:auto">\n    {#each filtered as x}<li class="py-0">· {x}</li>{/each}\n    {#if filtered.length === 0}<li class="text-muted fst-italic">sin resultados</li>{/if}\n  </ul>\n</div>`;
+      },
+      // Wizard 3 pasos
+      (i) => `${SCR}\n  let step = $state(0);\n  const steps = ['Datos básicos', 'Preferencias', 'Confirmación'];\n  const fields = [\n    ['Nombre', 'Email'],\n    ['Tema', 'Idioma'],\n    ['Resumen', 'Aceptar'],\n  ];\n${END}\n\n<div class="border rounded p-2">\n  <div class="small text-muted mb-1">Wizard ${i} · paso {step + 1} / {steps.length}</div>\n  <div class="progress mb-2" style="height:6px"><div class="progress-bar" style="width:{(step + 1) / steps.length * 100}%"></div></div>\n  <div class="mb-2"><strong>{steps[step]}</strong></div>\n  <div class="row g-1 small mb-2">\n    {#each fields[step] as f}<div class="col-6"><input class="form-control form-control-sm" placeholder={f} /></div>{/each}\n  </div>\n  <div class="d-flex justify-content-between">\n    <button class="btn btn-sm btn-outline-secondary" disabled={step === 0} onclick={() => step--}>Atrás</button>\n    <button class="btn btn-sm btn-primary" disabled={step === steps.length - 1} onclick={() => step++}>Siguiente</button>\n  </div>\n</div>`,
+      // Accordion
+      (i) => {
+        const items = [
+          { title: '¿Qué es SIVO App Studio?', body: 'Constructor visual en el navegador para crear apps sin instalar nada.' },
+          { title: '¿Cómo empiezo?', body: 'Pulsa "Editar", elige una plantilla o escribe tu propio código.' },
+          { title: '¿Puedo exportar?', body: 'Sí, "Exportar HTML" descarga un archivo único autocontenido.' },
+          { title: '¿Funciona offline?', body: 'Tras la primera carga, los assets quedan en caché.' },
+        ];
+        return `${SCR}\n  let open = $state(0);\n  const items = ${JSON.stringify(items)};\n${END}\n\n<div class="accordion accordion-sm" id="acc-${i}">\n  {#each items as it, idx}\n    <div class="accordion-item">\n      <h2 class="accordion-header">\n        <button class="accordion-button {open === idx ? '' : 'collapsed'} small" type="button" onclick={() => open = open === idx ? -1 : idx}>\n          {it.title}\n        </button>\n      </h2>\n      {#if open === idx}\n        <div class="accordion-body small">{it.body}</div>\n      {/if}\n    </div>\n  {/each}\n</div>`;
+      },
+      // Star rating
+      (i) => `${SCR}\n  let val = $state(${i % 5});\n  let hover = $state(-1);\n  const display = $derived(hover >= 0 ? hover : val);\n${END}\n\n<div class="small">\n  Rating ${i}:\n  {#each [0, 1, 2, 3, 4] as n}\n    <i\n      class="bi bi-star{n < display ? '-fill' : ''}"\n      style="color: {n < display ? '${color(i)}' : '#ccc'}; cursor: pointer; font-size: 1.1rem"\n      onmouseenter={() => hover = n}\n      onmouseleave={() => hover = -1}\n      onclick={() => val = n}\n    ></i>\n  {/each}\n  <span class="ms-1 text-muted">({val + 1}/5)</span>\n</div>`,
+      // Multi-step slider
+      (i) => `${SCR}\n  let a = $state(${i * 4});\n  let b = $state(${i * 4 + 30});\n  const sum = $derived(a + b);\n  const diff = $derived(Math.abs(a - b));\n  const avg = $derived((a + b) / 2);\n${END}\n\n<div class="border rounded p-2 small">\n  <div class="d-flex justify-content-between"><span>${i}: A={a}</span><span>B={b}</span></div>\n  <input type="range" class="form-range" min="0" max="100" bind:value={a} />\n  <input type="range" class="form-range" min="0" max="100" bind:value={b} />\n  <div class="d-flex gap-3 text-muted">\n    <span>Σ {sum}</span><span>|Δ| {diff}</span><span>x̄ {avg.toFixed(1)}</span>\n  </div>\n</div>`,
+      // Lista con búsqueda y selección múltiple
+      (i) => {
+        const all = [];
+        for (let r = 0; r < 10; r++) all.push('Opción ' + (i * 10 + r));
+        return `${SCR}\n  let q = $state('');\n  let selected = $state(new Set());\n  const all = ${JSON.stringify(all)};\n  const filtered = $derived(all.filter(x => x.toLowerCase().includes(q.toLowerCase())));\n  function toggle(x) {\n    if (selected.has(x)) selected.delete(x);\n    else selected.add(x);\n    selected = new Set(selected);\n  }\n${END}\n\n<div class="border rounded p-2 small">\n  <input class="form-control form-control-sm mb-1" placeholder="Buscar ${i}…" bind:value={q} />\n  <div class="text-muted mb-1">{selected.size} seleccionados</div>\n  <div style="max-height:130px;overflow:auto">\n    {#each filtered as x}\n      <div class="form-check">\n        <input class="form-check-input" type="checkbox" id="ms-${i}-{x}" checked={selected.has(x)} onchange={() => toggle(x)} />\n        <label class="form-check-label" for="ms-${i}-{x}">{x}</label>\n      </div>\n    {/each}\n  </div>\n</div>`;
+      },
+      // Kanban column simple
+      (i) => {
+        const todos = ['Pendiente: ' + i, 'Pendiente: ' + (i + 1)];
+        const doing = ['En curso: ' + i];
+        const done = ['Hecho: ' + i, 'Hecho: ' + (i + 1), 'Hecho: ' + (i + 2)];
+        return `${SCR}\n  let todos = $state(${JSON.stringify(todos)});\n  let doing = $state(${JSON.stringify(doing)});\n  let done = $state(${JSON.stringify(done)});\n${END}\n\n<div class="row g-1 small">\n  <div class="col-4"><div class="border rounded p-1" style="background:#fff5f0"><strong>Por hacer</strong> ({todos.length})\n    {#each todos as t}<div class="border rounded bg-white p-1 my-1">{t}</div>{/each}\n  </div></div>\n  <div class="col-4"><div class="border rounded p-1" style="background:#fffbeb"><strong>En curso</strong> ({doing.length})\n    {#each doing as t}<div class="border rounded bg-white p-1 my-1">{t}</div>{/each}\n  </div></div>\n  <div class="col-4"><div class="border rounded p-1" style="background:#ecfdf5"><strong>Hecho</strong> ({done.length})\n    {#each done as t}<div class="border rounded bg-white p-1 my-1 text-muted"><s>{t}</s></div>{/each}\n  </div></div>\n</div>`;
+      },
+      // Cronómetro doble con efecto
+      (i) => `${SCR}\n  let a = $state(0);\n  let b = $state(0);\n  let runA = $state(false);\n  let runB = $state(false);\n  $effect(() => {\n    if (!runA) return;\n    const id = setInterval(() => a++, 100);\n    return () => clearInterval(id);\n  });\n  $effect(() => {\n    if (!runB) return;\n    const id = setInterval(() => b++, 100);\n    return () => clearInterval(id);\n  });\n  const fastest = $derived(a < b ? 'A' : a > b ? 'B' : 'empate');\n${END}\n\n<div class="border rounded p-2 small">\n  <div class="row g-2">\n    <div class="col-6 text-center">\n      <div>A ${i}</div>\n      <div class="h5" style="color:${color(i)}">{(a / 10).toFixed(1)}s</div>\n      <button class="btn btn-sm btn-outline-primary" onclick={() => runA = !runA}>{runA ? 'stop' : 'go'}</button>\n      <button class="btn btn-sm btn-outline-secondary" onclick={() => { a = 0; runA = false; }}>rst</button>\n    </div>\n    <div class="col-6 text-center">\n      <div>B ${i}</div>\n      <div class="h5" style="color:${color(i + 3)}">{(b / 10).toFixed(1)}s</div>\n      <button class="btn btn-sm btn-outline-primary" onclick={() => runB = !runB}>{runB ? 'stop' : 'go'}</button>\n      <button class="btn btn-sm btn-outline-secondary" onclick={() => { b = 0; runB = false; }}>rst</button>\n    </div>\n  </div>\n  <div class="text-center text-muted mt-1">Más rápido: <strong>{fastest}</strong></div>\n</div>`,
+      // Gráfico de barras manual
+      (i) => {
+        const vals = [];
+        for (let r = 0; r < 6; r++) vals.push(((i + 1) * (r + 3)) % 50 + 10);
+        const max = Math.max(...vals);
+        return `${SCR}\n  const vals = ${JSON.stringify(vals)};\n  const labels = ${JSON.stringify(vals.map((_, r) => 'D' + r))};\n  const max = ${max};\n  let selected = $state(-1);\n${END}\n\n<div class="border rounded p-2 small">\n  <strong>Chart ${i}</strong> · max {max}\n  <div class="d-flex align-items-end gap-1 mt-1" style="height:80px">\n    {#each vals as v, idx}\n      <div\n        onclick={() => selected = selected === idx ? -1 : idx}\n        title={labels[idx] + ': ' + v}\n        style="flex:1;background:{selected === idx ? '${color(i)}' : '${color(i + 2)}'};height:{v / max * 100}%;cursor:pointer;transition:height .2s"\n      ></div>\n    {/each}\n  </div>\n  <div class="d-flex justify-content-between text-muted" style="font-size:10px">\n    {#each labels as l}<span>{l}</span>{/each}\n  </div>\n  {#if selected >= 0}<div class="mt-1">{labels[selected]} = <strong>{vals[selected]}</strong></div>{/if}\n</div>`;
+      },
+      // Color picker con preview
+      (i) => `${SCR}\n  let r = $state(${(i * 31) % 256});\n  let g = $state(${(i * 17) % 256});\n  let b = $state(${(i * 47) % 256});\n  const hex = $derived('#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join(''));\n${END}\n\n<div class="border rounded p-2 small">\n  Color ${i}:\n  <div class="d-flex gap-1 align-items-center mb-1">\n    <div style="width:40px;height:24px;background:{hex};border:1px solid #ccc;border-radius:3px"></div>\n    <code>{hex}</code>\n  </div>\n  <div class="d-flex gap-1 align-items-center">R<input type="range" min="0" max="255" bind:value={r} class="form-range" />{r}</div>\n  <div class="d-flex gap-1 align-items-center">G<input type="range" min="0" max="255" bind:value={g} class="form-range" />{g}</div>\n  <div class="d-flex gap-1 align-items-center">B<input type="range" min="0" max="255" bind:value={b} class="form-range" />{b}</div>\n</div>`,
+      // Lista virtual simple
+      (i) => {
+        const items = [];
+        for (let r = 0; r < 200; r++) items.push('Fila ' + (i * 1000 + r));
+        return `${SCR}\n  const all = ${JSON.stringify(items)};\n  let offset = $state(0);\n  const pageSize = 12;\n  const visible = $derived(all.slice(offset, offset + pageSize));\n  const hasMore = $derived(offset + pageSize < all.length);\n  const hasPrev = $derived(offset > 0);\n${END}\n\n<div class="border rounded p-2 small">\n  Virtual ${i} · mostrando {offset + 1}–{Math.min(offset + pageSize, all.length)} de {all.length}\n  <ul class="list-unstyled mb-1" style="height:160px;overflow:auto">\n    {#each visible as v}<li>· {v}</li>{/each}\n  </ul>\n  <button class="btn btn-sm btn-outline-secondary" disabled={!hasPrev} onclick={() => offset = Math.max(0, offset - pageSize)}>‹</button>\n  <button class="btn btn-sm btn-outline-primary" disabled={!hasMore} onclick={() => offset += pageSize}>›</button>\n</div>`;
+      },
+      // Tag input editable
+      (i) => `${SCR}\n  let input = $state('');\n  let tags = $state(['svelte', 'compiler', 'test']);\n  function add() {\n    const v = input.trim();\n    if (v && !tags.includes(v)) tags = [...tags, v];\n    input = '';\n  }\n  function remove(t) { tags = tags.filter(x => x !== t); }\n${END}\n\n<div class="border rounded p-2 small">\n  Tags ${i}:\n  <div class="d-flex flex-wrap gap-1 mb-1">\n    {#each tags as t}\n      <span class="badge text-bg-${i % 2 === 0 ? 'primary' : 'info'}">{t} <a href="#" onclick={(e) => { e.preventDefault(); remove(t); }} style="color:white;text-decoration:none">×</a></span>\n    {/each}\n  </div>\n  <div class="input-group input-group-sm">\n    <input class="form-control" placeholder="Añadir tag" bind:value={input} onkeydown={(e) => e.key === 'Enter' && add()} />\n    <button class="btn btn-outline-primary" onclick={add}>+</button>\n  </div>\n</div>`,
+      // Calendar mini
+      (i) => `${SCR}\n  let day = $state(${i % 28 + 1});\n  const monthDays = 30;\n  const monthName = ${i % 12};\n  const events = ${JSON.stringify(['Reunión ' + i, 'Review ' + i, 'Demo ' + i])};\n${END}\n\n<div class="border rounded p-2 small">\n  Mes ${i} · día <strong>{day}</strong> / {monthDays}\n  <div class="row g-1 my-1" style="font-size:10px">\n    {#each Array(monthDays) as _, d}\n      <div class="col p-0 px-1">\n        <button\n          class="btn btn-sm p-0 w-100 {day === d + 1 ? 'btn-primary' : 'btn-outline-secondary'}"\n          style="height:24px;font-size:10px"\n          onclick={() => day = d + 1}\n        >{d + 1}</button>\n      </div>\n    {/each}\n  </div>\n  <ul class="list-unstyled mb-0">\n    {#each events as e}<li class="small">📌 {e}</li>{/each}\n  </ul>\n</div>`,
+    ];
+    for (let i = 0; i < 15; i++) {
+      files['/stress/medium_' + String(i).padStart(2, '0') + '.svelte'] = mediumPatterns[i % mediumPatterns.length](i);
+    }
+
+    // ───────────── 5 large (200-500 líneas) ─────────────
+    // Widget 1: Dashboard resumen con 4 KPIs + lista de actividad + pequeño chart
+    files['/stress/large_00.svelte'] = `${SCR}\n  // Dashboard resumen 0 — múltiples $derived, $effect, lista, búsqueda\n  let visitors = $state(0 * 123 + 456);\n  let orders = $state(0 * 17 + 89);\n  let revenue = $state(0 * 1234 + 5000);\n  let conversion = $state(0 / 100);\n  const total = $derived(visitors + orders + revenue + conversion);\n  const avgTicket = $derived(orders > 0 ? revenue / orders : 0);\n  let search = $state('');\n  const activities = $state([\n    { id: 1, who: 'Ana', what: 'compró 3 entradas', when: 'hace 2m' },\n    { id: 2, who: 'Luis', what: 'se registró', when: 'hace 5m' },\n    { id: 3, who: 'Marta', what: 'actualizó perfil', when: 'hace 12m' },\n    { id: 4, who: 'Pedro', what: 'comentó en el blog', when: 'hace 24m' },\n    { id: 5, who: 'Sara', what: 'invitó a un amigo', when: 'hace 1h' },\n    { id: 6, who: 'Diego', what: 'cerró sesión', when: 'hace 2h' },\n  ]);\n  const filtered = $derived(\n    search\n      ? activities.filter(a =>\n          (a.who + ' ' + a.what).toLowerCase().includes(search.toLowerCase())\n        )\n      : activities\n  );\n  let autoRefresh = $state(false);\n  $effect(() => {\n    if (!autoRefresh) return;\n    const id = setInterval(() => {\n      visitors += Math.floor(Math.random() * 5);\n      orders += Math.random() < 0.3 ? 1 : 0;\n      revenue += Math.floor(Math.random() * 100);\n    }, 2000);\n    return () => clearInterval(id);\n  });\n  const sparkData = $derived([10, 22, 18, 30, 28, 35, 40, 38, 45, 50, 48, 55].map(v => v + 0));\n  const sparkMax = $derived(Math.max(...sparkData));\n${END}\n\n<div class="border rounded p-3">\n  <div class="d-flex justify-content-between align-items-center mb-2">\n    <h6 class="mb-0">Dashboard #0</h6>\n    <div class="form-check form-switch m-0">\n      <input class="form-check-input" type="checkbox" id="ar-0" bind:checked={autoRefresh} />\n      <label class="form-check-label small" for="ar-0">Auto-refresh</label>\n    </div>\n  </div>\n  <div class="row g-2 mb-3">\n    <div class="col-3"><div class="border rounded p-2 text-center small"><div class="text-muted">Visitas</div><div class="h5 mb-0">${'${color(0)}'.replace('#', '')}</div></div></div>\n    <div class="col-3"><div class="border rounded p-2 text-center small"><div class="text-muted">Pedidos</div><div class="h5 mb-0">{orders}</div></div></div>\n    <div class="col-3"><div class="border rounded p-2 text-center small"><div class="text-muted">Ingresos</div><div class="h5 mb-0">{revenue}€</div></div></div>\n    <div class="col-3"><div class="border rounded p-2 text-center small"><div class="text-muted">Conversión</div><div class="h5 mb-0">{(conversion * 100).toFixed(1)}%</div></div></div>\n  </div>\n  <div class="mb-2 small">\n    <strong>Ticket medio:</strong> {avgTicket.toFixed(2)}€ · <strong>Total combinado:</strong> {total.toFixed(0)}\n  </div>\n  <div class="mb-2">\n    <div class="small text-muted">Tendencia</div>\n    <div class="d-flex align-items-end gap-1" style="height:36px">\n      {#each sparkData as v, idx}<div style="flex:1;background:${'${color(0)}'};height:{v / sparkMax * 100}%;opacity:{(idx + 1) / sparkData.length}"></div>{/each}\n    </div>\n  </div>\n  <div class="mb-2">\n    <input class="form-control form-control-sm" placeholder="Buscar actividad…" bind:value={search} />\n  </div>\n  <ul class="list-group list-group-flush" style="max-height:140px;overflow:auto">\n    {#each filtered as a}\n      <li class="list-group-item small px-0 py-1">\n        <strong>{a.who}</strong> {a.what} <span class="text-muted float-end">{a.when}</span>\n      </li>\n    {/each}\n    {#if filtered.length === 0}<li class="list-group-item small text-muted">sin resultados</li>{/if}\n  </ul>\n</div>`;
+
+    // Widget 2: Tabla de datos con sort + filtro + paginación
+    files['/stress/large_01.svelte'] = (() => {
+      const headers = ['ID', 'Cliente', 'Producto', 'Cantidad', 'Precio', 'Estado'];
+      const estados = ['pendiente', 'enviado', 'entregado', 'cancelado'];
+      const productos = ['Mesa', 'Silla', 'Lámpara', 'Sofá', 'Estantería', 'Mesa auxiliar', 'Banco'];
+      const initial = [];
+      for (let r = 0; r < 35; r++) {
+        initial.push({
+          id: r + 1,
+          cliente: 'Cliente ' + String.fromCharCode(65 + (r % 26)) + (r % 99),
+          producto: productos[r % productos.length],
+          cantidad: ((r * 7) % 10) + 1,
+          precio: ((r * 13) % 200) + 20,
+          estado: estados[r % estados.length],
+        });
+      }
+      const initialJson = JSON.stringify(initial);
+      return `${SCR}\n  const initial = ${initialJson};\n  const headers = ${JSON.stringify(headers)};\n  const estados = ${JSON.stringify(estados)};\n  let rows = $state(initial);\n  let sortKey = $state('id');\n  let sortDir = $state(1);\n  let filterEstado = $state('todos');\n  let q = $state('');\n  let page = $state(0);\n  const pageSize = 8;\n  const filtered = $derived(\n    rows.filter(r =>\n      (filterEstado === 'todos' || r.estado === filterEstado) &&\n      (q === '' || (r.cliente + ' ' + r.producto).toLowerCase().includes(q.toLowerCase()))\n    )\n  );\n  const sorted = $derived(\n    [...filtered].sort((a, b) => {\n      const av = a[sortKey];\n      const bv = b[sortKey];\n      if (typeof av === 'number') return sortDir * (av - bv);\n      return sortDir * String(av).localeCompare(String(bv));\n    })\n  );\n  const pages = $derived(Math.max(1, Math.ceil(sorted.length / pageSize)));\n  const visible = $derived(sorted.slice(page * pageSize, (page + 1) * pageSize));\n  const totalSum = $derived(filtered.reduce((s, r) => s + r.precio * r.cantidad, 0));\n  function sort(k) {\n    if (sortKey === k) sortDir = -sortDir;\n    else { sortKey = k; sortDir = 1; }\n    page = 0;\n  }\n  function setEstado(v) { filterEstado = v; page = 0; }\n${END}\n\n<div class="border rounded">\n  <div class="px-3 py-2 bg-light border-bottom d-flex justify-content-between align-items-center">\n    <strong>Pedidos (${'${0}'})</strong>\n    <span class="small text-muted">{filtered.length} visibles · Total {totalSum.toFixed(2)}€</span>\n  </div>\n  <div class="p-2 d-flex gap-2 flex-wrap small">\n    <input class="form-control form-control-sm" placeholder="Buscar…" bind:value={q} style="max-width:200px" />\n    <select class="form-select form-select-sm" value={filterEstado} onchange={(e) => setEstado(e.target.value)} style="max-width:160px">\n      <option value="todos">Todos los estados</option>\n      {#each estados as e}<option value={e}>{e}</option>{/each}\n    </select>\n  </div>\n  <table class="table table-sm mb-0 small">\n    <thead class="table-light"><tr>\n      {#each headers as h, idx}\n        <th style="cursor:pointer" onclick={() => sort(['id','cliente','producto','cantidad','precio','estado'][idx])}>\n          {h} {sortKey === ['id','cliente','producto','cantidad','precio','estado'][idx] ? (sortDir > 0 ? '↑' : '↓') : ''}\n        </th>\n      {/each}\n    </tr></thead>\n    <tbody>\n      {#each visible as r}\n        <tr>\n          <td>{r.id}</td><td>{r.cliente}</td><td>{r.producto}</td>\n          <td class="text-end">{r.cantidad}</td>\n          <td class="text-end">{r.precio}€</td>\n          <td><span class="badge text-bg-{r.estado === 'entregado' ? 'success' : r.estado === 'enviado' ? 'info' : r.estado === 'cancelado' ? 'danger' : 'warning'}">{r.estado}</span></td>\n        </tr>\n      {/each}\n    </tbody>\n  </table>\n  <div class="px-3 py-2 border-top d-flex justify-content-between align-items-center small">\n    <span>Página {page + 1} / {pages}</span>\n    <div>\n      <button class="btn btn-sm btn-outline-secondary" disabled={page === 0} onclick={() => page--}>‹</button>\n      <button class="btn btn-sm btn-outline-primary" disabled={page >= pages - 1} onclick={() => page++}>›</button>\n    </div>\n  </div>\n</div>`;
+    })();
+
+    // Widget 3: Todo app completa
+    files['/stress/large_02.svelte'] = (() => {
+      const initial = [];
+      for (let r = 0; r < 10; r++) {
+        initial.push({ id: r + 1, text: 'Tarea #' + (r + 1), done: r % 3 === 0, priority: r % 3 });
+      }
+      return `${SCR}\n  let items = $state(${JSON.stringify(initial)});\n  let text = $state('');\n  let nextId = $state(${initial.length + 1});\n  let filter = $state('all');  // 'all' | 'active' | 'done'\n  let sortBy = $state('id');   // 'id' | 'priority' | 'text'\n  function add() {\n    const t = text.trim();\n    if (!t) return;\n    items = [...items, { id: nextId, text: t, done: false, priority: 0 }];\n    nextId++;\n    text = '';\n  }\n  function toggle(id) {\n    items = items.map(it => it.id === id ? { ...it, done: !it.done } : it);\n  }\n  function remove(id) {\n    items = items.filter(it => it.id !== id);\n  }\n  function setPriority(id, p) {\n    items = items.map(it => it.id === id ? { ...it, priority: p } : it);\n  }\n  const filtered = $derived(\n    filter === 'active' ? items.filter(i => !i.done)\n    : filter === 'done' ? items.filter(i => i.done)\n    : items\n  );\n  const sorted = $derived(\n    [...filtered].sort((a, b) => {\n      if (sortBy === 'priority') return b.priority - a.priority;\n      if (sortBy === 'text') return a.text.localeCompare(b.text);\n      return a.id - b.id;\n    })\n  );\n  const remaining = $derived(items.filter(i => !i.done).length);\n  const completed = $derived(items.filter(i => i.done).length);\n  const pct = $derived(items.length > 0 ? (completed / items.length) * 100 : 0);\n  $effect(() => {\n    if (items.length === 0) return;\n    const t = setTimeout(() => {}, 0); // noop, solo ejercita el effect\n    return () => clearTimeout(t);\n  });\n${END}\n\n<div class="border rounded p-3">\n  <div class="d-flex justify-content-between align-items-center mb-2">\n    <h6 class="mb-0">Mis tareas</h6>\n    <span class="small text-muted">{remaining} pendientes · {completed} hechas</span>\n  </div>\n  <div class="progress mb-2" style="height:6px"><div class="progress-bar bg-success" style="width:{pct}%"></div></div>\n  <form class="input-group input-group-sm mb-2" onsubmit={(e) => { e.preventDefault(); add(); }}>\n    <input class="form-control" placeholder="Nueva tarea" bind:value={text} />\n    <button class="btn btn-primary" type="submit" disabled={!text.trim()}>Añadir</button>\n  </form>\n  <div class="d-flex gap-2 mb-2 small">\n    <div class="btn-group btn-group-sm">\n      <button class="btn btn-outline-secondary {filter === 'all' ? 'active' : ''}" onclick={() => filter = 'all'}>Todas ({items.length})</button>\n      <button class="btn btn-outline-secondary {filter === 'active' ? 'active' : ''}" onclick={() => filter = 'active'}>Pendientes ({remaining})</button>\n      <button class="btn btn-outline-secondary {filter === 'done' ? 'active' : ''}" onclick={() => filter = 'done'}>Hechas ({completed})</button>\n    </div>\n    <select class="form-select form-select-sm w-auto" bind:value={sortBy}>\n      <option value="id">Orden: creación</option>\n      <option value="priority">Orden: prioridad</option>\n      <option value="text">Orden: alfabético</option>\n    </select>\n  </div>\n  <ul class="list-group list-group-flush">\n    {#each sorted as it (it.id)}\n      <li class="list-group-item px-0 py-1 d-flex align-items-center gap-2 small">\n        <input class="form-check-input mt-0" type="checkbox" checked={it.done} onchange={() => toggle(it.id)} />\n        <span style="flex:1;{it.done ? 'text-decoration:line-through;color:#888' : ''}">{it.text}</span>\n        <select class="form-select form-select-sm w-auto" value={it.priority} onchange={(e) => setPriority(it.id, +e.target.value)}>\n          <option value={0}>·</option>\n          <option value={1}>↑</option>\n          <option value={2}>↑↑</option>\n        </select>\n        <button class="btn btn-sm btn-outline-danger py-0" onclick={() => remove(it.id)}>✕</button>\n      </li>\n    {/each}\n    {#if sorted.length === 0}<li class="list-group-item small text-muted fst-italic px-0">sin tareas</li>{/if}\n  </ul>\n</div>`;
+    })();
+
+    // Widget 4: Calendar con vista mensual
+    files['/stress/large_03.svelte'] = (() => {
+      const events = [];
+      for (let r = 0; r < 8; r++) events.push({ day: ((r * 3) % 28) + 1, title: 'Evento ' + (r + 1) });
+      const eventJson = JSON.stringify(events);
+      return `${SCR}\n  const monthNames = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];\n  let month = $state(3 % 12);\n  let year = $state(2024 + 3 % 2);\n  let selected = $state(1);\n  const events = $state(${eventJson});\n  const daysInMonth = $derived(new Date(year, month + 1, 0).getDate());\n  const firstWeekday = $derived(new Date(year, month, 1).getDay());\n  const cells = $derived(() => {\n    const out = [];\n    for (let i = 0; i < firstWeekday; i++) out.push(null);\n    for (let d = 1; d <= daysInMonth; d++) out.push(d);\n    while (out.length % 7 !== 0) out.push(null);\n    return out;\n  });\n  const dayEvents = $derived(\n    (day) => events.filter(e => e.day === day && e.month === month).concat(\n      events.filter(e => e.day === day && !e.month).map(e => ({ ...e, month }))\n    )\n  );\n  const monthEvents = $derived(events.filter(e => !e.month || e.month === month));\n  function prev() {\n    if (month === 0) { month = 11; year--; } else month--;\n  }\n  function next() {\n    if (month === 11) { month = 0; year++; } else month++;\n  }\n${END}\n\n<div class="border rounded p-3">\n  <div class="d-flex justify-content-between align-items-center mb-2">\n    <button class="btn btn-sm btn-outline-secondary" onclick={prev}>‹</button>\n    <h6 class="mb-0">{monthNames[month]} {year}</h6>\n    <button class="btn btn-sm btn-outline-secondary" onclick={next}>›</button>\n  </div>\n  <div class="row g-0 mb-1 small text-muted text-center">\n    {#each ['D','L','M','X','J','V','S'] as d}<div class="col border-bottom py-1">{d}</div>{/each}\n  </div>\n  <div class="row g-0" style="font-size:11px">\n    {#each cells() as d, i}\n      {#if d === null}\n        <div class="col border p-1 text-center text-muted" style="height:36px"></div>\n      {:else}\n        <div\n          class="col border p-1 text-center {selected === d ? 'bg-primary text-white' : ''}"\n          style="height:36px;cursor:pointer;{dayEvents(d).length > 0 ? 'font-weight:bold' : ''}"\n          onclick={() => selected = d}\n        >\n          {d}\n          {#if dayEvents(d).length > 0}<div style="font-size:8px">{dayEvents(d).length} ev</div>{/if}\n        </div>\n      {/if}\n    {/each}\n  </div>\n  <div class="mt-2 small">\n    <strong>Día {selected}:</strong>\n    {#if dayEvents(selected).length === 0}\n      <span class="text-muted fst-italic">sin eventos</span>\n    {:else}\n      <ul class="list-unstyled mb-0">\n        {#each dayEvents(selected) as e}<li>📌 {e.title}</li>{/each}\n      </ul>\n    {/if}\n  </div>\n  <div class="mt-2 small text-muted">Total eventos del mes: {monthEvents.length}</div>\n</div>`;
+    })();
+
+    // Widget 5: Form builder con validación
+    files['/stress/large_04.svelte'] = `${SCR}\n  // Form builder completo\n  let form = $state({\n    nombre: '',\n    email: '',\n    edad: 25,\n    pais: 'es',\n    newsletter: true,\n    intereses: new Set(['tech']),\n    bio: '',\n  });\n  let touched = $state({});\n  let submitting = $state(false);\n  let sent = $state(false);\n  const errors = $derived(() => {\n    const e = {};\n    if (!form.nombre.trim()) e.nombre = 'El nombre es obligatorio';\n    else if (form.nombre.length < 2) e.nombre = 'Mínimo 2 caracteres';\n    if (!form.email.includes('@')) e.email = 'Email no válido';\n    if (form.edad < 18) e.edad = 'Debes ser mayor de edad';\n    if (form.edad > 120) e.edad = 'Edad no válida';\n    if (form.bio.length > 200) e.bio = 'Máximo 200 caracteres';\n    if (form.intereses.size === 0) e.intereses = 'Selecciona al menos uno';\n    return e;\n  });\n  const isValid = $derived(Object.keys(errors()).length === 0);\n  const progress = $derived(Math.round(\n    (['nombre','email','edad','pais','bio'].filter(k => form[k] && (!errors()[k])).length / 5) * 100\n  ));\n  function toggleInteres(t) {\n    if (form.intereses.has(t)) form.intereses.delete(t);\n    else form.intereses.add(t);\n    form.intereses = new Set(form.intereses);\n  }\n  function submit() {\n    touched = { nombre: true, email: true, edad: true, intereses: true, bio: true };\n    if (!isValid) return;\n    submitting = true;\n    setTimeout(() => {\n      submitting = false;\n      sent = true;\n    }, 600);\n  }\n  function reset() {\n    form = { nombre: '', email: '', edad: 25, pais: 'es', newsletter: true, intereses: new Set(['tech']), bio: '' };\n    touched = {};\n    sent = false;\n  }\n  const interesesOpts = ['tech', 'diseño', 'marketing', 'finanzas', 'educación'];\n  const paises = [['es', 'España'], ['mx', 'México'], ['ar', 'Argentina'], ['co', 'Colombia'], ['cl', 'Chile']];\n${END}\n\n<div class="border rounded p-3">\n  {#if sent}\n    <div class="text-center py-3">\n      <div class="display-6">✓</div>\n      <h5>¡Gracias, {form.nombre}!</h5>\n      <p class="small text-muted">Hemos registrado tu email ({form.email}) con {form.intereses.size} intereses.</p>\n      <button class="btn btn-primary btn-sm" onclick={reset}>Nuevo registro</button>\n    </div>\n  {:else}\n    <h6 class="mb-2">Registro</h6>\n    <div class="progress mb-3" style="height:6px"><div class="progress-bar" style="width:{progress}%"></div></div>\n    <div class="mb-2">\n      <label class="form-label small">Nombre *</label>\n      <input class="form-control form-control-sm {touched.nombre && errors().nombre ? 'is-invalid' : ''}" bind:value={form.nombre} onblur={() => touched.nombre = true} />\n      {#if touched.nombre && errors().nombre}<div class="invalid-feedback d-block small">{errors().nombre}</div>{/if}\n    </div>\n    <div class="mb-2">\n      <label class="form-label small">Email *</label>\n      <input type="email" class="form-control form-control-sm {touched.email && errors().email ? 'is-invalid' : ''}" bind:value={form.email} onblur={() => touched.email = true} />\n      {#if touched.email && errors().email}<div class="invalid-feedback d-block small">{errors().email}</div>{/if}\n    </div>\n    <div class="row g-2 mb-2">\n      <div class="col-6">\n        <label class="form-label small">Edad *</label>\n        <input type="number" class="form-control form-control-sm" bind:value={form.edad} />\n        {#if touched.edad && errors().edad}<div class="text-danger small">{errors().edad}</div>{/if}\n      </div>\n      <div class="col-6">\n        <label class="form-label small">País</label>\n        <select class="form-select form-select-sm" bind:value={form.pais}>\n          {#each paises as [code, name]}<option value={code}>{name}</option>{/each}\n        </select>\n      </div>\n    </div>\n    <div class="mb-2">\n      <label class="form-label small d-block">Intereses *</label>\n      {#each interesesOpts as t}\n        <div class="form-check form-check-inline">\n          <input class="form-check-input" type="checkbox" id="int-4-{t}" checked={form.intereses.has(t)} onchange={() => toggleInteres(t)} />\n          <label class="form-check-label small" for="int-4-{t}">{t}</label>\n        </div>\n      {/each}\n      {#if touched.intereses && errors().intereses}<div class="text-danger small">{errors().intereses}</div>{/if}\n    </div>\n    <div class="mb-2">\n      <label class="form-label small">Bio ({form.bio.length}/200)</label>\n      <textarea class="form-control form-control-sm" rows="2" bind:value={form.bio} maxlength="200"></textarea>\n      {#if touched.bio && errors().bio}<div class="text-danger small">{errors().bio}</div>{/if}\n    </div>\n    <div class="form-check mb-3">\n      <input class="form-check-input" type="checkbox" id="nl-4" bind:checked={form.newsletter} />\n      <label class="form-check-label small" for="nl-4">Quiero recibir novedades</label>\n    </div>\n    <div class="d-flex gap-2">\n      <button class="btn btn-primary btn-sm" disabled={!isValid || submitting} onclick={submit}>{submitting ? 'Enviando…' : 'Enviar'}</button>\n      <button class="btn btn-outline-secondary btn-sm" onclick={reset}>Limpiar</button>\n    </div>\n  {/if}\n</div>`;
+
+    // ───────────── utils.js compartido ─────────────
+    files['/stress/utils.js'] = `// Helpers compartidos por los componentes del stress test.
+export function fmt(n, digits = 0) {
+  return Number(n).toFixed(digits);
+}
+
+export function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+export function uid(prefix = 'id') {
+  return prefix + '-' + Math.random().toString(36).slice(2, 9);
+}
+
+export function debounce(fn, ms) {
+  let t = null;
+  return (...args) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
+
+export function groupBy(arr, key) {
+  const m = new Map();
+  for (const it of arr) {
+    const k = typeof key === 'function' ? key(it) : it[key];
+    if (!m.has(k)) m.set(k, []);
+    m.get(k).push(it);
+  }
+  return m;
+}
+
+export function sum(arr, sel = (x) => x) {
+  return arr.reduce((a, b) => a + sel(b), 0);
+}
+`;
+
+    // ───────────── styles.css compartido ─────────────
+    files['/stress/styles.css'] = `/* Estilos compartidos por el stress test */
+:root {
+  --stress-bg: #fafafa;
+  --stress-fg: #1a1a1a;
+  --stress-accent: #ff3e00;
+  --stress-border: #e5e7eb;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: var(--stress-fg);
+  background: var(--stress-bg);
+}
+
+.stress-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  padding: 1rem;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.stress-card {
+  background: white;
+  border: 1px solid var(--stress-border);
+  border-radius: 8px;
+  padding: 1rem;
+  transition: box-shadow 0.15s;
+}
+
+.stress-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+.stress-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  background: var(--stress-accent);
+  color: white;
+  font-weight: 600;
+}
+
+.stress-header {
+  background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
+  color: white;
+  padding: 1.25rem 1rem;
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.stress-header h1 {
+  font-size: 1.5rem;
+  margin: 0;
+}
+
+.stress-header p {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  margin: 0.3rem 0 0;
+}
+
+.stress-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgba(255,255,255,0.95);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--stress-border);
+  padding: 0.5rem 1rem;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+}
+`;
+
+    // ───────────── Entry App.svelte ─────────────
+    // Genera imports dinámicamente + grid + sección por bloque.
+    const imports = [];
+    const renderCalls = [];
+    // micro
+    for (let i = 0; i < 10; i++) {
+      const name = 'Micro' + i;
+      imports.push(`import ${name} from './stress/micro_${String(i).padStart(2, '0')}.svelte';`);
+      renderCalls.push(`        <div class="stress-card"><div class="d-flex justify-content-between align-items-center mb-2"><span class="stress-badge">micro</span><small class="text-muted">#${i}</small></div><${name} /></div>`);
+    }
+    for (let i = 0; i < 20; i++) {
+      const name = 'Small' + i;
+      imports.push(`import ${name} from './stress/small_${String(i).padStart(2, '0')}.svelte';`);
+      renderCalls.push(`        <div class="stress-card"><div class="d-flex justify-content-between align-items-center mb-2"><span class="stress-badge" style="background:#10b981">small</span><small class="text-muted">#${i}</small></div><${name} /></div>`);
+    }
+    for (let i = 0; i < 15; i++) {
+      const name = 'Medium' + i;
+      imports.push(`import ${name} from './stress/medium_${String(i).padStart(2, '0')}.svelte';`);
+      renderCalls.push(`        <div class="stress-card"><div class="d-flex justify-content-between align-items-center mb-2"><span class="stress-badge" style="background:#3b82f6">medium</span><small class="text-muted">#${i}</small></div><${name} /></div>`);
+    }
+    for (let i = 0; i < 5; i++) {
+      const name = 'Large' + i;
+      imports.push(`import ${name} from './stress/large_${String(i).padStart(2, '0')}.svelte';`);
+      renderCalls.push(`        <div class="stress-card" style="grid-column: span 2"><div class="d-flex justify-content-between align-items-center mb-2"><span class="stress-badge" style="background:#8b5cf6">large</span><small class="text-muted">#${i}</small></div><${name} /></div>`);
+    }
+
+    files['/App.svelte'] = `${SCR}\n${imports.join('\n')}\nimport './stress/styles.css';\n\n  let mounted = $state(true);\n  let remountCount = $state(0);\n\n  function remount() {\n    mounted = false;\n    setTimeout(() => { mounted = true; remountCount++; }, 50);\n  }\n${END}\n\n<div class="stress-header">\n  <h1>Prueba de rendimiento — 50 componentes</h1>\n  <p>10 micro · 20 small · 15 medium · 5 large · variación extrema</p>\n</div>\n\n<div class="stress-toolbar">\n  <div>\n    <strong>${50} componentes</strong>\n    <small class="text-muted ms-2">Remount: {remountCount}</small>\n  </div>\n  <div class="d-flex gap-2">\n    <button class="btn btn-sm btn-outline-primary" onclick={remount}>\n      <i class="bi bi-arrow-clockwise"></i> Volver a montar\n    </button>\n  </div>\n</div>\n\n{#if mounted}\n<div class="stress-grid">\n${renderCalls.join('\n')}\n</div>\n{/if}
+`;
+
+    return files;
+  }
+
+
+  // ════════════════════════════════════════════════════════════
+  // ERP stress v2 — 50 componentes pesados estilo ERP
+  // (definido en archivo externo, insertado por script)
+  // ════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════
+  // ERP stress v2 — 50 componentes pesados (ver erp-build.js)
+  // Se carga como <script src="erp-build.js"> antes del módulo
+  // y expone window.buildErpProject().
+  // ════════════════════════════════════════════════════════════
+  // Plantillas
+  // ════════════════════════════════════════════════════════════
+  const SCR_END = '</' + 'script>';  // para no cerrar el script principal
+
+  const TEMPLATES = {
+    counter: {
+      '/App.svelte': `<scr` + `ipt>\n  let count = $state(0);\n${SCR_END}\n\n<div class="container py-3">\n  <h2>Mi aplicación</h2>\n  <p class="text-secondary mb-3">Usa las clases de <strong>Bootstrap 5.3</strong> directamente en tu HTML.</p>\n  <button class="btn btn-primary btn-lg" onclick={() => count++}>\n    <i class="bi bi-hand-thumbs-up"></i>\n    Me han pulsado {count} {count === 1 ? 'vez' : 'veces'}\n  </button>\n</div>\n`,
+    },
+    todo: {
+      '/App.svelte': `<scr` + `ipt>\n  let items = $state(['Aprender Svelte', 'Construir mi app']);\n  let text = $state('');\n\n  function add() {\n    if (text.trim()) {\n      items = [...items, text.trim()];\n      text = '';\n    }\n  }\n  function remove(i) {\n    items = items.filter((_, idx) => idx !== i);\n  }\n${SCR_END}\n\n<h2>Mis tareas</h2>\n<div style="display: flex; gap: 0.5rem; margin-bottom: 1rem">\n  <input bind:value={text} placeholder="Escribe una tarea" onkeydown={(e) => e.key === 'Enter' && add()} />\n  <button onclick={add}>Añadir</button>\n</div>\n\n{#if items.length === 0}\n  <p>No hay tareas. ¡Añade la primera!</p>\n{:else}\n  <ul>\n    {#each items as item, i}\n      <li>\n        {item}\n        <button onclick={() => remove(i)}>✕</button>\n      </li>\n    {/each}\n  </ul>\n{/if}\n`,
+    },
+    form: {
+      '/App.svelte': `<scr` + `ipt>\n  let name = $state('');\n  let email = $state('');\n  let errors = $state({});\n  let sent = $state(false);\n\n  function validate() {\n    const e = {};\n    if (!name.trim()) e.name = 'El nombre es obligatorio';\n    if (!email.includes('@')) e.email = 'Email no válido';\n    errors = e;\n    return Object.keys(e).length === 0;\n  }\n\n  function submit() {\n    if (validate()) sent = true;\n  }\n${SCR_END}\n\n<h2>Registro</h2>\n\n{#if sent}\n  <p style="color: green">¡Gracias, {name}! Te hemos registrado con {email}.</p>\n  <button onclick={() => { sent = false; name = ''; email = ''; }}>Registrar otro</button>\n{:else}\n  <div style="display: grid; gap: 0.75rem; max-width: 360px">\n    <label>\n      Nombre\n      <input bind:value={name} />\n      {#if errors.name}<small style="color: red">{errors.name}</small>{/if}\n    </label>\n    <label>\n      Email\n      <input bind:value={email} />\n      {#if errors.email}<small style="color: red">{errors.email}</small>{/if}\n    </label>\n    <button onclick={submit}>Enviar</button>\n  </div>\n{/if}\n`,
+    },
+    fetch: {
+      '/App.svelte': `<scr` + `ipt>\n  let data = $state(null);\n  let loading = $state(false);\n  let error = $state(null);\n\n  async function load() {\n    loading = true;\n    error = null;\n    try {\n      const res = await fetch('https://jsonplaceholder.typicode.com/todos/1');\n      if (!res.ok) throw new Error('Respuesta no válida');\n      data = await res.json();\n    } catch (e) {\n      error = e.message;\n    } finally {\n      loading = false;\n    }\n  }\n${SCR_END}\n\n<h2>Consumir una API</h2>\n<button onclick={load}>Cargar datos</button>\n\n{#if loading}\n  <p>Cargando…</p>\n{/if}\n{#if error}\n  <p style="color: red">Error: {error}</p>\n{/if}\n{#if data}\n  <h3>Tarea #{data.id}</h3>\n  <p><strong>{data.title}</strong></p>\n  <p>Completado: {data.completed ? 'Sí' : 'No'}</p>\n{/if}\n`,
+    },
+    tabs: {
+      '/App.svelte': `<scr` + `ipt>\n  let active = $state('inicio');\n  const tabs = [\n    { id: 'inicio', label: 'Inicio', content: 'Bienvenido a tu aplicación.' },\n    { id: 'docs', label: 'Docs', content: 'Svelte 5: $state, $derived, $effect.' },\n    { id: 'ayuda', label: 'Ayuda', content: 'Edita el código de la izquierda.' },\n  ];\n${SCR_END}\n\n<div style="display: flex; gap: 0.25rem; border-bottom: 2px solid #eee">\n  {#each tabs as tab}\n    <button\n      onclick={() => active = tab.id}\n      style="background: {active === tab.id ? '#ff3e00' : 'transparent'}; color: {active === tab.id ? 'white' : '#333'}; border: none; padding: 0.6rem 1.2rem; cursor: pointer; font-weight: 500"\n    >\n      {tab.label}\n    </button>\n  {/each}\n</div>\n\n<div style="padding: 1.5rem 0">\n  {tabs.find(t => t.id === active).content}\n</div>\n`,
+    },
+    modal: {
+      '/App.svelte': `<scr` + `ipt>\n  let open = $state(false);\n${SCR_END}\n\n<h2>Diálogo modal</h2>\n<button onclick={() => open = true}>Abrir modal</button>\n\n{#if open}\n  <div\n    style="position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 100"\n    role="presentation"\n    onclick={() => open = false}\n  >\n    <div\n      style="background: white; padding: 2rem; border-radius: 8px; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.2)"\n      role="dialog"\n      onclick={(e) => e.stopPropagation()}\n    >\n      <h3>Hola desde el modal</h3>\n      <p>Diálogo hecho con Svelte 5 y <code>$state</code>.</p>\n      <button onclick={() => open = false}>Cerrar</button>\n    </div>\n  </div>\n{/if}\n`,
+    },
+    multifile: {
+      '/App.svelte': `<scr` + `ipt>\n  import Header from './Header.svelte';\n  let count = $state(0);\n${SCR_END}\n\n<Header title="Mi aplicación" />\n<button onclick={() => count++}>\n  Me han pulsado {count} {count === 1 ? 'vez' : 'veces'}\n</button>\n`,
+      '/Header.svelte': `<scr` + `ipt>\n  let { title } = $props();\n${SCR_END}\n\n<h2 style="color: #ff3e00">{title}</h2>\n<p>Este header viene de un archivo separado (<code>Header.svelte</code>) y se importa desde <code>App.svelte</code>.</p>\n`,
+    },
+    dashboard: {
+      '/App.svelte': `<scr` + `ipt>\n  import Header from './components/Header.svelte';\n  import UserCard from './components/UserCard.svelte';\n  import Stats from './components/Stats.svelte';\n\n  const team = [\n    { name: 'Ada Lovelace', role: 'Matemática', color: '#ff3e00' },\n    { name: 'Alan Turing', role: 'Criptógrafo', color: '#10b981' },\n    { name: 'Grace Hopper', role: 'Programadora', color: '#3b82f6' },\n  ];\n${SCR_END}\n\n<Header title="Mi equipo" subtitle="Plantilla con subcarpeta /components" />\n<Stats items={team.length} />\n\n<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-top: 1.5rem">\n  {#each team as member}\n    <UserCard name={member.name} role={member.role} color={member.color} />\n  {/each}\n</div>\n`,
+      '/components/Header.svelte': `<scr` + `ipt>\n  let { title = 'Título', subtitle = '' } = $props();\n${SCR_END}\n\n<header style="padding: 1rem 1.25rem; background: #1a1a1a; color: white; border-radius: 8px">\n  <h1 style="margin: 0; font-size: 1.4rem">{title}</h1>\n  {#if subtitle}\n    <p style="margin: 0.3rem 0 0; color: #9ca3af; font-size: 0.9rem">{subtitle}</p>\n  {/if}\n</header>\n`,
+      '/components/UserCard.svelte': `<scr` + `ipt>\n  let { name = 'Nombre', role = 'Rol', color = '#ff3e00' } = $props();\n\n  const initials = (name || '')\n    .split(' ')\n    .map(w => w[0] || '')\n    .join('')\n    .slice(0, 2)\n    .toUpperCase() || '·';\n${SCR_END}\n\n<article style="border: 1px solid #e5e7eb; border-radius: 8px; padding: 1rem; display: flex; gap: 0.75rem; align-items: center">\n  <div style="width: 44px; height: 44px; border-radius: 50%; background: {color}; color: white; display: grid; place-items: center; font-weight: 700; flex-shrink: 0">\n    {initials}\n  </div>\n  <div>\n    <strong style="display: block">{name}</strong>\n    <small style="color: #6b7280">{role}</small>\n  </div>\n</article>\n`,
+      '/components/Stats.svelte': `<scr` + `ipt>\n  let { items = 0 } = $props();\n${SCR_END}\n\n<div style="display: inline-flex; gap: 1.5rem; padding: 0.75rem 1rem; background: #fff5f0; border-radius: 8px; margin-top: 1rem; color: #ff3e00">\n  <strong style="font-size: 1.4rem">{items}</strong>\n  <span style="align-self: center; color: #1a1a1a; font-size: 0.9rem">\n    {items === 1 ? 'persona en el equipo' : 'personas en el equipo'}\n  </span>\n</div>\n`,
+    },
+    starter: {
+      '/App.svelte': `<scr` + `ipt>\n  import TodoItem from './components/TodoItem.svelte';\n  import { addItem, removeItem, countActive } from './utils.js';\n  import './styles.css';\n\n  let items = $state([\n    { id: 1, text: 'Aprender Svelte 5', done: true },\n    { id: 2, text: 'Crear mi primera app', done: false },\n    { id: 3, text: 'Exportar a HTML', done: false },\n  ]);\n  let nextId = $state(4);\n  let text = $state('');\n  let filter = $state('all');  // 'all' | 'active' | 'done'\n\n  function add() {\n    const item = addItem({ id: nextId, text, done: false });\n    items = [...items, item];\n    nextId++;\n    text = '';\n  }\n  function toggle(id) {\n    items = items.map(it => it.id === id ? { ...it, done: !it.done } : it);\n  }\n  function remove(id) {\n    items = removeItem(items, id);\n  }\n\n  const filtered = $derived(\n    filter === 'active' ? items.filter(i => !i.done)\n    : filter === 'done' ? items.filter(i => i.done)\n    : items\n  );\n  const remaining = $derived(countActive(items));\n${SCR_END}\n\n<main class="app">\n  <header class="app-header">\n    <h1>Mis tareas</h1>\n    <p class="subtitle">Plantilla starter: <code>App.svelte</code> + <code>components/</code> + <code>utils.js</code> + <code>styles.css</code></p>\n  </header>\n\n  <form class="add-form" onsubmit={(e) => { e.preventDefault(); add(); }}>\n    <input bind:value={text} placeholder="¿Qué necesitas hacer?" />\n    <button type="submit" disabled={!text.trim()}>Añadir</button>\n  </form>\n\n  <div class="filters\">\n    <button class:active={filter === 'all'} onclick={() => filter = 'all'}>Todas ({items.length})</button>\n    <button class:active={filter === 'active'} onclick={() => filter = 'active'}>Pendientes ({remaining})</button>\n    <button class:active={filter === 'done'} onclick={() => filter = 'done'}>Hechas ({items.length - remaining})</button>\n  </div>\n\n  {#if filtered.length === 0}\n    <p class="empty\">No hay tareas {filter === 'active' ? 'pendientes' : filter === 'done' ? 'hechas' : ''}.</p>\n  {:else}\n    <ul class="todo-list">\n      {#each filtered as item (item.id)}\n        <TodoItem {item} onToggle={() => toggle(item.id)} onRemove={() => remove(item.id)} />\n      {/each}\n    </ul>\n  {/if}\n</main>\n`,
+      '/components/TodoItem.svelte': `<scr` + `ipt>\n  let { item, onToggle, onRemove } = $props();\n${SCR_END}\n\n<li class="todo-item" class:done={item.done}>\n  <label>\n    <input type="checkbox" checked={item.done} onchange={onToggle} />\n    <span>{item.text}</span>\n  </label>\n  <button class="remove" onclick={onRemove} aria-label="Borrar">✕</button>\n</li>\n`,
+      '/utils.js': `// Helpers puros. Importables desde cualquier archivo.\nexport function addItem(item) {\n  if (!item.text || !item.text.trim()) {\n    throw new Error('El texto de la tarea no puede estar vacío');\n  }\n  return { ...item, text: item.text.trim() };\n}\n\nexport function removeItem(items, id) {\n  return items.filter(it => it.id !== id);\n}\n\nexport function countActive(items) {\n  return items.filter(it => !it.done).length;\n}\n`,
+      '/styles.css': `/* Estilos globales del proyecto starter. */\n:root {\n  --accent: #ff3e00;\n  --accent-soft: #fff5f0;\n  --bg: #ffffff;\n  --fg: #1a1a1a;\n  --fg-soft: #6b7280;\n  --border: #e5e7eb;\n}\n\nbody {\n  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;\n  color: var(--fg);\n  margin: 0;\n  background: var(--bg);\n}\n\n.app {\n  max-width: 540px;\n  margin: 2rem auto;\n  padding: 0 1rem;\n}\n\n.app-header h1 {\n  margin: 0 0 0.3rem;\n  font-size: 1.8rem;\n}\n.app-header .subtitle {\n  margin: 0 0 1.5rem;\n  color: var(--fg-soft);\n  font-size: 0.9rem;\n}\n.app-header code {\n  background: var(--accent-soft);\n  padding: 0.1rem 0.35rem;\n  border-radius: 3px;\n  font-size: 0.85em;\n}\n\n.add-form {\n  display: flex;\n  gap: 0.5rem;\n  margin-bottom: 1rem;\n}\n.add-form input {\n  flex: 1;\n  padding: 0.6rem 0.8rem;\n  border: 1px solid var(--border);\n  border-radius: 6px;\n  font-size: 0.95rem;\n  outline: none;\n}\n.add-form input:focus {\n  border-color: var(--accent);\n}\n.add-form button {\n  padding: 0.6rem 1rem;\n  background: var(--accent);\n  color: white;\n  border: none;\n  border-radius: 6px;\n  cursor: pointer;\n  font-size: 0.95rem;\n}\n.add-form button:disabled {\n  opacity: 0.5;\n  cursor: not-allowed;\n}\n\n.filters {\n  display: flex;\n  gap: 0.25rem;\n  margin-bottom: 0.75rem;\n}\n.filters button {\n  padding: 0.4rem 0.8rem;\n  background: transparent;\n  border: none;\n  border-bottom: 2px solid transparent;\n  cursor: pointer;\n  font-size: 0.85rem;\n  color: var(--fg-soft);\n}\n.filters button.active {\n  color: var(--accent);\n  border-bottom-color: var(--accent);\n  font-weight: 600;\n}\n\n.todo-list {\n  list-style: none;\n  padding: 0;\n  margin: 0;\n}\n.todo-item {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0.5rem 0.75rem;\n  border-bottom: 1px solid var(--border);\n}\n.todo-item label {\n  flex: 1;\n  display: flex;\n  gap: 0.6rem;\n  align-items: center;\n  cursor: pointer;\n}\n.todo-item.done span {\n  text-decoration: line-through;\n  color: var(--fg-soft);\n}\n.todo-item .remove {\n  background: transparent;\n  border: none;\n  color: var(--fg-soft);\n  cursor: pointer;\n  padding: 0.25rem 0.5rem;\n  border-radius: 4px;\n}\n.todo-item .remove:hover {\n  background: #fef2f2;\n  color: #dc2626;\n}\n\n.empty {\n  padding: 2rem 1rem;\n  text-align: center;\n  color: var(--fg-soft);\n  font-style: italic;\n}\n`,
+    },
+
+    // ───────────── Prueba de rendimiento ─────────────
+    // Genera 50 componentes sintéticos variados para estresar el compilador.
+    // Se ejecuta como función (no como objeto literal) para no inflar el init.
+    stress50: () => buildStressProject(),
+    erp50: () => buildErpProject(),
+  };
+
+  // ════════════════════════════════════════════════════════════
+  // Exporter — genera HTML standalone descargable
+  //
+  // API:
+  //   exporter.export(bundle, options)
+  //     options:
+  //       filename   - nombre del archivo descargado (default 'app-svelte.html')
+  //       title      - <title> del HTML generado
+  //       assets     - futuro: [{ path, content, type }] inlineado como data: URLs
+  //       manifest   - futuro: object con campos del web app manifest
+  //       serviceWorker - futuro: boolean — registra un SW básico
+  //
+  // Por ahora assets/manifest/serviceWorker son reservados (no-ops).
+  // ════════════════════════════════════════════════════════════
+  class Exporter {
+    constructor() {}
+
+    /** Inlina todos los módulos del bundle como data: URLs en el import map. */
+    inlineBundle(bundle, baseImportMap) {
+      const imports = { ...(baseImportMap?.imports || {}) };
+      for (const path of Object.keys(bundle.allJs)) {
+        imports['./' + path.replace(/^\//, '')] = toDataUrl(bundle.allJs[path]);
+      }
+      return { imports };
+    }
+
+    /** Renderiza el HTML standalone. NO lo descarga. */
+    render(bundle, options = {}) {
+      const opts = {
+        title: 'Mi app Svelte',
+        includeBootstrap: true,
+        ...options,
+      };
+      const importMap = this.inlineBundle(bundle, runtime.importMap);
+      const importMapJson = JSON.stringify(importMap);
+      const cssTag = bundle.css ? `<style>${bundle.css}</style>` : '';
+
+      // Reservado para Fase 4 (no-op hoy):
+      //   opts.assets → podría insertar <link>/<scr` + `ipt>/<style> con data: URLs.
+      //   opts.manifest → <link rel="manifest" href="data:application/manifest+json,...">
+      //   opts.serviceWorker → <scr` + `ipt>navigator.serviceWorker.register(...)</scr` + `ipt>
+
+      const bootstrapLinks = opts.includeBootstrap
+        ? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">\n  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">\n  `
+        : '';
+
+      return `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(opts.title)}</title>
+  ${bootstrapLinks}<scr` + `ipt type="importmap">${importMapJson}</scr` + `ipt>
+  ${cssTag}
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #1a1a1a; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <scr` + `ipt type="module">
+    window.addEventListener('error', (e) => {
+      console.error('[app]', e.message || e);
+    });
+    import { mount } from 'svelte';
+    import App from './App.svelte';
+    try {
+      mount(App, { target: document.getElementById('app') });
+    } catch (e) {
+      const msg = (e && e.message) || String(e);
+      document.getElementById('app').innerHTML = '<pre style="color:red;padding:1rem;background:#fef2f2;border-radius:6px;white-space:pre-wrap">' + msg + '</pre>';
+      console.error(e);
+    }
+  </scr` + `ipt>
+</body>
+</html>`;
+    }
+
+    /** Genera el HTML y dispara la descarga via Blob. */
+    write(bundle, options = {}) {
+      const html = this.render(bundle, options);
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = options.filename || 'app-svelte.html';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 500);
+      return html;
+    }
+
+    /** Punto de entrada principal. */
+    export(bundle, options) {
+      return this.write(bundle, options);
+    }
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // Viewers — renderizan documentos no-Svelte como srcdoc del iframe.
+  //   - Markdown (.md): usa marked desde esm.sh (carga on-demand).
+  //   - JSON Schema visual (.schema.json / .json-schema): formulario
+  //     Bootstrap con previsualización en vivo del JSON resultante.
+  // No se incluyen en el bundle de export (son del editor, no de la app).
+  // ════════════════════════════════════════════════════════════
+  const viewers = {
+    _marked: null,
+
+    async _getMarked() {
+      if (this._marked) return this._marked;
+      const m = await import('https://esm.sh/marked@12');
+      this._marked = m.marked || m.default;
+      // Sanitizado básico: marked escapa HTML por defecto en texto,
+      // pero confiamos en sandbox="allow-scripts" del iframe.
+      if (this._marked.setOptions) this._marked.setOptions({ gfm: true, breaks: false });
+      return this._marked;
+    },
+
+    async renderMarkdown(src) {
+      const marked = await this._getMarked();
+      const body = marked.parse(src || '');
+      return `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Documento</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 16px; line-height: 1.65;
+      color: #1a1a1a;
+      background: #ffffff;
+    }
+    .md {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 2.5rem 1.25rem 4rem;
+    }
+    .md h1, .md h2, .md h3, .md h4, .md h5, .md h6 {
+      line-height: 1.25;
+      margin: 1.8em 0 0.6em;
+      font-weight: 700;
+    }
+    .md h1 { font-size: 2rem; margin-top: 0.2em; padding-bottom: 0.25em; border-bottom: 1px solid #e5e7eb; }
+    .md h2 { font-size: 1.5rem; padding-bottom: 0.2em; border-bottom: 1px solid #f0f0f0; }
+    .md h3 { font-size: 1.2rem; }
+    .md p { margin: 0 0 1em; }
+    .md a { color: #2563eb; text-decoration: underline; text-underline-offset: 2px; }
+    .md code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      background: #f3f4f6;
+      padding: 0.12em 0.35em;
+      border-radius: 4px;
+      font-size: 0.92em;
+    }
+    .md pre {
+      background: #f8f9fa; padding: 1rem; border-radius: 8px; overflow: auto;
+      border: 1px solid #e5e7eb;
+    }
+    .md pre code { background: transparent; padding: 0; }
+    .md blockquote {
+      margin: 1em 0; padding: 0.25em 1em;
+      border-left: 4px solid #d1d5db; color: #4b5563; background: #f9fafb;
+      border-radius: 0 6px 6px 0;
+    }
+    .md ul, .md ol { padding-left: 1.6em; margin: 0 0 1em; }
+    .md li { margin: 0.25em 0; }
+    .md table { border-collapse: collapse; margin: 1em 0; width: 100%; }
+    .md th, .md td { border: 1px solid #e5e7eb; padding: 0.5em 0.75em; text-align: left; }
+    .md th { background: #f9fafb; font-weight: 600; }
+    .md hr { border: 0; border-top: 1px solid #e5e7eb; margin: 2em 0; }
+    .md img { max-width: 100%; height: auto; border-radius: 6px; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #0f1115; color: #e6e8eb; }
+      .md h1, .md h2 { border-color: #2a2f38; }
+      .md code { background: #1c2026; color: #e6e8eb; }
+      .md pre { background: #16191e; border-color: #2a2f38; }
+      .md blockquote { background: #16191e; border-left-color: #2a2f38; color: #b3b8c0; }
+      .md a { color: #7aa7ff; }
+      .md th { background: #16191e; }
+      .md th, .md td { border-color: #2a2f38; }
+      .md hr { border-color: #2a2f38; }
+    }
+  </style>
+</head>
+<body>
+  <article class="md">${body}</article>
+</body>
+</html>`;
+    },
+
+    renderSchemaForm(src, path) {
+      let schema;
+      try {
+        schema = JSON.parse(src || '{}');
+      } catch (e) {
+        throw new Error('JSON inválido en ' + (path || 'documento') + ': ' + e.message);
+      }
+      const title = schema.title || 'Formulario';
+      const fields = Array.isArray(schema.fields) ? schema.fields : [];
+
+      const escapeAttr = (s) => String(s).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[c]));
+
+      const defaults = {};
+      const renderField = (f, i) => {
+        const key = String(f.key || ('field_' + i));
+        const label = f.label || key;
+        const required = !!f.required;
+        const type = (f.type || 'text').toLowerCase();
+        defaults[key] = f.default ?? '';
+        const id = 'f_' + key.replace(/[^a-zA-Z0-9_]/g, '_');
+
+        if (type === 'select') {
+          const opts = (f.options || []).map(o => {
+            const v = typeof o === 'object' ? o.value : o;
+            const t = typeof o === 'object' ? (o.label ?? o.value) : o;
+            return `<option value="${escapeAttr(v)}">${escapeAttr(t)}</option>`;
+          }).join('');
+          return `
+            <div class="mb-3">
+              <label for="${id}" class="form-label">${escapeAttr(label)}${required ? ' <span class="text-danger">*</span>' : ''}</label>
+              <select id="${id}" data-key="${escapeAttr(key)}" data-type="select" class="form-select">
+                <option value="">— Selecciona —</option>
+                ${opts}
+              </select>
+            </div>`;
+        }
+        if (type === 'textarea') {
+          return `
+            <div class="mb-3">
+              <label for="${id}" class="form-label">${escapeAttr(label)}${required ? ' <span class="text-danger">*</span>' : ''}</label>
+              <textarea id="${id}" data-key="${escapeAttr(key)}" data-type="textarea" class="form-control" rows="3"></textarea>
+            </div>`;
+        }
+        if (type === 'checkbox') {
+          return `
+            <div class="mb-3 form-check">
+              <input id="${id}" data-key="${escapeAttr(key)}" data-type="checkbox" type="checkbox" class="form-check-input">
+              <label for="${id}" class="form-check-label">${escapeAttr(label)}${required ? ' <span class="text-danger">*</span>' : ''}</label>
+            </div>`;
+        }
+        const inputType = ['text', 'number', 'email'].includes(type) ? type : 'text';
+        return `
+          <div class="mb-3">
+            <label for="${id}" class="form-label">${escapeAttr(label)}${required ? ' <span class="text-danger">*</span>' : ''}</label>
+            <input id="${id}" data-key="${escapeAttr(key)}" data-type="${inputType}" type="${inputType}" class="form-control">
+          </div>`;
+      };
+
+      const formHtml = fields.map(renderField).join('\n');
+
+      return `<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeAttr(title)}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bs-body-bg); }
+    .schema-shell { max-width: 720px; margin: 0 auto; padding: 1.5rem 1rem; }
+    .schema-out {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 13px; max-height: 260px; overflow: auto;
+      background: var(--bs-tertiary-bg);
+    }
+  </style>
+</head>
+<body>
+  <div class="schema-shell">
+    <h1 class="h4 mb-3">${escapeAttr(title)}</h1>
+    <form id="schema-form" autocomplete="off" novalidate>
+      ${formHtml || '<p class="text-secondary">Este schema no tiene campos.</p>'}
+      <div class="d-flex gap-2 mb-4">
+        <button id="reset-btn" type="button" class="btn btn-outline-secondary btn-sm">
+          <i class="bi bi-arrow-counterclockwise"></i> Reset
+        </button>
+      </div>
+    </form>
+    <h2 class="h6 text-uppercase text-secondary mb-2">Resultado</h2>
+    <pre id="json-out" class="schema-out p-3 rounded border"></pre>
+  </div>
+  <scr` + `ipt>
+    (function () {
+      var form = document.getElementById('schema-form');
+      var out = document.getElementById('json-out');
+      var defaults = ${JSON.stringify(defaults)};
+      var fields = ${JSON.stringify(fields.map(f => ({
+        key: String(f.key || ''),
+        type: (f.type || 'text').toLowerCase(),
+      })))};
+
+      function read() {
+        var obj = {};
+        for (var i = 0; i < fields.length; i++) {
+          var f = fields[i];
+          if (!f.key) continue;
+          var el = form.querySelector('[data-key="' + CSS.escape(f.key) + '"]');
+          if (!el) continue;
+          var v;
+          if (f.type === 'checkbox') v = !!el.checked;
+          else if (f.type === 'number') v = el.value === '' ? null : Number(el.value);
+          else v = el.value;
+          if (f.type !== 'checkbox' && v === '') v = null;
+          obj[f.key] = v;
+        }
+        return obj;
+      }
+
+      function apply() {
+        out.textContent = JSON.stringify(read(), null, 2);
+      }
+
+      function reset() {
+        for (var i = 0; i < fields.length; i++) {
+          var f = fields[i];
+          if (!f.key) continue;
+          var el = form.querySelector('[data-key="' + CSS.escape(f.key) + '"]');
+          if (!el) continue;
+          var d = defaults[f.key];
+          if (f.type === 'checkbox') el.checked = !!d;
+          else el.value = (d == null) ? '' : String(d);
+        }
+        apply();
+      }
+
+      form.addEventListener('input', apply);
+      form.addEventListener('change', apply);
+      document.getElementById('reset-btn').addEventListener('click', reset);
+      reset();
+    })();
+  <\/script>
+</body>
+</html>`;
+    },
+  };
+
+  // ════════════════════════════════════════════════════════════
+  // Runtime — encapsula el ciclo de vida compile/preview/export/invalidate.
+  //
+  // Eventos:
+  //   'status'        → 'compiling' | 'ok' | 'error'
+  //   'console-clear' → () — vaciar la consola del UI
+  //   'console'       → ({ level, msg }) — añadir un mensaje (level: error|warn|info)
+  //   'bundle'        → (bundle) — nuevo bundle disponible (tras compile OK)
+  //
+  // La UI se suscribe una vez y reacciona. Los handlers no saben
+  // del compiler/preview/exporter; solo conocen el runtime.
+  // ════════════════════════════════════════════════════════════
+  class Runtime {
+    constructor({ fs, compiler, preview, exporter }) {
+      this.fs = fs;
+      this.compiler = compiler;
+      this._preview = preview;
+      this.exporter = exporter;
+      this._listeners = new Map();
+      this.importMap = null;
+      this.bundle = null;
+      // Métricas opcionales (stress test). Si es null, no se captura nada.
+      // Ver Runtime.beginMetrics() / endMetrics().
+      this._metrics = null;
+      // Documento a previsualizar. Cambia cuando el usuario selecciona
+      // un componente (.svelte) o el entry de la app (/App.svelte).
+      // Por defecto, la app completa.
+      this.previewEntry = '/App.svelte';
+    }
+
+    on(event, cb) {
+      if (!this._listeners.has(event)) this._listeners.set(event, new Set());
+      this._listeners.get(event).add(cb);
+      return () => this._listeners.get(event).delete(cb);
+    }
+
+    _emit(event, payload) {
+      const set = this._listeners.get(event);
+      if (!set) return;
+      for (const cb of set) {
+        try { cb(payload); } catch (e) { console.error('runtime listener error:', e); }
+      }
+    }
+
+    /** Cambia el documento que se va a previsualizar. Devuelve false si el
+     *  tipo de archivo no es previsualizable (.svelte, .md, .schema.json,
+     *  .json-schema). La UI debe llamar a compile() o compileAndPreview() —
+     *  el Runtime bifurcará según la extensión. */
+    setPreviewEntry(path) {
+      if (!path) return false;
+      if (!this.canPreview(path)) return false;
+      this.previewEntry = path;
+      return true;
+    }
+
+    /** Indica si un path puede previsualizarse. Hoy: .svelte, .md,
+     *  .schema.json o .json-schema. */
+    canPreview(path) {
+      if (typeof path !== 'string') return false;
+      return (
+        path.endsWith('.svelte') ||
+        path.endsWith('.md') ||
+        path.endsWith('.schema.json') ||
+        path.endsWith('.json-schema')
+      );
+    }
+
+    /** Carga el runtime de Svelte (URLs absolutas del importMap). */
+    async loadRuntime() {
+      const entries = [
+        ['svelte', 'https://esm.sh/svelte@5'],
+        ['svelte/internal/client', 'https://esm.sh/svelte@5/internal/client'],
+        ['svelte/internal/disclose-version', 'https://esm.sh/svelte@5/internal/disclose-version'],
+        ['svelte/internal/flags/legacy', 'https://esm.sh/svelte@5/internal/flags/legacy'],
+        ['svelte/internal/flags/tracing', 'https://esm.sh/svelte@5/internal/flags/tracing'],
+      ];
+      const imports = {};
+      for (const [key, url] of entries) {
+        try {
+          const headRes = await fetch(url, { method: 'HEAD' });
+          if (!headRes.ok) throw new Error('HEAD ' + headRes.status);
+          const path = headRes.headers.get('X-Esm-Path');
+          if (!path) throw new Error('Sin X-Esm-Path');
+          imports[key] = new URL(path, 'https://esm.sh').href;
+        } catch (e) {
+          this._emit('console', {
+            level: 'error',
+            msg: 'No se pudo preparar el entorno. Verifica tu conexión a Internet. (' + e.message + ')',
+          });
+          return null;
+        }
+      }
+      this.importMap = { imports };
+      return this.importMap;
+    }
+
+    /** Compila el entry point. Devuelve el bundle o null si hubo errores.
+     *  Bifurca según la extensión de previewEntry:
+     *   - .svelte → usa el compiler (Svelte 5)
+     *   - .md / .schema.json / .json-schema → genera un bundle HTML directo
+     *     (sin tocar el compiler) con `kind: 'html'`.
+     *  Las plantillas guiadas (las 9) siguen funcionando igual. */
+    compile() {
+      if (!this.importMap) {
+        this._emit('console', { level: 'warn', msg: 'Aún preparando el entorno…' });
+        return null;
+      }
+      // Volcar buffer de Monaco al fs antes de compilar (por si el debounce
+      // del autoguardado no ha disparado todavía).
+      if (typeof saveCurrent === 'function') saveCurrent();
+      this._emit('status', 'compiling');
+
+      // Bifurcación: documentos no-Svelte se renderizan directo a srcdoc.
+      const ext = this.previewEntry.split('.').pop()?.toLowerCase();
+      const isSvelte = this.previewEntry.endsWith('.svelte');
+      const isMd = this.previewEntry.endsWith('.md');
+      const isSchema = this.previewEntry.endsWith('.schema.json') || this.previewEntry.endsWith('.json-schema');
+
+      this._emit('console-clear');
+
+      if (!isSvelte && (isMd || isSchema)) {
+        return this._compileDocument(this.previewEntry);
+      }
+
+      // Instrumentación opcional (stress test). Si _metrics está activo,
+      // medimos tiempo total + memoria + bundle, y enchufamos el hook del
+      // compiler para capturar tiempo por archivo.
+      const metrics = this._metrics;
+      if (metrics) {
+        metrics.startedAt = performance.now();
+        metrics.memBefore = performance.memory?.usedJSHeapSize ?? null;
+        metrics.files = [];
+        this.compiler._instrument = {
+          onFileCompile: (path, ms, bytes) => {
+            metrics.files.push({ path, ms, bytes });
+          },
+        };
+      }
+
+      let built;
+      try {
+        built = this.compiler.build(this.previewEntry);
+      } finally {
+        if (metrics) this.compiler._instrument = null;
+      }
+      const { modules, errors, warnings } = built;
+
+      for (const err of errors) {
+        const formatted = this._formatMsg(err);
+        this._emit('console', { level: 'error', msg: formatted.text, meta: formatted.meta });
+      }
+      for (const w of warnings) {
+        const formatted = this._formatMsg(w);
+        this._emit('console', { level: 'warn', msg: formatted.text, meta: formatted.meta });
+      }
+      if (errors.length) {
+        if (metrics) {
+          metrics.finishedAt = performance.now();
+          metrics.totalMs = metrics.finishedAt - metrics.startedAt;
+          metrics.memAfter = performance.memory?.usedJSHeapSize ?? null;
+        }
+        this._emit('status', 'error');
+        return null;
+      }
+
+      const entry = modules[this.previewEntry];
+      if (!entry) {
+        if (metrics) {
+          metrics.finishedAt = performance.now();
+          metrics.totalMs = metrics.finishedAt - metrics.startedAt;
+        }
+        this._emit('status', 'error');
+        this._emit('console', { level: 'error', msg: 'Falta el documento a previsualizar.' });
+        return null;
+      }
+
+      this._emit('console', { level: 'info', msg: 'Tu aplicación se ha actualizado.' });
+
+      this.bundle = {
+        kind: 'svelte',
+        modules,
+        entryJs: entry.js,
+        allJs: Object.fromEntries(Object.entries(modules).map(([p, m]) => [p, m.js])),
+        allCss: Object.fromEntries(Object.entries(modules).map(([p, m]) => [p, m.css || ''])),
+        css: Object.values(modules).map(m => m.css || '').filter(Boolean).join('\n'),
+      };
+
+      if (metrics) {
+        metrics.finishedAt = performance.now();
+        metrics.totalMs = metrics.finishedAt - metrics.startedAt;
+        metrics.memAfter = performance.memory?.usedJSHeapSize ?? null;
+        // Tamaño del bundle "del usuario" (excluye svelte runtime).
+        let jsBytes = 0, cssBytes = 0;
+        for (const m of Object.values(modules)) {
+          jsBytes += (m.js || '').length;
+          cssBytes += (m.css || '').length;
+        }
+        metrics.bundleJsBytes = jsBytes;
+        metrics.bundleCssBytes = cssBytes;
+      }
+
+      this._emit('bundle', this.bundle);
+      this._emit('status', 'ok');
+      return this.bundle;
+    }
+
+    /** Compila un documento Markdown o JSON Schema como un bundle HTML
+     *  autocontenido (srcdoc del iframe). Errores sintácticos del JSON
+     *  se reportan al usuario sin lanzar excepciones. */
+    async _compileDocument(path) {
+      const src = this.fs.read(path);
+      try {
+        const html = path.endsWith('.md')
+          ? await viewers.renderMarkdown(src)
+          : viewers.renderSchemaForm(src, path);
+        this.bundle = { kind: 'html', html, entryJs: '', modules: {}, allJs: {}, allCss: {}, css: '' };
+        this._emit('bundle', this.bundle);
+        this._emit('console', { level: 'info', msg: 'Vista previa actualizada.' });
+        this._emit('status', 'ok');
+        return this.bundle;
+      } catch (e) {
+        this._emit('status', 'error');
+        this._emit('console', { level: 'error', msg: (e && e.message) || String(e) });
+        return null;
+      }
+    }
+
+    /** Monta el bundle actual en el iframe de preview. */
+    preview() {
+      if (!this.bundle) return;
+      this._preview.mount(this.bundle);
+    }
+
+    /** Compila + preview en una sola llamada (atajo). Async porque la
+     *  ruta de documentos (.md/.schema.json) carga módulos dinámicamente. */
+    async compileAndPreview() {
+      const b = await this.compile();
+      if (b) this.preview();
+      return b;
+    }
+
+    /** Recarga el iframe conservando el bundle actual. */
+    reload() {
+      this._preview.reload();
+    }
+
+    /** Compila (si hace falta) y descarga el HTML standalone. */
+    async export(options) {
+      if (!this.bundle) {
+        this._emit('console', { level: 'warn', msg: 'Compilando antes de exportar…' });
+        const ok = await this.compileAndPreview();
+        if (!ok) return null;
+      }
+      this.exporter.export(this.bundle, options);
+      return this.bundle;
+    }
+
+    /** Invalida la caché de un archivo (cuando el fs notifica cambios). */
+    invalidate(path) {
+      this.compiler.invalidate(path);
+    }
+
+    /** Limpia recursos. Hoy solo limpia el bundle (Monaco se gestiona fuera). */
+    destroy() {
+      this.bundle = null;
+    }
+
+    _formatMsg(item) {
+      const start = item.start || (item.position && typeof item.position === 'object' && item.position.start);
+      let line = 0, column = 0;
+      if (start && typeof start.line === 'number') {
+        line = start.line;
+        column = start.column;
+      }
+      const fileName = item.file ? item.file.replace(/^\//, '') : null;
+      const loc = (fileName ? `${fileName} · ` : '') +
+                  (line ? `línea ${line}:${column + 1}` : (item.code || 'Error'));
+      const sourceLine = line ? (this.fs.read(item.file || '/').split('\n')[line - 1]?.trim() || '') : '';
+      const msg = (item.message || '').replace(/\nhttps:\/\/svelte\.dev\/e\/[\w-]+\s*$/, '');
+      const text = sourceLine
+        ? `${loc}\n${msg}\n  → ${sourceLine}`
+        : `${loc}\n${msg}`;
+      const meta = item.file && line
+        ? { file: item.file, line, column }
+        : null;
+      return { text, meta };
+    }
+  }
+
+  // Instancia única del runtime — usada por preview, exporter y la UI.
+  const exporter = new Exporter();
+  const runtime = new Runtime({ fs, compiler, preview, exporter });
+
+  // ════════════════════════════════════════════════════════════
+  // UI — DOM refs, sidebar, editor, dialogs, handlers
+  // ════════════════════════════════════════════════════════════
+  const consoleHeader = document.getElementById('console-header');
+  const consoleTitle = document.getElementById('console-title');
+  const consoleBody = document.getElementById('console-body');
+  const templates = document.getElementById('templates');
+  const resetBtn = document.getElementById('reset');
+  const exportBtn = document.getElementById('export');
+  const helpBtn = document.getElementById('help-btn');
+  const fileTreeEl = document.getElementById('file-tree');
+  const activeDocumentNameEl = document.getElementById('active-document-name');
+  const newFileBtn = document.getElementById('new-file');
+  const newFileDialog = document.getElementById('newFileDialog');
+  const newFileForm = document.getElementById('new-file-form');
+  const newFileInput = document.getElementById('new-file-name');
+  const renameDialog = document.getElementById('renameDialog');
+  const renameForm = document.getElementById('rename-form');
+  const renameInput = document.getElementById('rename-input');
+  const documentTabsEl = document.getElementById('document-tabs');
+  const toggleEditorBtn = document.getElementById('toggle-editor');
+  const viewerDocumentLabelEl = document.getElementById('viewer-document-label');
+  const previewEl = document.getElementById('preview');
+  const viewerPlaceholderEl = document.getElementById('viewer-placeholder');
+  const openCurrentBtn = document.getElementById('open-current');
+  const editFabBtn = document.getElementById('edit-component-fab');
+
+  // ─── Funciones de UI (status, consola) ──────────────────────
+  function setStatus(s) {
+    consoleHeader.classList.remove('has-error', 'is-compiling');
+    if (s === 'compiling') {
+      consoleHeader.classList.add('is-compiling');
+      consoleTitle.textContent = 'Actualizando…';
+    } else if (s === 'error') {
+      consoleHeader.classList.add('has-error');
+      consoleTitle.textContent = 'Hay un problema';
+    } else {
+      consoleTitle.textContent = 'Listo';
+    }
+  }
+
+  function clearConsole() { consoleBody.innerHTML = ''; }
+
+  function addConsole(level, msg, meta) {
+    const empty = consoleBody.querySelector('.empty');
+    if (empty) empty.remove();
+
+    // Si hay metadatos estructurados (archivo + línea), renderizamos una
+    // tarjeta con acción de click para abrir el archivo en el editor.
+    if (meta && meta.file && meta.line) {
+      const card = document.createElement('div');
+      card.className = 'error-card' + (level === 'warn' ? ' warn' : '');
+      card.setAttribute('role', 'button');
+      card.setAttribute('tabindex', '0');
+      const fileName = meta.file.replace(/^\//, '');
+      const locLine = document.createElement('div');
+      locLine.className = 'error-loc';
+      const left = document.createElement('span');
+      left.innerHTML = '<strong></strong> · línea <strong></strong>';
+      left.querySelector('strong:first-child').textContent = fileName;
+      left.querySelector('strong:last-child').textContent = meta.line + ':' + ((meta.column || 0) + 1);
+      const goto = document.createElement('span');
+      goto.className = 'goto';
+      goto.textContent = 'abrir →';
+      locLine.appendChild(left);
+      locLine.appendChild(goto);
+      card.appendChild(locLine);
+
+      const msgEl = document.createElement('div');
+      msgEl.className = 'error-msg';
+      // El msg puede tener varias líneas (ubicación + mensaje + source).
+      // La primera línea es la ubicación (ya mostrada arriba), la saltamos.
+      const lines = msg.split('\n');
+      msgEl.textContent = lines.slice(1).join('\n').trim();
+      card.appendChild(msgEl);
+
+      // Si el msg incluye una línea de código fuente (empieza con "  → "),
+      // la mostramos en un bloque monoespaciado aparte.
+      const sourceMatch = msg.match(/\n\s*→\s*(.+)$/m);
+      if (sourceMatch) {
+        const src = document.createElement('div');
+        src.className = 'error-source';
+        src.textContent = sourceMatch[1].trim();
+        card.appendChild(src);
+      }
+
+      const open = () => openDocument(meta.file, meta.line, (meta.column || 0) + 1);
+      card.addEventListener('click', open);
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
+      });
+      consoleBody.appendChild(card);
+      consoleBody.scrollTop = consoleBody.scrollHeight;
+      return;
+    }
+
+    // Sin meta: render plano (texto plano con color por nivel).
+    const div = document.createElement('div');
+    const alertClass =
+      level === 'error' ? 'alert alert-danger' :
+      level === 'warn'  ? 'alert alert-warning' :
+      level === 'info'  ? 'alert alert-info' :
+                          'alert alert-secondary';
+    div.className = `console-msg ${alertClass} py-2 px-3 mb-2 small`;
+    div.textContent = msg;
+    consoleBody.appendChild(div);
+    consoleBody.scrollTop = consoleBody.scrollHeight;
+  }
+
+  // ─── Suscribir la UI a los eventos del Runtime ──────────────
+  runtime.on('status', setStatus);
+  runtime.on('console-clear', () => {
+    clearConsole();
+    clearAllMarkers();
+  });
+  runtime.on('console', (m) => {
+    captureMarkersFromMessage(m);
+    addConsole(m.level, m.msg, m.meta);
+  });
+
+  // ─── Marcadores (squiggles) en Monaco desde errores del Runtime ───
+  // Mantenemos un cache por path; los reaplicamos al cambiar de modelo
+  // (syncEditor) para que las pestañas conserven sus marcadores al volver.
+  const MARKER_OWNER = 'sivo-app-studio';
+  const pendingMarkers = new Map(); // path → [{ severity, message, startLineNumber, ... }]
+  const modelToPath = new WeakMap(); // ITextModel → path (para invalidar al disponer)
+
+  function clearMarkersForPath(path) {
+    pendingMarkers.delete(path);
+    if (!monaco) return;
+    const model = models.get(path);
+    if (model) monaco.editor.setModelMarkers(model, MARKER_OWNER, []);
+  }
+
+  function clearAllMarkers() {
+    pendingMarkers.clear();
+    if (!monaco) return;
+    for (const model of models.values()) {
+      monaco.editor.setModelMarkers(model, MARKER_OWNER, []);
+    }
+  }
+
+  function applyMarkersForPath(path) {
+    if (!monaco || !editor) return;
+    const model = models.get(path);
+    if (!model) return;
+    const raw = pendingMarkers.get(path) || [];
+    // Clampear contra el contenido actual del modelo para no subrayar
+    // líneas/columnas que ya no existen tras ediciones.
+    const lineCount = model.getLineCount();
+    const clamped = raw.map(mk => {
+      const sl = Math.min(Math.max(1, mk.startLineNumber), lineCount);
+      const el = Math.min(Math.max(sl, mk.endLineNumber), lineCount);
+      const smc = model.getLineMaxColumn(sl) | 0;
+      const emc = model.getLineMaxColumn(el) | 0;
+      return {
+        ...mk,
+        startLineNumber: sl,
+        endLineNumber: el,
+        startColumn: Math.min(Math.max(1, mk.startColumn), smc || 1),
+        endColumn: Math.min(Math.max(mk.startColumn + 1, mk.endColumn), emc || 1),
+      };
+    });
+    monaco.editor.setModelMarkers(model, MARKER_OWNER, clamped);
+  }
+
+  function captureMarkersFromMessage(m) {
+    if (!monaco || !m || m.level !== 'error') return;
+    if (!m.meta || !m.meta.file || !m.meta.line) return;
+    const path = m.meta.file;
+    const model = models.get(path);
+
+    const startLine = Math.max(1, m.meta.line | 0);
+    const startCol = Math.max(1, ((m.meta.column || 0) + 1) | 0);
+    // Sin coordenadas exactas de fin, subrayamos la línea completa.
+    const lineMaxCol = model
+      ? (model.getLineMaxColumn(startLine) | 0) || 1
+      : 200;
+    const marker = {
+      severity: monaco.MarkerSeverity.Error,
+      message: (m.msg || '').split('\n')[0] || 'Error',
+      startLineNumber: startLine,
+      startColumn: startCol,
+      endLineNumber: startLine,
+      endColumn: Math.max(startCol + 1, lineMaxCol),
+      source: 'svelte',
+    };
+
+    const list = pendingMarkers.get(path) || [];
+    // Reemplaza cualquier marker existente en la misma línea para no acumular.
+    const filtered = list.filter(x => x.startLineNumber !== startLine);
+    filtered.push(marker);
+    pendingMarkers.set(path, filtered);
+    // Aplica al modelo si ya existe (puede no existir si el editor aún
+    // no se ha abierto con este path — se aplicará al activarse en syncEditor).
+    if (model) applyMarkersForPath(path);
+  }
+
+  // ─── Monaco Editor ─────────────────────────────────────────
+  // `editor` y `monaco` se inicializan dentro de loadMonaco().
+  // Hasta entonces, expone stubs para que el resto del código no falle.
+  let editor = null;
+  let monaco = null;
+  const models = new Map();   // path -> ITextModel
+  let currentModelPath = null;
+
+  function detectLanguage(path) {
+    const m = /\.([^./\\]+)$/.exec(path);
+    const ext = (m ? m[1] : '').toLowerCase();
+    switch (ext) {
+      case 'svelte':
+      case 'html':
+      case 'htm':  return 'html';
+      case 'js':
+      case 'mjs':  return 'javascript';
+      case 'ts':   return 'typescript';
+      case 'css':  return 'css';
+      case 'json': return 'json';
+      case 'md':   return 'markdown';
+      default:     return 'plaintext';
+    }
+  }
+
+  function pathOfModel(model) {
+    if (!model) return null;
+    for (const [p, m] of models) if (m === model) return p;
+    return null;
+  }
+
+  function disposeModel(path) {
+    const model = models.get(path);
+    if (model) {
+      if (monaco) monaco.editor.setModelMarkers(model, MARKER_OWNER, []);
+      model.dispose();
+    }
+    models.delete(path);
+    pendingMarkers.delete(path);
+  }
+
+  function disposeAllModels() {
+    for (const m of models.values()) m.dispose();
+    models.clear();
+  }
+
+  let activeDocument = '/App.svelte';
+  let renamingPath = null;
+  let compileTimer = null;
+
+  // Estado de carpetas colapsadas (persistido en fs no, pero sí en localStorage)
+  const COLLAPSED_KEY = 'sivo-app-studio:collapsed-folders';
+  let collapsedFolders = new Set();
+  try {
+    collapsedFolders = new Set(JSON.parse(localStorage.getItem(COLLAPSED_KEY) || '[]'));
+  } catch {}
+
+  function saveCollapsedFolders() {
+    try { localStorage.setItem(COLLAPSED_KEY, JSON.stringify([...collapsedFolders])); } catch {}
+  }
+
+  // ─── Render del árbol con carpetas colapsables ──────────────
+  function renderTree() {
+    fileTreeEl.innerHTML = '';
+    renderTabs();
+    const paths = fs.list();
+    if (paths.length === 0) {
+      fileTreeEl.innerHTML = '<div class="empty">Sin archivos. Pulsa + para crear uno.</div>';
+      return;
+    }
+
+    // Agrupar por subdirectorio (un nivel; el starter tiene components/, eso basta)
+    const root = [];
+    const subdirs = new Map();
+    for (const p of paths) {
+      const dir = p.substring(0, p.lastIndexOf('/'));
+      const name = p.substring(p.lastIndexOf('/') + 1);
+      if (dir === '') root.push({ path: p, name });
+      else {
+        if (!subdirs.has(dir)) subdirs.set(dir, []);
+        subdirs.get(dir).push({ path: p, name });
+      }
+    }
+
+    const ul = document.createElement('ul');
+
+    // Raíz
+    const rootUl = document.createElement('ul');
+    for (const { path, name } of root) rootUl.appendChild(makeFileRow(path, name, 0));
+    ul.appendChild(rootUl);
+
+    // Subcarpetas
+    for (const dir of [...subdirs.keys()].sort()) {
+      const folderLi = document.createElement('li');
+      const folderRow = document.createElement('div');
+      folderRow.className = 'folder-row';
+      const isCollapsed = collapsedFolders.has(dir);
+      folderRow.textContent = (isCollapsed ? '▸ ' : '▾ ') + dir.substring(1) + '/';
+      folderRow.draggable = true;
+      folderRow.dataset.folder = dir;
+
+      folderRow.addEventListener('click', () => {
+        if (collapsedFolders.has(dir)) collapsedFolders.delete(dir);
+        else collapsedFolders.add(dir);
+        saveCollapsedFolders();
+        renderTree();
+      });
+      // drop target para mover archivos a esta carpeta
+      folderRow.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        folderRow.classList.add('drop-target');
+      });
+      folderRow.addEventListener('dragleave', () => folderRow.classList.remove('drop-target'));
+      folderRow.addEventListener('drop', (e) => {
+        e.preventDefault();
+        folderRow.classList.remove('drop-target');
+        const from = e.dataTransfer.getData('text/plain');
+        if (!from) return;
+        moveFileToFolder(from, dir);
+      });
+
+      folderLi.appendChild(folderRow);
+
+      const childrenUl = document.createElement('ul');
+      if (isCollapsed) childrenUl.classList.add('collapsed');
+      for (const { path, name } of subdirs.get(dir)) {
+        childrenUl.appendChild(makeFileRow(path, name, 1));
+      }
+      folderLi.appendChild(childrenUl);
+      ul.appendChild(folderLi);
+    }
+
+    fileTreeEl.appendChild(ul);
+  }
+
+  function makeFileRow(path, name, depth) {
+    const li = document.createElement('li');
+    const div = document.createElement('div');
+    div.className = 'file' + (path === activeDocument ? ' active' : '');
+    if (depth > 0) div.classList.add('indented');
+    div.draggable = true;
+    div.dataset.path = path;
+
+    const icon = document.createElement('span');
+    icon.className = 'icon';
+    icon.textContent = iconFor(path);
+    div.appendChild(icon);
+
+    const nm = document.createElement('span');
+    nm.className = 'name';
+    nm.textContent = name;
+    div.appendChild(nm);
+
+    const del = document.createElement('button');
+    del.className = 'delete';
+    del.textContent = '×';
+    del.title = 'Borrar archivo';
+    del.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteFile(path);
+    });
+    div.appendChild(del);
+
+    div.addEventListener('click', () => selectFile(path));
+    div.addEventListener('dblclick', () => startRename(path));
+    div.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', path);
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    li.appendChild(div);
+    return li;
+  }
+
+  function iconFor(path) {
+    // schema.json / .json-schema antes que .json (ext devuelve 'json').
+    if (path.endsWith('.schema.json') || path.endsWith('.json-schema')) return '☷';
+    const ext = resolver.ext(path);
+    if (ext === 'svelte' || ext === 'svelte.js' || ext === 'svelte.ts') return '◆';
+    if (ext === 'js' || ext === 'ts') return '◇';
+    if (ext === 'css') return '◐';
+    if (ext === 'md') return '¶';
+    if (ext === 'json') return '○';
+    return '·';
+  }
+
+  /** Renderiza las pestañas de documentos. Vacía (y oculta) si solo hay
+   *  un archivo. Cada tab es clickable y tiene un × para cerrar. */
+  function renderTabs() {
+    if (!documentTabsEl) return;
+    const paths = fs.list();
+    documentTabsEl.innerHTML = '';
+    // Con un solo archivo no mostramos las tabs (no aportan navegación).
+    if (paths.length < 2) {
+      documentTabsEl.classList.add('d-none');
+      documentTabsEl.classList.remove('d-flex');
+      return;
+    }
+    documentTabsEl.classList.remove('d-none');
+    documentTabsEl.classList.add('d-flex');
+    for (const path of paths) {
+      const tab = document.createElement('div');
+      tab.className = 'tab-item' + (path === activeDocument ? ' active' : '');
+      tab.setAttribute('role', 'tab');
+      tab.dataset.path = path;
+
+      const icon = document.createElement('span');
+      icon.className = 'tab-icon';
+      icon.textContent = iconFor(path);
+      tab.appendChild(icon);
+
+      const label = document.createElement('span');
+      label.textContent = documentDisplayName(path);
+      tab.appendChild(label);
+
+      const close = document.createElement('button');
+      close.className = 'tab-close';
+      close.textContent = '×';
+      close.title = 'Cerrar documento';
+      close.setAttribute('aria-label', 'Cerrar ' + documentDisplayName(path));
+      close.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteFile(path);
+      });
+      tab.appendChild(close);
+
+      tab.addEventListener('click', () => selectFile(path));
+      documentTabsEl.appendChild(tab);
+    }
+  }
+
+  // ─── Operaciones sobre archivos ─────────────────────────────
+  function moveFileToFolder(from, toDir) {
+    if (!fs.exists(from)) return;
+    const fileName = from.substring(from.lastIndexOf('/') + 1);
+    const to = (toDir ? toDir + '/' : '/') + fileName;
+    if (to === from) return;
+    if (fs.exists(to)) {
+      addConsole('warn', 'Ya existe un archivo en esa carpeta con ese nombre: ' + to);
+      return;
+    }
+    try {
+      fs.rename(from, to);
+      if (activeDocument === from) activeDocument = to;
+      renderTree();
+      syncEditor();
+      runtime.compileAndPreview();
+    } catch (e) {
+      addConsole('error', e.message);
+    }
+  }
+
+  function selectFile(path) {
+    saveCurrent();
+    activeDocument = path;
+    syncEditor();
+    renderTree();
+    renderTabs();
+    updateViewerForDocument(path);
+    if (activeDocumentNameEl) activeDocumentNameEl.textContent = documentDisplayName(activeDocument);
+    // Solo devolver foco al editor si está abierto y visible.
+    if (document.body.classList.contains('editor-open')) editor?.focus();
+  }
+
+  /** Actualiza el viewer para que muestre el documento seleccionado.
+   *  - Si es un componente .svelte: lo compila y lo renderiza.
+   *  - Si es .js/.css/.json: muestra un placeholder.
+   *  Actualiza también la etiqueta del header del viewer. */
+  function updateViewerForDocument(path) {
+    if (!path) return;
+    if (viewerDocumentLabelEl) viewerDocumentLabelEl.textContent = viewerLabelForDocument(path);
+    if (runtime.canPreview(path)) {
+      // Es un componente previsualizable. Compilar y mostrar el iframe.
+      runtime.setPreviewEntry(path);
+      showViewerPlaceholder(false);
+      runtime.compileAndPreview();
+    } else {
+      // No se puede previsualizar. Mostrar placeholder.
+      showViewerPlaceholder(true);
+    }
+    updateEditFab();
+  }
+
+  /** Etiqueta visible del documento en el viewer-pane. */
+  function viewerLabelForDocument(path) {
+    if (path === '/App.svelte') return 'Tu aplicación';
+    if (path.endsWith('.md')) return documentDisplayName(path) + ' (Markdown)';
+    if (path.endsWith('.schema.json') || path.endsWith('.json-schema')) return documentDisplayName(path) + ' (Formulario)';
+    return documentDisplayName(path);
+  }
+
+  /** Alterna entre el iframe de preview y el placeholder de "no previsualizable". */
+  function showViewerPlaceholder(show) {
+    if (!previewEl || !viewerPlaceholderEl) return;
+    if (show) {
+      previewEl.classList.add('d-none');
+      viewerPlaceholderEl.classList.remove('d-none');
+      viewerPlaceholderEl.classList.add('d-flex');
+    } else {
+      previewEl.classList.remove('d-none');
+      viewerPlaceholderEl.classList.add('d-none');
+      viewerPlaceholderEl.classList.remove('d-flex');
+    }
+    updateEditFab();
+  }
+
+  /** Muestra u oculta el FAB "Editar este componente".
+   *  Visible solo cuando:
+   *   - el viewer muestra un .svelte aislado (no App.svelte)
+   *   - el editor NO está abierto
+   *   - el iframe está visible (no el placeholder) */
+  function updateEditFab() {
+    if (!editFabBtn) return;
+    const editorOpen = document.body.classList.contains('editor-open');
+    const isComponent = runtime.previewEntry && runtime.previewEntry.endsWith('.svelte') && runtime.previewEntry !== '/App.svelte';
+    const placeholderShown = viewerPlaceholderEl && !viewerPlaceholderEl.classList.contains('d-none');
+    const show = !editorOpen && isComponent && !placeholderShown;
+    editFabBtn.classList.toggle('d-none', !show);
+  }
+
+  /** Abre un documento en el editor. Usado por las tarjetas de error y por
+   *  los tabs. Si el editor está cerrado, lo abre y posiciona el cursor. */
+  function openDocument(path, line, column) {
+    selectFile(path);
+    setEditorOpen(true);
+    if (editor && line) {
+      try {
+        const model = editor.getModel();
+        if (model) {
+          const lineCount = model.getLineCount();
+          const safeLine = Math.min(Math.max(1, line), lineCount);
+          const col = Math.max(1, column || 1);
+          editor.revealLineInCenter(safeLine);
+          editor.setPosition({ lineNumber: safeLine, column: col });
+          editor.focus();
+        }
+      } catch (e) { /* ignore */ }
+    }
+  }
+
+  /** Nombre "amigable" de un documento: sin barra inicial ni extensión.
+   *  Si está en una subcarpeta, incluye la subcarpeta (ej. "components/Header"). */
+  function documentDisplayName(path) {
+    if (!path) return '';
+    // Quitar barra inicial (los paths del fs siempre empiezan con /)
+    let p = path.startsWith('/') ? path.slice(1) : path;
+    // Quitar extensión
+    const dot = p.lastIndexOf('.');
+    if (dot > 0) p = p.slice(0, dot);
+    return p;
+  }
+
+  function syncEditor() {
+    if (!editor) return; // Monaco aún no cargó; el init lo llamará otra vez
+
+    // Limpiar markers del modelo saliente (siguen en el cache para reaplicar al volver).
+    const prevPath = currentModelPath;
+    if (prevPath && monaco) {
+      const prevModel = models.get(prevPath);
+      if (prevModel) monaco.editor.setModelMarkers(prevModel, MARKER_OWNER, []);
+    }
+
+    const content = fs.exists(activeDocument) ? fs.read(activeDocument) : '';
+    let model = models.get(activeDocument);
+    if (!model) {
+      model = monaco.editor.createModel(content, detectLanguage(activeDocument));
+      models.set(activeDocument, model);
+      modelToPath.set(model, activeDocument);
+      model.onDidChangeContent(() => {
+        // Debounce: escribir al fs y luego recompilar (reemplaza al listener 'input' del textarea)
+        clearTimeout(compileTimer);
+        compileTimer = setTimeout(() => {
+          if (currentModelPath && fs.exists(currentModelPath)) {
+            try { fs.write(currentModelPath, editor.getValue()); }
+            catch (e) { addConsole('error', e.message); }
+            runtime.compileAndPreview();
+          }
+        }, 400);
+      });
+    } else if (model.getValue() !== content) {
+      model.setValue(content);
+    }
+    editor.setModel(model);
+    currentModelPath = activeDocument;
+    // Reaplicar markers pendientes del documento activo.
+    applyMarkersForPath(activeDocument);
+    if (activeDocumentNameEl) activeDocumentNameEl.textContent = documentDisplayName(activeDocument);
+  }
+
+  function saveCurrent() {
+    if (!editor || !currentModelPath) return;
+    if (fs.exists(currentModelPath)) {
+      try { fs.write(currentModelPath, editor.getValue()); } catch (e) {
+        addConsole('error', e.message);
+      }
+    }
+  }
+
+  function addFile(rawName) {
+    let name = rawName.trim();
+    if (!name) return false;
+    if (!name.startsWith('/')) name = '/' + name;
+    if (!resolver.ext(name)) name += '.svelte';
+    if (fs.exists(name)) {
+      addConsole('warn', 'Ya existe un archivo con ese nombre: ' + name);
+      return false;
+    }
+    // Contenido inicial según extensión para que el usuario vea algo útil.
+    const ext = resolver.ext(name);
+    const initial = ext === 'md'
+      ? '# Documento\n\nEscribe aquí en **Markdown**.'
+      : (name.endsWith('.schema.json') || name.endsWith('.json-schema'))
+        ? '{\n  "title": "Mi formulario",\n  "fields": [\n    { "key": "name", "label": "Nombre", "type": "text" }\n  ]\n}\n'
+        : '';
+    fs.write(name, initial);
+    selectFile(name);
+    runtime.compileAndPreview();
+    return true;
+  }
+
+  function deleteFile(path) {
+    if (fs.list().length <= 1) {
+      addConsole('warn', 'No puedes borrar el último archivo. Crea otro antes.');
+      return;
+    }
+    if (!confirm('¿Borrar ' + path.replace(/^\//, '') + '?')) return;
+    fs.delete(path);
+    if (activeDocument === path) {
+      activeDocument = fs.list()[0] || '/App.svelte';
+    }
+    syncEditor();
+    renderTree();
+    runtime.compileAndPreview();
+  }
+
+  function renameFile(from, to) {
+    if (from === to) return;
+    if (fs.exists(to)) {
+      addConsole('warn', 'Ya existe un archivo con ese nombre: ' + to);
+      return;
+    }
+    try {
+      fs.rename(from, to);
+      if (activeDocument === from) activeDocument = to;
+      renderTree();
+      syncEditor();
+      runtime.compileAndPreview();
+    } catch (e) {
+      addConsole('error', e.message);
+    }
+  }
+
+  function startRename(path) {
+    renamingPath = path;
+    renameInput.value = path.replace(/^\//, '');
+    renameDialog.showModal();
+    setTimeout(() => { renameInput.focus(); renameInput.select(); }, 50);
+  }
+
+  function loadTemplate(key) {
+    const tpl = TEMPLATES[key];
+    if (!tpl) return;
+    // Las plantillas pueden ser un objeto Record<path,content> o una
+    // función que lo devuelve (caso stress-50 que genera 50 archivos).
+    let entries;
+    try {
+      entries = typeof tpl === 'function' ? tpl() : tpl;
+    } catch (e) {
+      console.error('Error generando plantilla', key, ':', e);
+      addConsole('error', 'Error generando plantilla "' + key + '": ' + e.message);
+      return;
+    }
+    // Para stress-50: inlinea las llamadas a helpers del generador
+    // (color, palette, cap) que no existen en el scope del runtime compilado.
+    if (key === 'stress50' || key === 'erp50') {
+      const PALETTE = ['#ff3e00','#10b981','#3b82f6','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#ef4444','#6366f1','#84cc16'];
+      const fixed = {};
+      for (const [p, c] of Object.entries(entries)) {
+        fixed[p] = c
+          .replace(/\$\{color\(([^)]+)\)\}/g, (_, arg) => {
+            const idx = parseInt(arg.match(/\d+/)?.[0] || '0', 10);
+            return PALETTE[idx % PALETTE.length];
+          })
+          .replace(/\$\{cap\(([^)]+)\)\}/g, (_, arg) => {
+            return JSON.stringify(arg.charAt(0).toUpperCase() + arg.slice(1));
+          });
+      }
+      entries = fixed;
+    }
+    disposeAllModels();
+    for (const path of fs.list()) fs.delete(path);
+    for (const [path, content] of Object.entries(entries)) fs.write(path, content);
+    activeDocument = '/App.svelte';
+    syncEditor();
+    renderTree();
+    updateViewerForDocument(activeDocument);
+    if (activeDocumentNameEl) activeDocumentNameEl.textContent = documentDisplayName(activeDocument);
+    return entries;
+  }
+
+  function defaultProject() {
+    disposeAllModels();
+    for (const path of fs.list()) fs.delete(path);
+    loadTemplate('counter');
+  }
+
+  // ─── Toggle del editor (UX viewer-primero) ──────────────────
+  // El editor está oculto por defecto (d-none en el HTML).
+  // La preview ocupa todo el <main>.
+  // El botón "Editar" del header del viewer-pane alterna el estado.
+  // Los modelos de Monaco se conservan; mostrar/ocultar es solo CSS.
+  const editorPane = document.querySelector('.editor-pane');
+  function setEditorOpen(open) {
+    document.body.classList.toggle('editor-open', open);
+    if (editorPane) {
+      editorPane.classList.toggle('d-none', !open);
+      editorPane.classList.toggle('d-flex', open);
+    }
+    if (toggleEditorBtn) {
+      toggleEditorBtn.innerHTML = open
+        ? '<i class="bi bi-x-lg"></i> Cerrar'
+        : '<i class="bi bi-pencil"></i> Editar';
+      toggleEditorBtn.classList.toggle('btn-outline-secondary', !open);
+      toggleEditorBtn.classList.toggle('btn-outline-primary', open);
+      toggleEditorBtn.title = open ? 'Cerrar editor (Ctrl/⌘+.)' : 'Editar (Ctrl/⌘+.)';
+    }
+    // Si acabamos de abrir, refrescar layout de Monaco (puede haber estado oculto).
+    if (open && editor) {
+      // Pequeño defer para que el CSS haya aplicado tamaño antes del layout.
+      setTimeout(() => editor.layout(), 0);
+    }
+    updateEditFab();
+  }
+  if (toggleEditorBtn) {
+    toggleEditorBtn.addEventListener('click', () => {
+      setEditorOpen(!document.body.classList.contains('editor-open'));
+    });
+  }
+  if (openCurrentBtn) {
+    openCurrentBtn.addEventListener('click', () => openDocument(activeDocument));
+  }
+  if (editFabBtn) {
+    editFabBtn.addEventListener('click', () => {
+      // El documento activo ya coincide con el del viewer; basta abrir el editor.
+      setEditorOpen(true);
+    });
+  }
+
+  // ─── Handlers ───────────────────────────────────────────────
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      runtime.compileAndPreview();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
+      e.preventDefault();
+      exportBtn.click();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === '.') {
+      e.preventDefault();
+      setEditorOpen(!document.body.classList.contains('editor-open'));
+    }
+  });
+
+  helpBtn.addEventListener('click', () => document.getElementById('help').showModal());
+
+  // ─── Prueba de rendimiento ───────────────────────────────
+  // Cuando el usuario elige la plantilla stress-50 o erp-50:
+  //   1. Carga los 50 archivos generados.
+  //   2. Activa el modo métricas en el Runtime.
+  //   3. Compila una vez (el reporte se abrirá cuando llegue el postMessage
+  //      'stress-hydrated' del iframe).
+  // El listener de postMessage (más abajo) abre el modal con los resultados.
+  let currentStressKey = null;  // 'stress50' o 'erp50' — el que esté activo
+  function runStressTest() {
+    runtime._metrics = { files: [] };
+    const ok = runtime.compileAndPreview();
+    if (!ok) {
+      runtime._metrics = null;
+      addConsole('error', 'No se pudo iniciar la prueba de rendimiento (errores de compilación).');
+    }
+  }
+
+  // Vuelve a correr la prueba desde cero: borra la caché del compilador
+  // y reescribe los 50 componentes con un mtime nuevo para forzar
+  // tiempos reales (no cacheados).
+  function rerunStressTest() {
+    if (runtime._metrics) return;
+    const key = currentStressKey;
+    if (!key) return;
+    runtime.compiler.clear();
+    const tpl = TEMPLATES[key];
+    if (!tpl) return;
+    let entries = tpl();
+    // Reemplaza los marcadores {color(N)}/{cap(...)} que usan los
+    // generadores (en el caso de stress50). erp50 ya los trae inlineados.
+    const PALETTE = ['#ff3e00','#10b981','#3b82f6','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#ef4444','#6366f1','#84cc16'];
+    for (const [p, c] of Object.entries(entries)) {
+      let out = c;
+      out = out.replace(/\$\{color\((\d+)\)\}/g, (_, n) => PALETTE[+n % PALETTE.length]);
+      out = out.replace(/\$\{cap\(([^)]+)\)\}/g, (_, inner) => {
+        try { return (0, eval)(inner).charAt(0).toUpperCase() + (0, eval)(inner).slice(1); }
+        catch { return inner; }
+      });
+      fs.write(p, out);
+    }
+    renderTree();
+    setStatus('compiling');
+    setTimeout(runStressTest, 50);
+  }
+
+  // ─── Reporte de la prueba de rendimiento ────────────────────
+  // Dibuja la tabla con tiempos por archivo y los 4 KPIs en el modal #stressReport.
+  // El modal está declarado en el HTML. Esta función solo lo rellena y abre.
+  function showStressReport(metrics) {
+    const dlg = document.getElementById('stressReport');
+    if (!dlg) return;
+
+    // Enriquecer filas con líneas (a partir del fs)
+    const files = (metrics.files || []).map(f => ({
+      path: f.path,
+      ms: f.ms,
+      bytes: f.bytes,
+      lines: (() => {
+        try {
+          return fs.read(f.path).split('\n').length;
+        } catch { return 0; }
+      })(),
+    }));
+
+    // KPIs
+    document.getElementById('stressTotalMs').textContent = metrics.totalMs?.toFixed(1) || '—';
+    const bundleKb = ((metrics.bundleJsBytes || 0) + (metrics.bundleCssBytes || 0)) / 1024;
+    document.getElementById('stressBundleKb').textContent = bundleKb.toFixed(1);
+    document.getElementById('stressHydrationMs').textContent = metrics.hydrationMs != null ? metrics.hydrationMs.toFixed(1) : '—';
+    if (metrics.memBefore != null && metrics.memAfter != null) {
+      const deltaMb = (metrics.memAfter - metrics.memBefore) / (1024 * 1024);
+      document.getElementById('stressMemDelta').textContent = (deltaMb >= 0 ? '+' : '') + deltaMb.toFixed(1);
+      document.getElementById('stressMemUnit').textContent = 'MB';
+    } else {
+      document.getElementById('stressMemDelta').textContent = 'N/D';
+      document.getElementById('stressMemUnit').textContent = '';
+    }
+    document.getElementById('stressFileCount').textContent = files.length;
+
+    // Tabla (ordenada por tiempo desc por defecto)
+    const tbody = document.getElementById('stressTableBody');
+    tbody.innerHTML = '';
+    const sorted = [...files].sort((a, b) => b.ms - a.ms);
+    const median = sorted.length ? sorted[Math.floor(sorted.length / 2)].ms : 0;
+    sorted.forEach((f, idx) => {
+      const tr = document.createElement('tr');
+      const isOutlier = f.ms > median * 3 && f.ms > 5;
+      if (isOutlier) tr.className = 'outlier';
+      tr.innerHTML = `
+        <td>${idx + 1}</td>
+        <td class="path">${escapeHtml(f.path)}</td>
+        <td class="text-end">${f.lines}</td>
+        <td class="text-end">${f.bytes.toLocaleString('es-ES')}</td>
+        <td class="text-end">${f.ms.toFixed(1)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    // Sortable columns
+    let sortKey = 'ms';
+    let sortDir = -1;
+    const renderTable = () => {
+      const rows = [...files].sort((a, b) => {
+        if (sortKey === 'idx') return sortDir * (a.path.localeCompare(b.path));
+        return sortDir * ((a[sortKey] || 0) - (b[sortKey] || 0));
+      });
+      tbody.innerHTML = '';
+      rows.forEach((f, i) => {
+        const tr = document.createElement('tr');
+        const isOutlier = f.ms > median * 3 && f.ms > 5;
+        if (isOutlier) tr.className = 'outlier';
+        tr.innerHTML = `
+          <td>${i + 1}</td>
+          <td class="path">${escapeHtml(f.path)}</td>
+          <td class="text-end">${f.lines}</td>
+          <td class="text-end">${f.bytes.toLocaleString('es-ES')}</td>
+          <td class="text-end">${f.ms.toFixed(1)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+      // Update arrows
+      dlg.querySelectorAll('th.sortable').forEach(th => {
+        const arrow = th.querySelector('.sort-arrow');
+        if (arrow) arrow.remove();
+        if (th.dataset.sort === sortKey) {
+          const span = document.createElement('span');
+          span.className = 'sort-arrow';
+          span.textContent = sortDir > 0 ? '↑' : '↓';
+          th.appendChild(span);
+        }
+      });
+    };
+
+    dlg.querySelectorAll('th.sortable').forEach(th => {
+      th.onclick = () => {
+        const k = th.dataset.sort;
+        if (sortKey === k) sortDir = -sortDir;
+        else { sortKey = k; sortDir = (k === 'path') ? 1 : -1; }
+        renderTable();
+      };
+    });
+
+    // Botones de export
+    const buildJson = () => ({
+      files: files.sort((a, b) => b.ms - a.ms),
+      totalMs: metrics.totalMs,
+      bundleJsBytes: metrics.bundleJsBytes,
+      bundleCssBytes: metrics.bundleCssBytes,
+      bundleKb: +bundleKb.toFixed(2),
+      hydrationMs: metrics.hydrationMs,
+      wallMs: metrics.wallMs,
+      memBefore: metrics.memBefore,
+      memAfter: metrics.memAfter,
+      memDeltaMb: metrics.memBefore != null && metrics.memAfter != null
+        ? (metrics.memAfter - metrics.memBefore) / (1024 * 1024)
+        : null,
+      timestamp: new Date().toISOString(),
+    });
+
+    const copyBtn = document.getElementById('stressCopyJson');
+    if (copyBtn) {
+      copyBtn.onclick = async () => {
+        try {
+          await navigator.clipboard.writeText(JSON.stringify(buildJson(), null, 2));
+          copyBtn.innerHTML = '<i class="bi bi-check2"></i> Copiado';
+          setTimeout(() => { copyBtn.innerHTML = '<i class="bi bi-clipboard"></i> Copiar JSON'; }, 1500);
+        } catch (e) {
+          addConsole('error', 'No se pudo copiar al portapapeles: ' + e.message);
+        }
+      };
+    }
+
+    const dlBtn = document.getElementById('stressDownloadCsv');
+    if (dlBtn) {
+      dlBtn.onclick = () => {
+        const lines = ['path,lines,bytes,ms'];
+        files.forEach(f => {
+          lines.push(`${JSON.stringify(f.path)},${f.lines},${f.bytes},${f.ms.toFixed(3)}`);
+        });
+        const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'stress-report-' + Date.now() + '.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(a.href);
+      };
+    }
+
+    // Cerrar modal
+    dlg.querySelectorAll('[data-stress-close]').forEach(b => {
+      b.onclick = () => dlg.close();
+    });
+
+    // Volver a correr (limpia caché y recompila con tiempos reales)
+    const rerunBtn = document.getElementById('stressRerun');
+    if (rerunBtn) {
+      rerunBtn.onclick = () => {
+        rerunBtn.disabled = true;
+        rerunBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Corriendo…';
+        dlg.close();
+        rerunStressTest();
+        setTimeout(() => {
+          rerunBtn.disabled = false;
+          rerunBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Volver a correr';
+        }, 1000);
+      };
+    }
+
+    dlg.showModal();
+  }
+
+  templates.addEventListener('change', (e) => {
+    const key = e.target.value;
+    if (!key || !TEMPLATES[key]) return;
+    if (!confirm('Cargar la plantilla reemplazará todos los archivos actuales. ¿Continuar?')) {
+      templates.value = '';
+      return;
+    }
+    const isStress = key === 'stress50' || key === 'erp50';
+    if (isStress) currentStressKey = key; else currentStressKey = null;
+    loadTemplate(key);
+    templates.value = '';
+    // La prueba de rendimiento se dispara tras la primera compilación.
+    // El autoguardado dispara compileAndPreview automáticamente, así que
+    // armamos un solo compile instrumentado después.
+    if (isStress) {
+      // Pequeño defer para que el fs termine de propagarse al compiler.
+      setTimeout(runStressTest, 50);
+    }
+  });
+
+  resetBtn.addEventListener('click', () => {
+    if (!confirm('¿Restablecer al contador inicial? Se perderán los cambios.')) return;
+    defaultProject();
+  });
+
+  newFileBtn.addEventListener('click', () => {
+    newFileInput.value = '';
+    newFileDialog.showModal();
+    setTimeout(() => newFileInput.focus(), 50);
+  });
+
+  newFileForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (addFile(newFileInput.value)) newFileDialog.close();
+  });
+  newFileDialog.querySelector('[data-cancel]').addEventListener('click', () => newFileDialog.close());
+
+  renameForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    let to = renameInput.value.trim();
+    if (!to) return;
+    if (!to.startsWith('/')) to = '/' + to;
+    if (!resolver.ext(to)) to += '.svelte';
+    renameFile(renamingPath, to);
+    renamingPath = null;
+    renameDialog.close();
+  });
+  renameDialog.querySelector('[data-cancel]').addEventListener('click', () => {
+    renamingPath = null;
+    renameDialog.close();
+  });
+
+  // NOTA: el guardado + recompilación al escribir ahora lo gestiona
+  // model.onDidChangeContent dentro de syncEditor() (un listener por modelo).
+
+  window.addEventListener('message', (e) => {
+    if (e?.data?.type === 'iframe-error') {
+      addConsole('error', e.data.error || String(e.data));
+      setStatus('error');
+    }
+    // Hidratación del iframe (stress test). El iframe envía este mensaje
+    // después de `mount()` con su tiempo interno en ms.
+    if (e?.data?.type === 'stress-hydrated' && runtime._metrics) {
+      runtime._metrics.hydrationMs = e.data.t;
+      runtime._metrics.wallMs = performance.now() - runtime._metrics.startedAt;
+      showStressReport(runtime._metrics);
+      runtime._metrics = null;
+    }
+  });
+
+  exportBtn.addEventListener('click', () => {
+    saveCurrent();
+    runtime.export({ filename: 'app-svelte.html' });
+  });
+
+  // ─── Suscripción al fs: cuando cambia un archivo, recompilar ──
+  fs.subscribe((event) => {
+    // Liberar modelos de archivos borrados para no acumular memoria
+    if (event.type === 'delete') disposeModel(event.path);
+    // Invalidar el cache de compiler para el path tocado
+    if (event.path) runtime.invalidate(event.path);
+  });
+
+  // ════════════════════════════════════════════════════════════
+  // Init: cargar Monaco primero, luego arrancar el resto
+  // ════════════════════════════════════════════════════════════
+  function initMonaco(monacoInstance) {
+    monaco = monacoInstance;
+    const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
+    editor = monaco.editor.create(document.getElementById('monaco'), {
+      automaticLayout: true,
+      fontSize: 13,
+      fontFamily: '"SF Mono", ui-monospace, "Cascadia Code", Monaco, Menlo, Consolas, monospace',
+      tabSize: 2,
+      insertSpaces: true,
+      wordWrap: 'on',
+      minimap: { enabled: true, scale: 1, maxColumn: 120 },
+      scrollBeyondLastLine: false,
+      smoothScrolling: true,
+      cursorBlinking: 'smooth',
+      renderWhitespace: 'selection',
+      bracketPairColorization: { enabled: true },
+      guides: { bracketPairs: true, indentation: true },
+      padding: { top: 12, bottom: 12 },
+      theme: isDark ? 'vs-dark' : 'vs',
+    });
+
+    // Atajos globales dentro del editor (cuando Monaco tiene foco)
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      // Forzar guardado y recompilación inmediata, sin esperar al debounce
+      if (currentModelPath && fs.exists(currentModelPath)) {
+        try { fs.write(currentModelPath, editor.getValue()); }
+        catch (e) { addConsole('error', e.message); }
+        runtime.compileAndPreview();
+      }
+    });
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyE, () => {
+      exportBtn.click();
+    });
+
+    // Si el sistema cambia entre claro/oscuro, actualiza el tema
+    matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', (e) => {
+      monaco.editor.setTheme(e.matches ? 'vs-dark' : 'vs');
+    });
+  }
+
+  window.require(['vs/editor/editor.main'], async () => {
+    initMonaco(window.monaco);
+    fs.load();
+    if (fs.list().length === 0) loadTemplate('counter');
+    syncEditor();
+    renderTree();
+    if (viewerDocumentLabelEl) viewerDocumentLabelEl.textContent = viewerLabelForDocument(activeDocument);
+    setStatus('compiling');
+    addConsole('info', 'Preparando el entorno…');
+    await parser.load();
+    const map = await runtime.loadRuntime();
+    if (map) runtime.compileAndPreview();
+    else setStatus('error');
+  });
+</script>
+</body>
+</html>

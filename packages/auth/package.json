@@ -1,25 +1,19 @@
 {
-  "name": "@htmlbox/control-plane",
+  "name": "@htmlbox/auth",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --port 8781",
+    "dev": "wrangler dev --port 8785",
     "deploy": "wrangler deploy",
     "test:node": "node --test src/__tests__/*.test.js",
-    "test:e2e": "vitest run",
-    "test": "npm run test:node && npm run test:e2e"
+    "test": "npm run test:node"
   },
   "dependencies": {
     "@htmlbox/shared": "*",
-    "@tursodatabase/serverless": "^1.4.0",
-    "jsonata": "^1.8.6",
-    "nanoid": "^5.0.7",
     "flow-engine": "file:../../../../_flow-engine"
   },
   "devDependencies": {
-    "@cloudflare/vitest-plugin": "^1.1.0",
-    "vitest": "^4.1.11",
     "wrangler": "^4.127.0"
   }
 }

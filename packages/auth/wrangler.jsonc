@@ -1,0 +1,72 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "htmlbox-auth",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "rules": [
+    { "type": "Text", "globs": ["src/ui/*.txt", "src/flows/*.flow.json"], "fallthrough": true }
+  ],
+
+  "dev": {
+    "ip": "::",
+    "port": 8785,
+    "inspector_port": 9235,
+    "inspector_ip": "127.0.0.1"
+  },
+
+  // === TOP-LEVEL (PROD) ===
+  // Custom domain — auth.sivocloud.dev. El Worker vive en su propio package
+  // pero el D1 binding apunta al MISMO database_id que control-plane y
+  // runtime — Cloudflare permite múltiples Workers con bindings al mismo
+  // D1, y eso evita service bindings (que ya probamos que rompen en
+  // --remote, ver AGENTS.md §2).
+  //
+  // El Worker `auth` NO tiene service binding a control-plane — recibe
+  // requests directos del browser. Ese es el fix estructural del bug de
+  // auth-error descrito en docs/htmlbox-spec-auth-centralizado.md §0.
+  "routes": [
+    { "pattern": "auth.sivocloud.dev/*", "zone_name": "sivocloud.dev" }
+  ],
+
+  "vars": {
+    "HTMLBOX_ENV": "production",
+    "HTMLBOX_SESSION_DOMAIN": ".sivocloud.dev",
+    "HTMLBOX_EMAIL_MODE": "prod",
+    "HTMLBOX_EMAIL_FROM_ADDRESS": "no-reply@sivocloud.dev",
+    "HTMLBOX_EMAIL_FROM_NAME": "SivoCloud",
+    "HTMLBOX_PORTAL_ORIGIN": "https://studio.sivocloud.dev",
+    "HTMLBOX_PUBLIC_ORIGIN": "https://controlplane.sivocloud.dev"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "htmlbox-control-plane",
+      "database_id": "7ac72bf3-63ae-4789-9679-ab869419fa2a",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "send_email": [
+    { "name": "EMAIL" }
+  ],
+
+  // Worker Loader (Dynamic Workers) — necesario para que el flow-engine ejecute
+  // los nodos `function` en producción. Sin esto, workerd rechaza
+  // `new Function()` / `eval()` con "Code generation from strings disallowed".
+  //
+  // El flow-engine detecta ctx.platformBindings.LOADER y enruta por el path
+  // "Worker Loader" (ver _flow-engine/nodes/nodes-core/function.js::runInWorkerLoader),
+  // donde el código del nodo se incrusta como módulo del Dynamic Worker en
+  // compile-time — no usa eval ni new Function en runtime.
+  //
+  // PoC validado contra producción: sivocloud-latam.workers.dev/worker-loader-poc
+  // (open beta disponible en plan actual, sin trámite extra).
+  "worker_loaders": [
+    { "binding": "LOADER" }
+  ],
+
+  "observability": { "enabled": true }
+}

@@ -1,0 +1,37 @@
+[
+  {
+    "id": "am_in",
+    "type": "http-in",
+    "x": 80,
+    "y": 80,
+    "method": "POST",
+    "path": "/app-magic-link",
+    "wires": [["am_email"]]
+  },
+  {
+    "id": "am_email",
+    "type": "cloudflare-email",
+    "x": 360,
+    "y": 80,
+    "to": "{{payload.to}}",
+    "cc": "",
+    "bcc": "",
+    "replyTo": "",
+    "from": "no-reply@sivocloud.dev",
+    "fromName": "SivoCloud",
+    "subject": "{{payload.subject}}",
+    "text": "{{payload.text}}",
+    "html": "{{payload.html}}",
+    "useAttachment": "no",
+    "wires": [["am_resp"]]
+  },
+  {
+    "id": "am_resp",
+    "type": "http-response",
+    "x": 700,
+    "y": 80,
+    "statusCode": "200",
+    "headers": "{\"Content-Type\":\"application/json\"}",
+    "wires": []
+  }
+]

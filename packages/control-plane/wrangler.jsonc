@@ -6,7 +6,8 @@
   "compatibility_flags": ["nodejs_compat"],
 
   "rules": [
-    { "type": "Text", "globs": ["src/ui-partials/*.txt"], "fallthrough": true }
+    { "type": "Text", "globs": ["src/ui-partials/*.txt"], "fallthrough": true },
+    { "type": "Text", "globs": ["src/flows/*.flow.json"], "fallthrough": true }
   ],
 
   "dev": {
@@ -16,21 +17,7 @@
     "inspector_ip": "127.0.0.1"
   },
 
-"vars": {
-    "HTMLBOX_ENV": "production",
-    "HTMLBOX_TURSO_MODE": "cloud",
-    "HTMLBOX_SESSION_DOMAIN": ".sivocloud.dev",
-    "HTMLBOX_RUNTIME_ORIGIN": "https://sivocloud.dev",
-    "HTMLBOX_PUBLIC_ORIGIN": "https://controlplane.sivocloud.dev",
-    "HTMLBOX_PORTAL_ORIGIN": "https://studio.sivocloud.dev",
-    "HTMLBOX_EMAIL_MODE": "prod",
-    "HTMLBOX_EMAIL_FROM_ADDRESS": "no-reply@sivocloud.dev",
-    "HTMLBOX_EMAIL_FROM_NAME": "SivoCloud",
-    "HTMLBOX_ADMIN_VERSION": "0.1.0",
-    "HTMLBOX_CLOUDFLARE_ACCOUNT_ID": "bbd6bb71e68887eb0fa9cc8e872ed588",
-    "HTMLBOX_WFP_NAMESPACE": "htmlbox-boxes"
-  },
-
+  // === TOP-LEVEL (PROD) ===
   // Custom domain — controlplane.sivocloud.dev.
   // El patrón DEBE terminar en `/*` para que matchee subpaths — sin el
   // `/*`, Cloudflare solo matchea el path raíz `/` (confirmado: el worker
@@ -42,6 +29,22 @@
   "routes": [
     { "pattern": "controlplane.sivocloud.dev/*", "zone_name": "sivocloud.dev" }
   ],
+
+  "vars": {
+    "HTMLBOX_ENV": "production",
+    "HTMLBOX_TURSO_MODE": "cloud",
+    "HTMLBOX_SESSION_DOMAIN": ".sivocloud.dev",
+    "HTMLBOX_RUNTIME_ORIGIN": "https://sivocloud.dev",
+    "HTMLBOX_PUBLIC_ORIGIN": "https://controlplane.sivocloud.dev",
+    "HTMLBOX_PORTAL_ORIGIN": "https://studio.sivocloud.dev",
+    "HTMLBOX_AUTH_ORIGIN": "https://auth.sivocloud.dev",
+    "HTMLBOX_EMAIL_MODE": "prod",
+    "HTMLBOX_EMAIL_FROM_ADDRESS": "no-reply@sivocloud.dev",
+    "HTMLBOX_EMAIL_FROM_NAME": "SivoCloud",
+    "HTMLBOX_ADMIN_VERSION": "0.1.0",
+    "HTMLBOX_CLOUDFLARE_ACCOUNT_ID": "bbd6bb71e68887eb0fa9cc8e872ed588",
+    "HTMLBOX_WFP_NAMESPACE": "htmlbox-boxes"
+  },
 
   "d1_databases": [
     {
@@ -61,7 +64,7 @@
   ],
 
   "send_email": [
-    { "name": "MAIL" }
+    { "name": "EMAIL" }
   ],
 
   "assets": {
@@ -70,6 +73,14 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": true
   },
+
+  // Worker Loader (Dynamic Workers) — ver packages/auth/wrangler.jsonc para el
+  // comentario completo sobre por qué hace falta. Sin este binding, los nodos
+  // `function` de los flows magic-link / app-magic-link fallan en producción
+  // con "Code generation from strings disallowed".
+  "worker_loaders": [
+    { "binding": "LOADER" }
+  ],
 
   "observability": { "enabled": true }
 }

@@ -1,20 +1,9 @@
       <section class="max-w-md mx-auto mt-24 p-6 bg-slate-900 border border-slate-800 rounded-2xl space-y-4">
         <h1 class="text-lg font-bold">Ingresar</h1>
-        <p class="text-xs text-slate-400">Te enviaremos un magic link por email. En dev, el link se imprime en la consola del control-plane.</p>
-        <form @submit.prevent="requestMagicLink()" class="space-y-3">
-          <input type="email" x-model="email" required placeholder="tu@email.com"
-                 class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-indigo-500">
-          <button type="submit" :disabled="busy" class="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 rounded-xl font-medium text-sm transition">
-            <span x-text="busy ? 'Enviando…' : 'Enviar magic link'"></span>
-          </button>
-        </form>
-        <template x-if="lastMessage">
-          <p class="text-xs text-slate-400" x-text="lastMessage"></p>
-        </template>
-        <template x-if="previewLink">
-          <div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs space-y-2">
-            <p class="font-semibold text-emerald-400">[DEV] Magic link</p>
-            <a :href="previewLink" class="break-all text-emerald-300 hover:text-emerald-200 underline" x-text="previewLink"></a>
-          </div>
-        </template>
+        <p class="text-xs text-slate-400">Te enviaremos un magic link por email.</p>
+        <a id="login-link" href="#"
+           onclick="var o=(typeof window.HTMLBOX_AUTH_ORIGIN==='string')?window.HTMLBOX_AUTH_ORIGIN:''; if(!o){alert('Auth no configurado (HTMLBOX_AUTH_ORIGIN)');return false;} window.location.href=o+'/login?return='+encodeURIComponent(window.location.pathname+window.location.search+window.location.hash); return false;"
+           class="block w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-medium text-sm text-center transition">
+          Iniciar sesión
+        </a>
       </section>
