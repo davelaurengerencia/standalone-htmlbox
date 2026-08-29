@@ -258,8 +258,25 @@ async function handleBoxDispatch(request, env, boxId) {
   //    sabe parsearlo (ver box-template/worker.js#dispatchZone). Coherente
   //    con el patrón actual de runtime-core/src/boxDispatch.js, que también
   //    pasa la URL completa y agrega headers via BOX_ID_HEADER.
+  //
+  //    Inyectamos X-HTMLBox-Box-Id para que el box worker sepa qué keys
+  //    usar en R2 (box-{boxId}/frontend.html, etc.). Es el patrón
+  //    withDispatchContext() de runtime-core, localizado al box worker
+  //    de sivostudio.
+  const init = {
+    method: request.method,
+    headers: new Headers(request.headers),
+    redirect: request.redirect,
+  }
+  init.headers.set('X-HTMLBox-Box-Id', boxId)
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    init.body = request.body
+    init.duplex = 'half'
+  }
+  const reqWithBoxId = new Request(request.url, init)
+
   try {
-    const dispatched = await worker.fetch(request)
+    const dispatched = await worker.fetch(reqWithBoxId)
     if (dispatched.status === 404) {
       // El script existe en D1 pero el deploy falló o todavía no terminó.
       return new Response(

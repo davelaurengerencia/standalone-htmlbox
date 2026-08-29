@@ -67,28 +67,37 @@ function escapeForTemplateLiteral(str) {
     .replaceAll('$', '\\$')
 }
 
-if (!template.includes("'__APP_STUDIO_HTML_PLACEHOLDER__'")) {
+// Validamos solo los placeholders que el template efectivamente declara.
+// Si un editor ya no se usa (ej. flow-engine ahora bundlea editor-vanilla
+// internamente), simplemente no se incluye en el bundle.
+const APP_STUDIO_PLACEHOLDER = "'__APP_STUDIO_HTML_PLACEHOLDER__'"
+const EDITOR_VANILLA_PLACEHOLDER = "'__EDITOR_VANILLA_HTML_PLACEHOLDER__'"
+
+if (!template.includes(APP_STUDIO_PLACEHOLDER)) {
   throw new Error(
-    `Placeholder '__APP_STUDIO_HTML_PLACEHOLDER__' (con comillas) no encontrado en ${TEMPLATE_PATH}. ` +
+    `Placeholder ${APP_STUDIO_PLACEHOLDER} (con comillas) no encontrado en ${TEMPLATE_PATH}. ` +
     'El template debe tener la forma: const X = \'__PLACEHOLDER__\'\n' +
     '¿Renombraste la constante sin actualizar este build?',
   )
 }
-if (!template.includes("'__EDITOR_VANILLA_HTML_PLACEHOLDER__'")) {
-  throw new Error(
-    `Placeholder '__EDITOR_VANILLA_HTML_PLACEHOLDER__' (con comillas) no encontrado en ${TEMPLATE_PATH}.`,
-  )
+const hasEditorVanilla = template.includes(EDITOR_VANILLA_PLACEHOLDER)
+if (!hasEditorVanilla) {
+  console.log('  · box-template no usa __EDITOR_VANILLA_HTML_PLACEHOLDER__ — skipping')
 }
 
 // Reemplazamos el LITERAL ENTERO (placeholder + comillas exteriores) por el
 // template literal con backticks. Sin esto, las comillas simples del template
 // original quedarían al lado del backtick: const X = '`<html>...` → inválido.
-const inlined = template
-  .replace("'__APP_STUDIO_HTML_PLACEHOLDER__'", '`' + escapeForTemplateLiteral(appStudioHtml) + '`')
-  .replace("'__EDITOR_VANILLA_HTML_PLACEHOLDER__'", '`' + escapeForTemplateLiteral(editorVanillaHtml) + '`')
+let inlined = template.replace(APP_STUDIO_PLACEHOLDER, '`' + escapeForTemplateLiteral(appStudioHtml) + '`')
+if (hasEditorVanilla) {
+  inlined = inlined.replace(EDITOR_VANILLA_PLACEHOLDER, '`' + escapeForTemplateLiteral(editorVanillaHtml) + '`')
+}
 
-const inlinedPath = path.join(OUT_DIR, 'box-worker.inlined.mjs')
-await fs.mkdir(OUT_DIR, { recursive: true })
+// Escribimos el inlined al lado del original (NO en dist/), para que los
+// imports relativos a lib/handlers.js sigan resolviendo. Si lo moviéramos
+// a dist/, habría que ajustar paths manualmente.
+const inlinedPath = path.join(path.dirname(TEMPLATE_PATH), 'worker.inlined.mjs')
+await fs.mkdir(path.dirname(inlinedPath), { recursive: true })
 await fs.writeFile(inlinedPath, inlined, 'utf8')
 
 // 3) Bundle con esbuild.

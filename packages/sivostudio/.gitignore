@@ -7,4 +7,8 @@
 # no compila. Se commitea pese a ser grande (~370 KB).
 dist/box-worker.mjs
 dist/box-worker.mjs.js
-dist/box-worker.inlined.mjs
+
+# Intermediate inlined source (regenerable con `npm run build`).
+# Vive al lado del template para que los imports relativos (./lib/handlers.js)
+# resuelvan. Borrado al final del build.
+box-template/worker.inlined.mjs

@@ -42,11 +42,34 @@ function assertValid(boxId) {
   }
 }
 
-function buildMetadataJson(fileName) {
+// Mapea bindings que el per-box script necesita:
+//   - STUDIO_R2 (R2) para storage del box (HTML/flow/vars en Fase 5).
+//
+// El binding es OPCIONAL — solo se incluye si el launcher lo tiene
+// configurado en su wrangler.jsonc. Permite deployar el bundle ANTES
+// de crear el bucket R2; los endpoints /editor/api/* y / devuelven 503
+// hasta que se cree (degradación elegante, código defensivo en box-template).
+//
+// Cuando el bucket existe:
+//   1. Crear via `wrangler r2 bucket create htmlbox-studio-boxes` (o dashboard).
+//   2. Agregar el binding al wrangler.jsonc del launcher:
+//      "r2_buckets": [{ "binding": "STUDIO_R2", "bucket_name": "htmlbox-studio-boxes" }]
+//   3. Redeployar — el próximo PUT al WFP incluirá el binding.
+function buildBindings(env) {
+  const bindings = []
+  // env.STUDIO_R2 existe si el launcher tiene el binding configurado en su
+  // wrangler.jsonc. La API de Cloudflare verifica que el bucket exista al
+  // momento del PUT, así que si no está, lo excluimos.
+  if (env.STUDIO_R2 && typeof env.STUDIO_R2.put === 'function') {
+    bindings.push({ type: 'r2_bucket', name: 'STUDIO_R2', bucket_name: 'htmlbox-studio-boxes' })
+  }
+  return bindings
+}
+
+function buildMetadataJson(env, fileName) {
   return JSON.stringify({
     main_module: fileName,
-    // Sin bindings — el box template del experimento corre standalone
-    // (todo embebido). Fase 4+ los agregará.
+    bindings: buildBindings(env),
     compatibility_date: '2026-08-01',
     compatibility_flags: ['nodejs_compat'],
   })
@@ -83,7 +106,7 @@ export async function deployStudioBoxWorker(env, boxId, opts = {}) {
   const form = new FormData()
   form.append(
     'metadata',
-    new Blob([buildMetadataJson(fileName)], { type: 'application/json' })
+    new Blob([buildMetadataJson(env, fileName)], { type: 'application/json' })
   )
   form.append(
     fileName,
