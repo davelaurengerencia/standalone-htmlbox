@@ -79,3 +79,7 @@ echo "  2. Diseñá algo en App Studio → click 'Exportar HTML' → debería di
 echo "     POST /editor/api/frontend que guarda en R2"
 echo "  3. Abrí $STUDIO_URL/box/$BOX_ID/editor/backend para el Flow Editor"
 echo "  4. Cuando termines, abrí $STUDIO_URL/box/$BOX_ID/ (la app real)"
+echo ""
+echo "Si /editor/backend falla con 'configNodes debe ser un array':"
+echo "  El box worker está sirviendo un bundle viejo. Re-desplegar con:"
+echo "  curl -X POST $STUDIO_URL/api/studio/redeploy-box/$BOX_ID"

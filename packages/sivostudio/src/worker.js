@@ -203,6 +203,38 @@ async function handleListBoxes(env) {
   }
 }
 
+// POST /api/studio/redeploy-box/:boxId — re-deploya el bundle actual a
+// un box existente. Necesario cuando cambia el box-template y queremos
+// que los boxes vivos tengan el código nuevo (PUT es idempotente en WFP).
+//
+// URL: POST /api/studio/redeploy-box/<boxId>
+// Body: ninguno.
+// Response: { ok, boxId, scriptName } si OK.
+async function handleRedeployBox(request, env, boxId) {
+  if (!BOX_ID_PATTERN.test(boxId)) {
+    return jsonResponse({ ok: false, error: 'invalid_box_id' }, 400)
+  }
+  // Chequear que existe en D1 antes de gastar el PUT.
+  if (env.STUDIO_D1) {
+    try {
+      const row = await env.STUDIO_D1.prepare(
+        `SELECT 1 AS one FROM htmlbox_studio_boxes WHERE box_id = ? AND deleted = 0 LIMIT 1`
+      ).bind(boxId).first()
+      if (!row) {
+        return jsonResponse({ ok: false, error: 'box_not_found' }, 404)
+      }
+    } catch (e) {
+      return jsonResponse({ ok: false, error: 'd1_query_failed', detail: String(e) }, 500)
+    }
+  }
+  try {
+    const r = await deployStudioBoxWorker(env, boxId)
+    return jsonResponse({ ok: true, boxId, scriptName: r.scriptName })
+  } catch (e) {
+    return jsonResponse({ ok: false, error: 'wfp_redeploy_failed', detail: String(e) }, 502)
+  }
+}
+
 // /box/:boxId/* → front-worker: despacha al box via WFP.
 //
 // Flujo:
@@ -312,6 +344,11 @@ export default {
     }
     if (url.pathname === '/api/studio/list' && request.method === 'GET') {
       return await handleListBoxes(env)
+    }
+    // POST /api/studio/redeploy-box/:boxId — re-deploya el bundle actual.
+    const redeployMatch = url.pathname.match(/^\/api\/studio\/redeploy-box\/([a-z0-9]{16})$/)
+    if (redeployMatch && request.method === 'POST') {
+      return await handleRedeployBox(request, env, redeployMatch[1])
     }
 
     // Front-worker: /box/:boxId/* → despachar al box via WFP.

@@ -2,10 +2,8 @@
 //
 // Entry-point que esbuild bundlea en scripts/build.mjs. La lógica vive
 // en lib/handlers.js (testeable). Acá solo orquestamos: dispatch de zonas
-// + creación del flow-engine app con mountPath nativo.
+// + getFlowApp() con cache.
 
-import { createFlowEngineApp, extractPlatformBindings } from 'flow-engine/app'
-import { coreNodes } from 'flow-engine/nodes'
 import {
   getBoxId,
   dispatchZone,
@@ -13,15 +11,20 @@ import {
   handleEditorFrontend,
   handleEditorVariables,
   handleEditorApi,
-  loadStoredFlows,
   htmlResponse,
   jsonResponse,
   PLACEHOLDER_HTML,
 } from './lib/handlers.js'
+import { createFlowAppGetter } from './lib/flowAppCache.js'
 
 // App Studio embebido como template literal — generado por scripts/build.mjs
 // reemplazando el placeholder __APP_STUDIO_HTML_PLACEHOLDER__ en el bundle.
 const APP_STUDIO_HTML = '__APP_STUDIO_HTML_PLACEHOLDER__'
+
+// getFlowApp: cache keyed por boxId del flow-engine app. Sobrevive entre
+// requests del mismo isolate, se invalida con R2.head() cuando el etag
+// del flow en R2 cambia. Ver lib/flowAppCache.js para detalles.
+const getFlowApp = createFlowAppGetter()
 
 export default {
   async fetch(request, env, ctx) {
@@ -53,15 +56,11 @@ export default {
           // (lectura — POST es 501 fijo en runtime='worker', ver AGENTS.md de
           // flow-engine). La persistencia de flows se hace por el endpoint
           // custom /editor/api/flow (Fase 5).
-          const storedFlows = await loadStoredFlows(env, boxId)
-          const app = await createFlowEngineApp({
-            runtime: 'worker',
-            flows: storedFlows,
-            mountPath: '/editor/backend',
-            httpNodeRoot: '/api',
-            nodes: coreNodes,
-            platformBindings: extractPlatformBindings(env),
-          })
+          //
+          // Cache: getFlowApp() usa un Map keyed por boxId — sobrevive entre
+          // requests del mismo isolate, se invalida con R2.head() cuando el
+          // flow en R2 cambia. Ver header de flowAppCache arriba.
+          const app = await getFlowApp(env, boxId)
           // Rewritear la URL para que flow-engine vea paths relativos al mountPath
           // (porque flow-engine matchea contra pathname.startsWith(mountPath)).
           const editorReq = new Request(new URL(subpath, request.url).toString(), request)
@@ -75,15 +74,9 @@ export default {
 
         case 'api': {
           // Backend real: http nodes de flow-engine (httpNodeRoot='/api').
-          const storedFlows = await loadStoredFlows(env, boxId)
-          const app = await createFlowEngineApp({
-            runtime: 'worker',
-            flows: storedFlows,
-            mountPath: '/editor/backend',
-            httpNodeRoot: '/api',
-            nodes: coreNodes,
-            platformBindings: extractPlatformBindings(env),
-          })
+          // Misma instancia cacheada que usa /editor/backend — un solo flow-engine
+          // app por boxId en el isolate, independientemente de qué zona lo pida.
+          const app = await getFlowApp(env, boxId)
           const apiRes = await app.handleHttp(request, env, ctx)
           if (apiRes) return apiRes
           return new Response('Not found', { status: 404, headers: { 'Content-Type': 'text/plain' } })

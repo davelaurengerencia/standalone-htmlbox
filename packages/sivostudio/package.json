@@ -9,7 +9,7 @@
     "deploy": "wrangler deploy",
     "build": "node scripts/inline-app-studio.mjs && node scripts/build.mjs",
     "build:editor": "node scripts/inline-app-studio.mjs",
-    "test": "node --test src/__tests__/*.test.js box-template/lib/*.test.js"
+    "test": "node --test src/__tests__/*.test.js box-template/lib/*.test.js box-template/__tests__/*.test.js"
   },
   "dependencies": {
     "flow-engine": "file:../../../../_flow-engine"
