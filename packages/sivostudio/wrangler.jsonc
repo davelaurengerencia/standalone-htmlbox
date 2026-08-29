@@ -65,6 +65,15 @@
     }
   ],
 
+  // Storage de los boxes (Fase 5): HTML exportado, flows, vars.
+  // Keys: box-{boxId}/frontend.html, box-{boxId}/flow.json, box-{boxId}/vars.json.
+  "r2_buckets": [
+    {
+      "binding": "STUDIO_R2",
+      "bucket_name": "htmlbox-studio-boxes"
+    }
+  ],
+
   "vars": {
     "HTMLBOX_CLOUDFLARE_ACCOUNT_ID": "bbd6bb71e68887eb0fa9cc8e872ed588",
     "HTMLBOX_STUDIO_NAMESPACE": "sivostudio-experiments",
